@@ -199,6 +199,27 @@
   .step p{color:#C9DDD1; font-size:.95rem}
   .tip{margin-top:28px; padding:1rem 1.2rem; border-radius:var(--r-md); background:rgba(242,148,27,.14); border:1px solid rgba(242,148,27,.4); color:var(--butter); font-size:.95rem}
 
+  /* ---------- plan cards (commitment) ---------- */
+  .plan{display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-bottom:clamp(40px,6vw,72px)}
+  .plan article{background:var(--white); border:1px solid var(--line); border-radius:var(--r-md); padding:1.4rem; border-top:4px solid var(--teal)}
+  .plan article.accent{border-top-color:var(--orange)}
+  .plan h3{font-size:1.15rem; color:var(--teal-deep); margin-bottom:.5rem}
+  .plan p{color:var(--muted); font-size:.95rem}
+  .plan .dose{margin-top:.8rem; display:grid; gap:.4rem}
+  .plan .dose span{display:flex; gap:.5rem; align-items:center; font-weight:600; color:var(--ink); font-size:.93rem}
+  .plan .dose span::before{content:""; width:8px; height:8px; border-radius:50%; background:var(--orange); flex:none}
+  .plan p.after{margin-top:.8rem}
+  .sub-h{font-size:clamp(1.4rem,3vw,1.9rem); color:var(--teal-deep); margin-bottom:1.4rem; text-wrap:balance}
+
+  /* ---------- idea blocks (comparison prose) ---------- */
+  .idea{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:28px}
+  .idea article{background:var(--white); border-radius:var(--r-md); padding:1.5rem; border:1px solid var(--line)}
+  .idea h3{font-size:1.15rem; color:var(--teal-deep); margin-bottom:.5rem}
+  .idea p{color:var(--muted); font-size:.97rem}
+  .nutri{display:flex; flex-wrap:wrap; gap:.5rem; margin-top:1rem}
+  .nutri span{background:var(--lime); color:var(--teal-deep); border-radius:999px; padding:.2em .8em; font-size:.82rem; font-weight:600}
+  .keep{margin-top:28px; padding:1.2rem 1.4rem; border-inline-start:4px solid var(--orange); background:var(--white); border-radius:var(--r-sm); font-family:var(--f-display); font-weight:600; color:var(--ink); line-height:1.7}
+
   /* ---------- timeline ---------- */
   .timeline{display:grid; grid-template-columns:repeat(3,1fr); gap:0; position:relative}
   .tl{position:relative}
@@ -248,6 +269,7 @@
   .bundle input:checked + .card .radio::after{content:""; width:11px; height:11px; border-radius:50%; background:var(--teal-deep)}
   .b-title{font-family:var(--f-display); font-weight:700; font-size:1.1rem}
   .b-sub{font-size:.85rem; color:var(--muted)}
+  .b-prog{font-size:.9rem; color:var(--teal); font-weight:700}
   .b-price{text-align:end}
   .b-price .now{font-family:var(--f-display); font-weight:800; font-size:1.45rem; color:var(--teal-deep); white-space:nowrap}
   .b-price .was{font-size:.85rem; color:var(--muted); text-decoration:line-through; white-space:nowrap}
@@ -339,7 +361,7 @@
     .hero .wrap, .inside, .order, .safety{grid-template-columns:1fr}
     .hero-media{order:-1; max-width:440px; margin-inline:auto; width:100%}
     .glass-stage{position:static}
-    .steps, .timeline{grid-template-columns:1fr; gap:16px}
+    .steps, .timeline, .plan, .idea{grid-template-columns:1fr; gap:16px}
     .tl{padding:0}
     .order .bundles-col{order:0}
   }
@@ -502,7 +524,7 @@
     <div class="steps">
       <div class="step rv">
         <h3>افتح ظرفاً واحداً</h3>
-        <p>ظرف واحد يومياً. العلبة فيها 30 ظرفاً تكفيك شهراً كاملاً.</p>
+        <p>ظرف واحد يومياً، والعلبة فيها 30 ظرفاً. إذا كان وزنك زائداً بشكل كبير، راجع قسم «قبل الاستخدام» لاستخدام ظرفين يومياً.</p>
       </div>
       <div class="step rv">
         <h3>اخلطه في كوب ماء</h3>
@@ -523,23 +545,23 @@
     <div class="sec-head rv">
       <span class="eyebrow">ماذا تتوقع</span>
       <h2>نتائج تحسّها قبل أن تراها على الميزان</h2>
-      <p>لن نعدك بعشرة كيلو في الشهر. هذا ما يلاحظه أغلب المستخدمين مع الاستمرار ونظام أكل متوازن:</p>
+      <p>لن نعدك بعشرة كيلو في الشهر. CalmGastro مكمل غذائي يعمل مع جسمك تدريجياً، وهذا ما يلاحظه أغلب المستخدمين مع الالتزام ونظام أكل متوازن:</p>
     </div>
     <div class="timeline">
       <div class="tl rv">
-        <div class="when">الأسبوع الأول</div>
-        <h3>شبع أطول وانتفاخ أقل</h3>
-        <p>تكتفي بكمية أقل في الوجبة، ويخف ثقل البطن بعد الأكل.</p>
+        <div class="when">الشهر الأول</div>
+        <h3>الجسم يتأقلم</h3>
+        <p>شبع أطول وانتفاخ أقل. الاستجابة هنا قد تكون أبطأ، وهذا طبيعي مع المكملات الغذائية.</p>
       </div>
       <div class="tl rv">
-        <div class="when">الأسبوع 2 – 3</div>
-        <h3>هضم منتظم ورغبة أقل في السكر</h3>
-        <p>القولون أهدأ، والاشتهاء المفاجئ للحلويات والوجبات الخفيفة يقل.</p>
+        <div class="when">الشهر الثاني</div>
+        <h3>النتيجة تبدأ تتضح</h3>
+        <p>هضم أكثر انتظاماً، ورغبة أقل في الحلويات والوجبات الخفيفة، وعادات أكل أهدأ.</p>
       </div>
       <div class="tl rv">
-        <div class="when">من الأسبوع الرابع</div>
-        <h3>وزن ينزل بثبات</h3>
-        <p>عادات أكل أهدأ تتحول إلى نزول تدريجي في الوزن، وهو النزول الذي يدوم.</p>
+        <div class="when">الشهر الثالث</div>
+        <h3>وقت تقييم التجربة</h3>
+        <p>مع الاستمرار تصبح الاستجابة أوضح والعادات الجديدة أثبت، وهذا ما يجعل النتيجة تدوم.</p>
       </div>
     </div>
     <p class="disclaim">* النتائج تختلف من شخص لآخر حسب نمط الحياة والنظام الغذائي والنشاط البدني والالتزام بالاستخدام.</p>
@@ -550,25 +572,39 @@
 <section class="block tint" id="compare">
   <div class="wrap">
     <div class="sec-head rv">
-      <span class="eyebrow">لماذا CalmGastro</span>
-      <h2>قارِن قبل أن تشتري</h2>
-      <p>أغلب حبوب التنحيف في السوق تبيعك وعوداً. نحن نطبع الجرعات على العلبة ونترك لك الحكم.</p>
+      <span class="eyebrow">المكمل الغذائي مقابل منتجات التنحيف الأخرى</span>
+      <h2>ليش CalmGastro مختلف؟</h2>
+      <p>CalmGastro مكمل غذائي بتركيبة معلنة ومقادير واضحة. يحتوي على عناصر غذائية ومكونات داعمة يحتاجها الجسم، والهدف منه دعم نمط الحياة وخطة خسارة الوزن بدل الاعتماد على تأثير سريع ومؤقت.</p>
+    </div>
+    <div class="idea">
+      <article class="rv">
+        <h3>الفكرة الأساسية</h3>
+        <p>أحياناً تكون هناك عوامل تعيق خسارة الوزن، مثل ضعف جودة النظام الغذائي أو نقص بعض العناصر أو عدم انتظام العادات اليومية. عندما تُعالَج هذه العوامل ويصبح نمط الحياة أفضل، تصبح المحافظة على النتيجة أسهل حتى بعد انتهاء استخدام المكمل.</p>
+        <div class="nutri" aria-label="مكونات غذائية داعمة"><span>ألياف غذائية</span><span>فيتامين B12</span><span>كروميوم</span><span>مستخلصات نباتية</span><span>إنزيم هضمي</span></div>
+      </article>
+      <article class="rv">
+        <h3>الفرق عن بعض منتجات التنحيف السريعة</h3>
+        <p>بعض المنتجات الموجودة في السوق قد تعتمد على تأثيرات سريعة، مثل تقليل الشهية بشدة أو التأثير في سوائل الجسم. الانخفاض السريع على الميزان لا يعني دائماً خسارة دهون، وقد يعود الوزن بعد إيقاف المنتج إذا لم تتغيّر العادات التي سببت زيادته.</p>
+      </article>
     </div>
     <div class="table-scroll rv">
       <table class="compare">
         <thead>
-          <tr><th scope="col"><span class="sr-only">المعيار</span></th><th scope="col" class="us">CalmGastro</th><th scope="col">حبوب التنحيف المعتادة</th></tr>
+          <tr><th scope="col"><span class="sr-only">المعيار</span></th><th scope="col" class="us">CalmGastro</th><th scope="col">منتجات التنحيف السريعة</th></tr>
         </thead>
         <tbody>
+          <tr><th scope="row">التركيبة</th><td class="us"><span class="mark y">✓</span>ألياف وفيتامين B12 وكروميوم ومكونات غذائية داعمة</td><td class="them">تعتمد غالباً على «حرق» أو تأثير سريع</td></tr>
+          <tr><th scope="row">طريقة التأثير</th><td class="us"><span class="mark y">✓</span>يدعم الشبع والهضم والعادات اليومية</td><td class="them">تقليل الشهية بشدة أو التأثير في سوائل الجسم</td></tr>
+          <tr><th scope="row">بعد التوقف</th><td class="us"><span class="mark y">✓</span>عادات أثبت تسهّل المحافظة على النتيجة</td><td class="them"><span class="mark n">✕</span>قد يعود الوزن إذا لم تتغير العادات</td></tr>
           <tr><th scope="row">الشكل</th><td class="us"><span class="mark y">✓</span>مشروب بنكهة ليمون وفراولة</td><td class="them">كبسولات تُبلع</td></tr>
           <tr><th scope="row">الجرعات</th><td class="us"><span class="mark y">✓</span>كل مكوّن بالملّيغرام على العلبة</td><td class="them"><span class="mark n">✕</span>«خلطة عشبية» بلا أرقام</td></tr>
-          <tr><th scope="row">كمية الألياف</th><td class="us"><span class="mark y">✓</span>2000 ملغ كونجاك + 1000 ملغ إنولين</td><td class="them">غير محددة غالباً</td></tr>
           <tr><th scope="row">الادعاءات الصحية</th><td class="us"><span class="mark y">✓</span>معتمدة من EFSA ومطبوعة</td><td class="them"><span class="mark n">✕</span>وعود مثل «10 كيلو بالشهر»</td></tr>
           <tr><th scope="row">الموافقة</th><td class="us"><span class="mark y">✓</span>رقم موافقة مكمل غذائي 023487</td><td class="them">غالباً غير مذكور</td></tr>
           <tr><th scope="row">السعر والطلب</th><td class="us"><span class="mark y">✓</span>سعر واضح، طلب مباشر، دفع عند الاستلام</td><td class="them">«راسلنا لمعرفة السعر»</td></tr>
         </tbody>
       </table>
     </div>
+    <p class="keep rv">المحافظة على النتيجة ترتبط باستمرار العادات الغذائية والنشاط ونمط الحياة. لذلك نركّز على برنامج مستمر وعادات قابلة للاستمرار، وليس على نتيجة مؤقتة مرتبطة فقط بفترة استخدام المنتج.</p>
   </div>
 </section>
 
@@ -663,22 +699,39 @@
   <div class="wrap">
     <div class="sec-head rv">
       <span class="eyebrow">قبل الاستخدام</span>
-      <h2>صراحةً: لمن لا يناسب CalmGastro</h2>
-      <p>نفضّل أن تعرف هذا الآن على أن تكتشفه بعد الشراء.</p>
+      <h2>الالتزام وطريقة الاستخدام</h2>
+      <p>النتيجة تعتمد على الانتظام. اقرأ هذا القسم قبل أن تبدأ برنامجك.</p>
     </div>
+    <div class="plan">
+      <article class="rv">
+        <h3>الالتزام اليومي</h3>
+        <p>لأفضل استفادة من البرنامج، التزم باستخدام المنتج يومياً وبانتظام. إذا كان الاستخدام متقطعاً أو لم تلتزم به يومياً، فلن يكون من المنطقي تقييم التجربة وكأن الاستخدام كان منتظماً.</p>
+      </article>
+      <article class="rv accent">
+        <h3>إذا كان وزنك زائداً بشكل كبير</h3>
+        <p>لا مانع من استخدام المنتج مرتين يومياً:</p>
+        <div class="dose"><span>ظرف صباحاً على الريق</span><span>ظرف قبل وجبة العشاء</span></div>
+        <p class="after">مع كوب ماء كامل لكل ظرف، وبدون تجاوز ظرفين في اليوم.</p>
+      </article>
+      <article class="rv">
+        <h3>مدة البرنامج: 3 أشهر</h3>
+        <p>لأن CalmGastro مكمل غذائي وليس منتجاً كيميائياً سريع المفعول، قد تكون استجابة الجسم في الشهر الأول أبطأ، ثم تصبح أوضح مع الاستمرار خلال الشهرين الثاني والثالث. لذلك يفضَّل تقييم التجربة على برنامج متكامل لا يقل عن 3 أشهر بدل الحكم من فترة قصيرة.</p>
+      </article>
+    </div>
+    <h3 class="sub-h rv">صراحةً: لمن لا يناسب CalmGastro</h3>
     <div class="safety">
       <ul class="warn-list">
         <li><span class="wi">!</span><div><b>الحامل والمرضع ومن هم دون 18 سنة:</b> لا يُستخدم.</div></li>
         <li><span class="wi">!</span><div><b>من يتناول أدوية الاكتئاب أو القلق:</b> يحتوي على <bdi dir="ltr">5-HTP</bdi>، فاستشر طبيبك أولاً.</div></li>
-        <li><span class="wi">!</span><div><b>مرضى السكري على أدوية خفض السكر:</b> يحتوي على كروميوم، فراجع طبيبك قبل الاستخدام.</div></li>
+        <li><span class="wi">!</span><div><b>مرضى السكري:</b> يحتوي المنتج على الكروميوم، وهو عنصر قد يؤثر في مستويات سكر الدم. إذا كنت تستخدم أدوية لخفض السكر أو تنظيمه، يفضَّل استشارة طبيبك ومراقبة السكر، ولا توقف دواءك أو تغيّره من نفسك.</div></li>
         <li><span class="wi">!</span><div><b>الحساسية من الكافيين:</b> فيه كمية بسيطة من مستخلص الشاي الأخضر والقهوة، فتجنّبه في المساء.</div></li>
         <li><span class="wi">!</span><div><b>صعوبة البلع أو قلة شرب الماء:</b> الألياف قد تسبب خطر الاختناق، فاشربه مذاباً بالكامل مع كمية وافرة من الماء.</div></li>
         <li><span class="wi">!</span><div><b>إذا كنت تتناول أدوية أخرى:</b> خذها قبل الظرف بساعة أو بعده بساعتين، لأن الألياف قد تؤثر على امتصاصها.</div></li>
         <li><span class="wi">!</span><div><b>لا تتجاوز الجرعة الموصى بها.</b> المنتج مكمل غذائي، وليس مخصصاً لتشخيص أي مرض أو علاجه أو الوقاية منه.</div></li>
       </ul>
       <figure class="label-fig rv">
-        <a href="assets/label-back.jpg" target="_blank" rel="noopener"><img src="assets/label-back.jpg" alt="صورة الملصق الخلفي لعلبة CalmGastro يظهر فيها جدول المكونات والجرعات والتحذيرات ورقم الموافقة 023487" loading="lazy" width="1110" height="1110"></a>
-        <figcaption>الملصق الخلفي للعلبة كما هو: جدول المكونات والتحذيرات ورقم الموافقة. اضغط لتكبير الصورة.</figcaption>
+        <a href="assets/label-back.jpg" target="_blank" rel="noopener"><img src="assets/label-back.jpg" alt="صورة الملصق الخلفي لعلبة CalmGastro يظهر فيها جدول المكونات والجرعات والتحذيرات ورقم الموافقة 023487" loading="lazy" width="1224" height="1024"></a>
+        <figcaption>الملصق الخلفي للعلبة: جدول المكونات والجرعات والتحذيرات ورقم الموافقة. اضغط لتكبير الصورة.</figcaption>
       </figure>
     </div>
   </div>
@@ -693,8 +746,9 @@
     </div>
     <div class="faq">
       <details><summary>هل المنتج طبيعي؟</summary><p>المكونات الأساسية ألياف ومستخلصات نباتية: الكونجاك والإنولين والشاي الأخضر والقهوة والغارسينيا والزنجبيل والبروميلين، ومعها الكروميوم وفيتامين B12. ويحتوي على مُحلٍّ لتحسين الطعم.</p></details>
-      <details><summary>كم ظرف آخذ في اليوم؟</summary><p>ظرف واحد يومياً قبل الوجبة الرئيسية بنصف ساعة، مذاباً في كوب ماء (250 مل). العلبة فيها 30 ظرفاً تكفي شهراً.</p></details>
-      <details><summary>متى تظهر النتائج؟</summary><p>أغلب المستخدمين يحسّون بفرق في الشبع والانتفاخ خلال الأسبوع الأول، ويبدأ الفرق في الوزن تدريجياً خلال أسابيع حسب نمط الحياة والالتزام.</p></details>
+      <details><summary>كم ظرف آخذ في اليوم؟</summary><p>ظرف واحد يومياً قبل الوجبة الرئيسية بنصف ساعة، مذاباً في كوب ماء (250 مل). إذا كان وزنك زائداً بشكل كبير فلا مانع من ظرفين يومياً: ظرف صباحاً على الريق وظرف قبل وجبة العشاء، ولا تتجاوز ظرفين في اليوم.</p></details>
+      <details><summary>متى تظهر النتائج؟</summary><p>الاستجابة تختلف من جسم لآخر. وبما أن CalmGastro مكمل غذائي وليس منتجاً كيميائياً سريع المفعول، فقد تكون استجابة الجسم في الشهر الأول أبطأ، بينما تصبح الاستجابة أوضح مع الاستمرار والالتزام خلال الشهرين الثاني والثالث.</p></details>
+      <details><summary>لماذا ننصح ببرنامج 3 أشهر؟</summary><p>لأن الاستمرارية تعطي الجسم وقتاً كافياً للاستفادة من مكونات المكمل، وتمنحك فترة أكثر واقعية لتقييم النتيجة. لا تحكم على المنتج من أيام أو أسابيع قليلة؛ قيّم تجربتك بعد الالتزام بالبرنامج كاملاً مع نظام غذائي ونمط حياة مناسبين.</p></details>
       <details><summary>هل لازم أتبع نظام غذائي معه؟</summary><p>لا تحتاج حمية قاسية، لكن لأفضل نتيجة ننصح بأكل متوازن ونشاط بدني بسيط مثل المشي. CalmGastro يسهّل عليك الالتزام لأنك تشبع أسرع.</p></details>
       <details><summary>هل يساعد في القولون والانتفاخ؟</summary><p>نعم، الإنولين يغذي البكتيريا النافعة في الأمعاء، والزنجبيل والبروميلين يدعمان الهضم ويقللان الغازات والانتفاخ.</p></details>
       <details><summary>هل يناسب الرجال والنساء؟</summary><p>يناسب البالغين من الجنسين. لا يُستخدم أثناء الحمل أو الرضاعة أو لمن هم دون 18 سنة، ويُفضَّل استشارة الطبيب إذا كانت لديك حالة صحية أو تتناول أدوية.</p></details>
@@ -746,9 +800,9 @@ const CONFIG = {
   deliveryShort: "2 – 5 أيام",
   deliveryLong: "من 2 إلى 5 أيام عمل لجميع مدن المملكة، ونتواصل معك قبل التوصيل لتأكيد الموعد.",
   bundles: [
-    { id: "b1", boxes: 1, title: "علبة واحدة", sub: "30 ظرفاً · تجربة شهر",       price: 199, was: 249 },
-    { id: "b2", boxes: 2, title: "علبتان",     sub: "60 ظرفاً · برنامج شهرين",    price: 349, was: 498, tag: "الأكثر طلباً" },
-    { id: "b3", boxes: 3, title: "3 علب",      sub: "90 ظرفاً · أفضل نتيجة وقيمة", price: 479, was: 747, tag: "أفضل قيمة" }
+    { id: "b1", boxes: 1, title: "علبة واحدة", program: "برنامج شهر",    price: 199, was: 249 },
+    { id: "b2", boxes: 2, title: "علبتان",     program: "برنامج شهرين",  price: 349, was: 498, tag: "الأكثر طلباً" },
+    { id: "b3", boxes: 3, title: "3 علب",      program: "برنامج 3 أشهر", price: 479, was: 747, tag: "أفضل قيمة" }
   ],
   defaultBundle: "b2"
 };
@@ -865,7 +919,7 @@ const INGREDIENTS = [
       <input type="radio" name="bundle" value="${b.id}" ${b.id === CONFIG.defaultBundle ? "checked" : ""}>
       <span class="card">
         <span class="radio" aria-hidden="true"></span>
-        <span><span class="b-title">${b.title}</span><br><span class="b-sub">${b.sub}</span><br><span class="b-sub">≈ ${per} ${CONFIG.currency} لليوم</span></span>
+        <span><span class="b-title">${b.title}</span><br><span class="b-sub">${b.boxes * 30} ظرفاً</span><br><span class="b-prog">${b.program}</span><br><span class="b-sub">≈ ${per} ${CONFIG.currency} لليوم</span></span>
         <span class="b-price">
           <span class="now">${money(b.price)}</span><br>
           ${b.was ? `<span class="was">${money(b.was)}</span> <span class="b-save">وفّر ${save}%</span>` : ""}
@@ -877,7 +931,7 @@ const INGREDIENTS = [
   const current = () => CONFIG.bundles.find(b => b.id === ($("input[name=bundle]:checked")||{}).value) || CONFIG.bundles[0];
   function updateSummary(){
     const b = current();
-    $("#sumLabel").textContent = `${b.title} (${b.boxes * 30} ظرفاً)`;
+    $("#sumLabel").textContent = `${b.title} · ${b.boxes * 30} ظرفاً · ${b.program}`;
     $("#sumTotal").textContent = money(b.price);
   }
   box.addEventListener("change", updateSummary);
@@ -919,7 +973,7 @@ const INGREDIENTS = [
       city: form.elements.city.value.trim(),
       district: form.elements.district.value.trim(),
       notes: form.elements.notes.value.trim(),
-      bundle: b.title, boxes: b.boxes, total: b.price, currency: CONFIG.currency,
+      bundle: b.title, program: b.program, boxes: b.boxes, total: b.price, currency: CONFIG.currency,
       at: new Date().toISOString()
     };
     const btn = $("#submitBtn"); btn.disabled = true; btn.textContent = "جارٍ الإرسال…";
@@ -931,7 +985,7 @@ const INGREDIENTS = [
 
     const msg = [
       "طلب جديد: CalmGastro",
-      `العرض: ${data.bundle} (${data.boxes * 30} ظرفاً)`,
+      `العرض: ${data.bundle} · ${data.boxes * 30} ظرفاً · ${data.program}`,
       `الإجمالي: ${money(data.total)} (دفع عند الاستلام)`,
       `الاسم: ${data.name}`,
       `الجوال: ${data.phone}`,
