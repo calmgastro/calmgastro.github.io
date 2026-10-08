@@ -152,13 +152,15 @@ async function getKnowledge(env) {
 }
 
 /* ------------------------------------------------------------------ مزوّدو النماذج */
+// اسم الـ Secret المعتمد GEMINI_API_KEY، ونقبل أيضاً GeminiAPIKey حتى لا يتعطل Gemini بسبب اختلاف الاسم
+const geminiKey = env => env.GEMINI_API_KEY || env.GeminiAPIKey || "";
 const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), ms))]);
 
 async function askGemini(env, system, messages) {
   const model = env.GEMINI_MODEL || DEFAULTS.GEMINI_MODEL;
   const r = await withTimeout(fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY },
+    headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKey(env) },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },
       contents: messages.map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.text }] })),
@@ -182,7 +184,7 @@ async function askWorkersAI(env, system, messages) {
 }
 
 const PROVIDERS = {
-  "gemini": { ready: env => !!env.GEMINI_API_KEY, ask: askGemini },
+  "gemini": { ready: env => !!geminiKey(env), ask: askGemini },
   "workers-ai": { ready: env => !!env.AI, ask: askWorkersAI }
 };
 
