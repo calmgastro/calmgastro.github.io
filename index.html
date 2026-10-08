@@ -382,6 +382,58 @@
   .wa-float.away{display:none}
   .mbar{display:none}
 
+  /* ---------- مساعد CalmGastro ---------- */
+  .ai-launcher{
+    position:fixed; inset-block-end:20px; inset-inline-start:20px; z-index:50;
+    display:inline-flex; align-items:center; gap:.5em; padding:.75em 1.2em; border:0; border-radius:999px;
+    background:var(--teal-deep); color:var(--lime); font-family:var(--f-display); font-weight:700; font-size:.95rem;
+    box-shadow:0 10px 24px -8px rgba(0,0,0,.45); cursor:pointer;
+  }
+  .ai-launcher:hover{background:var(--teal)}
+  .ai-launcher svg{width:1.3em; height:1.3em; flex:none}
+  .ai-launcher .dot{color:var(--orange); direction:ltr}
+  .ai-launcher.away, body.ai-open .ai-launcher{display:none}
+  .ai-panel{
+    position:fixed; z-index:60; inset-block-end:20px; inset-inline-start:20px;
+    width:min(390px, calc(100vw - 32px)); height:min(620px, calc(100vh - 100px));
+    display:flex; flex-direction:column; overflow:hidden; background:var(--paper);
+    border-radius:var(--r-lg); box-shadow:0 30px 70px -20px rgba(15,48,46,.55), 0 0 0 1px var(--line);
+  }
+  .ai-head{display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; background:var(--teal-deep); color:var(--lime)}
+  .ai-id{display:flex; align-items:center; gap:10px; min-width:0}
+  .ai-mark{flex:none; width:40px; height:40px; border-radius:12px; display:grid; place-items:center; background:rgba(255,255,255,.08); color:var(--orange); font-family:var(--f-display); font-size:1.3rem; direction:ltr}
+  .ai-head h2{font-size:1.05rem; color:var(--white)}
+  .ai-head p{font-size:.8rem; line-height:1.5; color:#BFD8C9; margin-top:2px}
+  .ai-close{flex:none; width:38px; height:38px; border:0; border-radius:10px; background:rgba(255,255,255,.1); color:var(--white); display:grid; place-items:center; cursor:pointer}
+  .ai-close:hover{background:rgba(255,255,255,.2)}
+  .ai-close svg{width:20px; height:20px}
+  .ai-log{flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; padding:16px; display:flex; flex-direction:column; gap:10px}
+  .ai-msg{max-width:88%; padding:.65rem .9rem; border-radius:16px; font-size:.95rem; line-height:1.75; white-space:pre-line; overflow-wrap:anywhere}
+  .ai-msg.bot{align-self:flex-start; background:var(--white); border:1px solid var(--line); border-start-start-radius:4px; color:var(--ink)}
+  .ai-msg.user{align-self:flex-end; background:var(--teal); color:var(--white); border-start-end-radius:4px}
+  .ai-msg strong{color:var(--teal-deep)}
+  .ai-chips{display:flex; flex-wrap:wrap; gap:8px}
+  .ai-chip{border:1.5px solid var(--teal); background:var(--white); color:var(--teal-deep); border-radius:999px; padding:.4em .85em; font:inherit; font-size:.85rem; font-weight:600; cursor:pointer}
+  .ai-chip:hover{background:var(--lime)}
+  .ai-actions{align-self:flex-start; display:flex; flex-wrap:wrap; gap:8px; max-width:100%}
+  .ai-act{display:inline-flex; align-items:center; gap:.45em; border:0; border-radius:999px; padding:.55em 1.05em; font-family:var(--f-display); font-weight:700; font-size:.88rem; text-decoration:none; cursor:pointer}
+  .ai-act svg{width:1.1em; height:1.1em; flex:none}
+  .ai-act.order{background:var(--orange); color:var(--ink)}
+  .ai-act.wholesale{background:var(--teal-deep); color:var(--white)}
+  .ai-act.wa{background:#25D366; color:#fff}
+  .ai-typing{align-self:flex-start; display:flex; gap:5px; padding:.85rem 1rem; background:var(--white); border:1px solid var(--line); border-radius:16px; border-start-start-radius:4px}
+  .ai-typing span{width:7px; height:7px; border-radius:50%; background:var(--teal); animation:aiDot 1s infinite ease-in-out}
+  .ai-typing span:nth-child(2){animation-delay:.15s}
+  .ai-typing span:nth-child(3){animation-delay:.3s}
+  @keyframes aiDot{0%,80%,100%{opacity:.25; transform:none} 40%{opacity:1; transform:translateY(-3px)}}
+  .ai-form{display:flex; gap:8px; padding:10px 12px 6px; border-top:1px solid var(--line); background:var(--white)}
+  .ai-form input{flex:1; min-width:0; font:inherit; font-size:16px; padding:.7rem .9rem; border-radius:12px; border:1.5px solid var(--line); background:var(--paper); color:var(--ink)}
+  .ai-form input:focus{outline:none; border-color:var(--teal); box-shadow:0 0 0 3px rgba(19,133,123,.15)}
+  .ai-send{flex:none; width:48px; border:0; border-radius:12px; background:var(--orange); color:var(--ink); display:grid; place-items:center; cursor:pointer}
+  .ai-send:disabled{opacity:.5; cursor:not-allowed}
+  .ai-send svg{width:20px; height:20px}
+  .ai-note{font-size:.72rem; color:var(--muted); text-align:center; padding:0 12px 10px; background:var(--white)}
+
   /* ---------- reveal ---------- */
   .rv{opacity:0; transform:translateY(16px); transition:opacity .6s ease, transform .6s ease}
   .rv.in{opacity:1; transform:none}
@@ -420,6 +472,9 @@
     .mbar .btn{padding:.7em 1.4em; box-shadow:0 4px 0 #C9740B}
     .mbar.away{display:none}
     .wa-float{inset-block-end:86px; width:50px; height:50px}
+    .ai-launcher{inset-block-end:86px; inset-inline-start:16px; padding:.7em 1em; font-size:.9rem}
+    .ai-panel{inset:0 0 auto 0; width:100%; height:100dvh; border-radius:0}
+    body.ai-open{overflow:hidden}
     .compare th, .compare td{padding:.8rem; font-size:.88rem}
   }
   @media (prefers-reduced-motion:reduce){
@@ -450,7 +505,7 @@
 <main id="top">
 
 <!-- ================= HERO ================= -->
-<section class="hero">
+<section class="hero" data-kb="overview">
   <div class="wrap">
     <div>
       <span class="eyebrow">Slim from inside</span>
@@ -484,7 +539,7 @@
 </section>
 
 <!-- ================= PROBLEMS ================= -->
-<section class="block tint" id="why">
+<section class="block tint" id="why" data-kb="problems">
   <div class="wrap">
     <div class="sec-head rv">
       <span class="eyebrow">لمن صُمم CalmGastro؟</span>
@@ -521,7 +576,7 @@
 </section>
 
 <!-- ================= SIGNATURE: INSIDE THE SACHET ================= -->
-<section class="block" id="inside">
+<section class="block" id="inside" data-kb="ingredients">
   <div class="wrap">
     <div class="sec-head rv">
       <span class="eyebrow">داخل كل ظرف</span>
@@ -549,7 +604,7 @@
 </section>
 
 <!-- ================= HOW TO USE ================= -->
-<section class="block dark" id="how">
+<section class="block dark" id="how" data-kb="usage">
   <div class="wrap">
     <div class="sec-head rv">
       <span class="eyebrow">طريقة الاستخدام</span>
@@ -575,7 +630,7 @@
 </section>
 
 <!-- ================= RESULTS TIMELINE ================= -->
-<section class="block" id="results">
+<section class="block" id="results" data-kb="results">
   <div class="wrap">
     <div class="sec-head rv">
       <span class="eyebrow">ماذا تتوقع</span>
@@ -604,7 +659,7 @@
 </section>
 
 <!-- ================= COMPARISON ================= -->
-<section class="block tint" id="compare">
+<section class="block tint" id="compare" data-kb="comparison">
   <div class="wrap">
     <div class="sec-head rv">
       <span class="eyebrow">المكمل الغذائي مقابل منتجات التنحيف الأخرى</span>
@@ -661,7 +716,7 @@
 </section>
 
 <!-- ================= ORDER ================= -->
-<section class="block tint" id="order">
+<section class="block tint" id="order" data-kb="order">
   <div class="wrap">
     <div class="sec-head rv">
       <span class="eyebrow">اطلب الآن</span>
@@ -750,7 +805,7 @@
 </section>
 
 <!-- ================= SAFETY ================= -->
-<section class="block" id="safety">
+<section class="block" id="safety" data-kb="safety">
   <div class="wrap">
     <div class="sec-head rv">
       <span class="eyebrow">قبل الاستخدام</span>
@@ -776,13 +831,13 @@
     <h3 class="sub-h rv">صراحةً: لمن لا يناسب CalmGastro</h3>
     <div class="safety">
       <ul class="warn-list">
-        <li><span class="wi">!</span><div><b>الحامل والمرضع ومن هم دون 18 سنة:</b> لا يُستخدم.</div></li>
-        <li><span class="wi">!</span><div><b>من يتناول أدوية الاكتئاب أو القلق:</b> يحتوي على <bdi dir="ltr">5-HTP</bdi>، فاستشر طبيبك أولاً.</div></li>
-        <li><span class="wi">!</span><div><b>مرضى السكري:</b> يحتوي المنتج على الكروميوم، وهو عنصر قد يؤثر في مستويات سكر الدم. إذا كنت تستخدم أدوية لخفض السكر أو تنظيمه، يفضَّل استشارة طبيبك ومراقبة السكر، ولا توقف دواءك أو تغيّره من نفسك.</div></li>
-        <li><span class="wi">!</span><div><b>الحساسية من الكافيين:</b> فيه كمية بسيطة من مستخلص الشاي الأخضر والقهوة، فتجنّبه في المساء.</div></li>
-        <li><span class="wi">!</span><div><b>صعوبة البلع أو قلة شرب الماء:</b> الألياف قد تسبب خطر الاختناق، فاشربه مذاباً بالكامل مع كمية وافرة من الماء.</div></li>
-        <li><span class="wi">!</span><div><b>إذا كنت تتناول أدوية أخرى:</b> خذها قبل الظرف بساعة أو بعده بساعتين، لأن الألياف قد تؤثر على امتصاصها.</div></li>
-        <li><span class="wi">!</span><div><b>لا تتجاوز الجرعة الموصى بها.</b> المنتج مكمل غذائي، وليس مخصصاً لتشخيص أي مرض أو علاجه أو الوقاية منه.</div></li>
+        <li><span class="wi" aria-hidden="true">!</span><div><b>الحامل والمرضع ومن هم دون 18 سنة:</b> لا يُستخدم.</div></li>
+        <li><span class="wi" aria-hidden="true">!</span><div><b>من يتناول أدوية الاكتئاب أو القلق:</b> يحتوي على <bdi dir="ltr">5-HTP</bdi>، فاستشر طبيبك أولاً.</div></li>
+        <li><span class="wi" aria-hidden="true">!</span><div><b>مرضى السكري:</b> يحتوي المنتج على الكروميوم، وهو عنصر قد يؤثر في مستويات سكر الدم. إذا كنت تستخدم أدوية لخفض السكر أو تنظيمه، يفضَّل استشارة طبيبك ومراقبة السكر، ولا توقف دواءك أو تغيّره من نفسك.</div></li>
+        <li><span class="wi" aria-hidden="true">!</span><div><b>الحساسية من الكافيين:</b> فيه كمية بسيطة من مستخلص الشاي الأخضر والقهوة، فتجنّبه في المساء.</div></li>
+        <li><span class="wi" aria-hidden="true">!</span><div><b>صعوبة البلع أو قلة شرب الماء:</b> الألياف قد تسبب خطر الاختناق، فاشربه مذاباً بالكامل مع كمية وافرة من الماء.</div></li>
+        <li><span class="wi" aria-hidden="true">!</span><div><b>إذا كنت تتناول أدوية أخرى:</b> خذها قبل الظرف بساعة أو بعده بساعتين، لأن الألياف قد تؤثر على امتصاصها.</div></li>
+        <li><span class="wi" aria-hidden="true">!</span><div><b>لا تتجاوز الجرعة الموصى بها.</b> المنتج مكمل غذائي، وليس مخصصاً لتشخيص أي مرض أو علاجه أو الوقاية منه.</div></li>
       </ul>
       <figure class="label-fig rv">
         <a href="assets/label-back.jpg" target="_blank" rel="noopener"><img src="assets/label-back.jpg" alt="صورة الملصق الخلفي لعلبة CalmGastro يظهر فيها جدول المكونات والجرعات والتحذيرات ورقم الموافقة 023487" loading="lazy" width="1224" height="1024"></a>
@@ -793,7 +848,7 @@
 </section>
 
 <!-- ================= FAQ ================= -->
-<section class="block tint" id="faq">
+<section class="block tint" id="faq" data-kb="faq">
   <div class="wrap">
     <div class="sec-head rv">
       <span class="eyebrow">الأسئلة الشائعة</span>
@@ -825,7 +880,7 @@
 
 </main>
 
-<footer>
+<footer data-kb="legal">
   <div class="wrap">
     <span class="logo" aria-hidden="true"><span class="br-o">)</span><span class="br-t">(</span><span><b>Calm</b><span class="g">Gastro</span></span></span>
     <p>CalmGastro مكمل غذائي يحتوي على الغلوكومانان للمساعدة في إدارة الوزن بشكل صحي. رقم موافقة المكمل الغذائي: <span class="num">023487-10.04.2025</span>.</p>
@@ -843,13 +898,78 @@
   <a href="#order" class="btn btn-primary">اطلب الآن</a>
 </div>
 
+<!-- ================= مساعد CalmGastro ================= -->
+<button type="button" class="ai-launcher" id="aiLauncher" aria-controls="aiPanel" aria-expanded="false" hidden>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12Z"/><path d="M8.5 11h.01M12 11h.01M15.5 11h.01" stroke-linecap="round" stroke-width="2.6"/></svg>
+  <span>اسأل المساعد</span>
+</button>
+<section class="ai-panel" id="aiPanel" role="dialog" aria-labelledby="aiTitle" tabindex="-1" hidden>
+  <div class="ai-head">
+    <div class="ai-id">
+      <span class="ai-mark" aria-hidden="true">)(</span>
+      <div>
+        <h2 id="aiTitle">مساعد CalmGastro</h2>
+        <p>اسألني عن المنتج، المكونات، طريقة الاستخدام، العروض أو الطلب.</p>
+      </div>
+    </div>
+    <button type="button" class="ai-close" id="aiClose" aria-label="إغلاق المساعد">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+  </div>
+  <div class="ai-log" id="aiLog" role="log" aria-live="polite"></div>
+  <form class="ai-form" id="aiForm" autocomplete="off">
+    <label for="aiInput" class="sr-only">اكتب سؤالك</label>
+    <input id="aiInput" maxlength="300" placeholder="اكتب سؤالك هنا…" enterkeyhint="send">
+    <button type="submit" class="ai-send" id="aiSend" aria-label="إرسال">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>
+    </button>
+  </form>
+  <p class="ai-note">لا تكتب بياناتك الشخصية هنا. الإجابات من معلومات المنتج في الموقع.</p>
+</section>
+
+<!-- ============================================================
+     بيانات المنتج: المصدر الوحيد للأسعار والعروض والمكونات ورقم الواتساب والدفع والتوصيل.
+     تقرأها الصفحة، ويقرأها مساعد الذكاء الاصطناعي من الموقع المنشور. عدّل القيم هنا فقط.
+     الصيغة JSON: النصوص بين علامتي " ولا توضع تعليقات داخل الكتلة.
+     ============================================================ -->
+<script type="application/json" id="product-data">
+{
+  "store": {
+    "whatsapp": "966553845572",
+    "currency": "ر.س",
+    "payment": "الدفع عند الاستلام",
+    "shippingNote": "شحن مجاني لجميع مدن المملكة",
+    "deliveryShort": "2 – 5 أيام",
+    "deliveryLong": "من 2 إلى 5 أيام عمل لجميع مدن المملكة، ونتواصل معك قبل التوصيل لتأكيد الموعد.",
+    "defaultBundle": "b2",
+    "bundles": [
+      {"id": "b1", "boxes": 1, "title": "علبة واحدة", "program": "برنامج شهر", "price": 199, "was": 249},
+      {"id": "b2", "boxes": 2, "title": "علبتان", "program": "برنامج شهرين", "price": 349, "was": 498, "tag": "الأكثر طلباً"},
+      {"id": "b3", "boxes": 3, "title": "3 علب", "program": "برنامج 3 أشهر", "price": 479, "was": 747, "tag": "أفضل قيمة"}
+    ]
+  },
+  "ingredients": [
+    {"ar": "ألياف الكونجاك", "en": "Konjac extract · Glucomannan 1800 mg", "dose": "2000 mg", "w": 2000, "color": "#0F5C57", "efsa": true, "role": "تمتص الماء وتتمدد في المعدة فتعطيك إحساساً بالامتلاء قبل الأكل. يساهم الغلوكومانان في الحفاظ على مستويات الكوليسترول الطبيعية في الدم."},
+    {"ar": "إنولين", "en": "Inulin", "dose": "1000 mg", "w": 1000, "color": "#13857B", "role": "ألياف بريبيوتيك تغذي البكتيريا النافعة في القولون، فتدعم انتظام الهضم وتقلل الغازات."},
+    {"ar": "مستخلص الشاي الأخضر", "en": "Green tea · Polyphenols 96 mg", "dose": "120 mg", "w": 120, "color": "#7FB77E", "role": "غني بالبوليفينولات الداعمة لعملية التمثيل الغذائي والطاقة."},
+    {"ar": "مستخلص القهوة", "en": "Coffee extract", "dose": "120 mg", "w": 120, "color": "#8A5A2B", "role": "يعطي دفعة طاقة خفيفة تساعدك على النشاط خلال اليوم."},
+    {"ar": "مستخلص الغارسينيا", "en": "Garcinia · HCA 60 mg", "dose": "120 mg", "w": 120, "color": "#F2941B", "role": "يحتوي على حمض الهيدروكسي ستريك (HCA) الذي يُستخدم تقليدياً لدعم التحكم في الشهية."},
+    {"ar": "ل-كارنيتين", "en": "L-Carnitine", "dose": "100 mg", "w": 100, "color": "#F7B955", "role": "يشارك في نقل الدهون إلى داخل الخلايا لتستخدمها مصدراً للطاقة."},
+    {"ar": "بروميلين", "en": "Bromelain", "dose": "50 mg", "w": 50, "color": "#E9D45C", "role": "إنزيم طبيعي من الأناناس يساعد على هضم البروتين ويخفف ثقل المعدة."},
+    {"ar": "مستخلص الزنجبيل", "en": "Ginger · Gingerol 2.5 mg", "dose": "50 mg", "w": 50, "color": "#D9822B", "role": "مريح للمعدة ويساعد على تخفيف الانتفاخ والغازات."},
+    {"ar": "5-HTP", "ltr": true, "en": "5-Hydroxytryptophan", "dose": "25 mg", "w": 25, "color": "#B9A6D9", "role": "يدخل في تكوين السيروتونين المرتبط بالمزاج والإحساس بالشبع، ويساعد على تقليل الأكل العاطفي."},
+    {"ar": "كروميوم", "en": "Chromium", "dose": "50 µg", "w": 12, "color": "#5E8FA8", "efsa": true, "role": "يساهم في الحفاظ على مستويات الجلوكوز الطبيعية في الدم، وفي التمثيل الغذائي الطبيعي للمغذيات الكبرى."},
+    {"ar": "فيتامين B12", "en": "Vitamin B12", "dose": "2.5 µg", "w": 10, "color": "#D9546A", "efsa": true, "role": "يساهم في التمثيل الغذائي الطبيعي لإنتاج الطاقة، ويقلل الإحساس بالتعب."}
+  ]
+}
+</script>
+
 <script>
 /* ============================================================
-   الإعدادات: عدّل هذه القيم فقط قبل النشر
+   الإعدادات التقنية (بيانات المنتج نفسها في product-data أعلاه)
    ============================================================ */
-const CONFIG = {
-  whatsapp: "966553845572",          // رقم استقبال الطلبات (0553845572) بالصيغة الدولية بدون + أو أصفار
-  currency: "ر.س",
+const PRODUCT = JSON.parse(document.getElementById("product-data").textContent);
+const CONFIG = Object.assign({}, PRODUCT.store, {
   orderEndpoint: "",                 // اختياري: رابط Google Apps Script أو أي API لحفظ الطلبات (POST JSON)
   // تحويل الإحداثيات إلى مدينة وحي. لا يُرسل شيء إلا بعد أن يضغط العميل «تحديد موقعي» ويوافق.
   //  "nominatim": خدمة OpenStreetMap المجانية، بلا مفتاح (مناسبة لعدد طلبات قليل إلى متوسط)
@@ -857,42 +977,13 @@ const CONFIG = {
   //               ضع أي مفتاح سري داخل تلك الخدمة، وليس هنا
   //  "none":      بدون تحويل؛ يُرسل رابط الموقع فقط ويكتب العميل المدينة والحي بنفسه
   reverseGeocode: { provider: "nominatim", endpoint: "", timeoutMs: 8000 },
-  shippingNote: "شحن مجاني لجميع مدن المملكة",
-  deliveryShort: "2 – 5 أيام",
-  deliveryLong: "من 2 إلى 5 أيام عمل لجميع مدن المملكة، ونتواصل معك قبل التوصيل لتأكيد الموعد.",
-  bundles: [
-    { id: "b1", boxes: 1, title: "علبة واحدة", program: "برنامج شهر",    price: 199, was: 249 },
-    { id: "b2", boxes: 2, title: "علبتان",     program: "برنامج شهرين",  price: 349, was: 498, tag: "الأكثر طلباً" },
-    { id: "b3", boxes: 3, title: "3 علب",      program: "برنامج 3 أشهر", price: 479, was: 747, tag: "أفضل قيمة" }
-  ],
-  defaultBundle: "b2"
-};
+  // مساعد CalmGastro: رابط Cloudflare Worker الذي ينتهي بـ /chat (لا يوضع هنا أي مفتاح API)
+  // إذا كان فارغاً يختفي زر المساعد (للمعاينة فقط أضف ?assistant إلى رابط الموقع)
+  assistant: { endpoint: "" }
+});
 
-/* المكونات حسب الملصق، لكل ظرف واحد */
-const INGREDIENTS = [
-  { ar:"ألياف الكونجاك", en:"Konjac extract · Glucomannan 1800 mg", dose:"2000 mg", w:2000, color:"#0F5C57", efsa:true,
-    role:"تمتص الماء وتتمدد في المعدة فتعطيك إحساساً بالامتلاء قبل الأكل. يساهم الغلوكومانان في الحفاظ على مستويات الكوليسترول الطبيعية في الدم." },
-  { ar:"إنولين", en:"Inulin", dose:"1000 mg", w:1000, color:"#13857B",
-    role:"ألياف بريبيوتيك تغذي البكتيريا النافعة في القولون، فتدعم انتظام الهضم وتقلل الغازات." },
-  { ar:"مستخلص الشاي الأخضر", en:"Green tea · Polyphenols 96 mg", dose:"120 mg", w:120, color:"#7FB77E",
-    role:"غني بالبوليفينولات الداعمة لعملية التمثيل الغذائي والطاقة." },
-  { ar:"مستخلص القهوة", en:"Coffee extract", dose:"120 mg", w:120, color:"#8A5A2B",
-    role:"يعطي دفعة طاقة خفيفة تساعدك على النشاط خلال اليوم." },
-  { ar:"مستخلص الغارسينيا", en:"Garcinia · HCA 60 mg", dose:"120 mg", w:120, color:"#F2941B",
-    role:"يحتوي على حمض الهيدروكسي ستريك (HCA) الذي يُستخدم تقليدياً لدعم التحكم في الشهية." },
-  { ar:"ل-كارنيتين", en:"L-Carnitine", dose:"100 mg", w:100, color:"#F7B955",
-    role:"يشارك في نقل الدهون إلى داخل الخلايا لتستخدمها مصدراً للطاقة." },
-  { ar:"بروميلين", en:"Bromelain", dose:"50 mg", w:50, color:"#E9D45C",
-    role:"إنزيم طبيعي من الأناناس يساعد على هضم البروتين ويخفف ثقل المعدة." },
-  { ar:"مستخلص الزنجبيل", en:"Ginger · Gingerol 2.5 mg", dose:"50 mg", w:50, color:"#D9822B",
-    role:"مريح للمعدة ويساعد على تخفيف الانتفاخ والغازات." },
-  { ar:'<bdi dir="ltr">5-HTP</bdi>', en:"5-Hydroxytryptophan", dose:"25 mg", w:25, color:"#B9A6D9",
-    role:"يدخل في تكوين السيروتونين المرتبط بالمزاج والإحساس بالشبع، ويساعد على تقليل الأكل العاطفي." },
-  { ar:"كروميوم", en:"Chromium", dose:"50 µg", w:12, color:"#5E8FA8", efsa:true,
-    role:"يساهم في الحفاظ على مستويات الجلوكوز الطبيعية في الدم، وفي التمثيل الغذائي الطبيعي للمغذيات الكبرى." },
-  { ar:"فيتامين B12", en:"Vitamin B12", dose:"2.5 µg", w:10, color:"#D9546A", efsa:true,
-    role:"يساهم في التمثيل الغذائي الطبيعي لإنتاج الطاقة، ويقلل الإحساس بالتعب." }
-];
+/* المكونات حسب الملصق، لكل ظرف واحد (من product-data) */
+const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, { ar: i.ltr ? `<bdi dir="ltr">${i.ar}</bdi>` : i.ar }));
 
 (function(){
   const $ = (s, el=document) => el.querySelector(s);
@@ -1005,7 +1096,7 @@ const INGREDIENTS = [
   $("#mbarPrice").textContent = money(Math.min(...CONFIG.bundles.map(b => b.price)));
   // شريط «اطلب الآن» وزر واتساب العائم يختفيان داخل قسم الطلب حتى لا يغطيا النموذج وزر التأكيد
   if ("IntersectionObserver" in window){
-    const floaters = [$(".mbar"), $(".wa-float")];
+    const floaters = [$(".mbar"), $(".wa-float"), $("#aiLauncher")];
     new IntersectionObserver(([en]) => floaters.forEach(el => el.classList.toggle("away", en.isIntersecting))).observe($("#order"));
   }
 
@@ -1262,6 +1353,214 @@ const INGREDIENTS = [
     form.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
     form.elements.name.focus({ preventScroll: true });
   });
+
+  /* ============================================================
+     مساعد CalmGastro
+     - الأسئلة السريعة تُجاب هنا مباشرة من بيانات الصفحة (بدون ذكاء اصطناعي وبدون تكلفة)
+     - الأسئلة المكتوبة تذهب إلى CONFIG.assistant.endpoint (Cloudflare Worker) فقط
+     - لا يُرسل للمساعد أي شيء من نموذج الطلب (الاسم، الجوال، الموقع، العنوان)
+     ============================================================ */
+  const AI = CONFIG.assistant || {};
+  const aiPreview = /[?&]assistant(=|&|$)/.test(location.search);
+  if (AI.endpoint || aiPreview){
+    const launcher = $("#aiLauncher"), panel = $("#aiPanel"), log = $("#aiLog");
+    const aiForm = $("#aiForm"), aiInput = $("#aiInput"), aiSend = $("#aiSend");
+    const UNAVAILABLE = "المساعد غير متاح حالياً، يمكنك التواصل معنا مباشرة عبر WhatsApp.";
+    const isMobile = () => matchMedia("(max-width: 640px)").matches;
+    const plain = html => html.replace(/<[^>]+>/g, "");
+    const lines = (sel, root = document) => $$(sel, root).map(el => el.textContent.replace(/\s+/g, " ").trim()).filter(Boolean);
+    let history = [], busy = false, started = false, lastQuestion = "";
+
+    /* ---------- إجابات الأسئلة السريعة (من نفس مصدر بيانات الصفحة) ---------- */
+    const bundleLine = b => {
+      const save = b.was ? ` بدل ${money(b.was)} (وفّر ${Math.round((1 - b.price / b.was) * 100)}%)` : "";
+      return `- ${b.title} (${b.boxes * 30} ظرفاً · ${b.program}): **${money(b.price)}**${save}`;
+    };
+    const QUICK = [
+      { q: "ما مكونات المنتج؟", answer: () => ({
+          text: ["كل ظرف يحتوي على:", ...INGREDIENTS.map(i => `- ${plain(i.ar)}: ${i.dose}`),
+                 "", "الجرعات مطابقة للملصق الخلفي للعلبة، ويحتوي المنتج على مُحلٍّ."].join("\n"),
+          actions: ["order"] }) },
+      { q: "كيف أستخدم المنتج؟", answer: () => {
+          const steps = $$("#how .step").map((st, i) => `${i + 1}. ${lines("h3", st)[0]}: ${lines("p", st)[0]}`);
+          const heavy = $("#safety .plan .accent");
+          return { text: [...steps, "", lines("#how .tip")[0] || "",
+                          heavy ? `\n${lines("h3", heavy)[0]}: ${lines(".dose span", heavy).join("، ثم ")}. ${lines("p.after", heavy)[0] || ""}` : ""]
+                          .filter(Boolean).join("\n"), actions: ["order"] };
+        } },
+      { q: "ما فوائد المنتج؟", answer: () => ({
+          text: [...$$("#why .problem").map(c => `- **${lines(".q", c)[0]}**: ${lines("p", c)[0]}`),
+                 "", lines("#results .disclaim")[0] || ""].filter(Boolean).join("\n"),
+          actions: ["order"] }) },
+      { q: "كم السعر؟", answer: () => ({
+          text: ["أسعار العروض الحالية:", ...CONFIG.bundles.map(bundleLine), "", `${CONFIG.shippingNote}، و${CONFIG.payment}.`].join("\n"),
+          actions: ["order"] }) },
+      { q: "ما الفرق بين العروض؟", answer: () => ({
+          text: [...CONFIG.bundles.map(b => `- **${b.title}** ${b.tag ? `(${b.tag})` : ""}: ${b.boxes * 30} ظرفاً تكفي ${b.program.replace("برنامج ", "")}، بسعر ${money(b.price)}، أي حوالي ${Math.round(b.price / (b.boxes * 30))} ${CONFIG.currency} لليوم.`),
+                 "", lines("#order .sec-head p")[0] || ""].filter(Boolean).join("\n"),
+          actions: ["order"] }) },
+      { q: "كيف أطلب؟", answer: () => ({
+          text: ["أكيد، يمكنك إكمال طلبك من قسم الطلب، وسأساعدك إذا كان لديك أي سؤال عن المنتج.",
+                 "1. اختر العرض المناسب.", "2. اكتب بيانات التوصيل.", "3. اضغط «أكّد الطلب» فيفتح واتساب برسالة طلبك جاهزة، ثم اضغط إرسال.",
+                 "", `${CONFIG.payment}، والتوصيل ${CONFIG.deliveryShort}.`].join("\n"),
+          actions: ["order"] }) },
+      { q: "هل يوجد بيع بالجملة؟", answer: () => ({
+          text: "لدينا خيار للاستفسار عن طلبات الجملة. يمكنك اختيار «لدي طلب بالجملة» في نموذج الطلب، واكتب الكمية التي تحتاجها، ونرد عليك بالأسعار عبر واتساب.",
+          actions: ["wholesale", "whatsapp"] }) }
+    ];
+
+    /* ---------- عرض الرسائل ---------- */
+    const scrollDown = () => { log.scrollTop = log.scrollHeight; };
+    function richText(el, text){
+      // نص آمن: لا نُدخل HTML قادماً من الخادم؛ فقط **عريض** وتحويل القوائم إلى نقاط
+      text.split("\n").forEach((line, i) => {
+        if (i) el.appendChild(document.createTextNode("\n"));
+        line = line.replace(/^\s*[-*•]\s+/, "• ");
+        line.split(/\*\*(.+?)\*\*/g).forEach((part, k) => {
+          if (!part) return;
+          if (k % 2){ const b = document.createElement("strong"); b.textContent = part; el.appendChild(b); }
+          else el.appendChild(document.createTextNode(part));
+        });
+      });
+    }
+    function addMsg(role, text){
+      const d = document.createElement("div");
+      d.className = "ai-msg " + role;
+      if (role === "bot") richText(d, text); else d.textContent = text;
+      log.appendChild(d); scrollDown();
+      return d;
+    }
+    const ICON_WA = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.04 2a9.9 9.9 0 0 0-8.5 15l-1.4 5.1 5.2-1.4A9.9 9.9 0 1 0 12.04 2Zm4.5 12c-.25-.12-1.46-.72-1.69-.8-.23-.08-.39-.12-.55.12-.16.25-.63.8-.78.96-.14.17-.29.19-.53.07a6.7 6.7 0 0 1-3.32-2.9c-.25-.43.25-.4.72-1.33.08-.16.04-.3-.02-.42-.06-.12-.55-1.33-.76-1.82-.2-.48-.4-.41-.55-.42h-.47a.9.9 0 0 0-.65.3 2.7 2.7 0 0 0-.85 2.02 4.7 4.7 0 0 0 1 2.5 10.8 10.8 0 0 0 4.13 3.65c1.54.66 2.14.72 2.91.6.47-.07 1.46-.6 1.66-1.17.2-.58.2-1.07.15-1.17-.06-.1-.22-.17-.46-.29Z"/></svg>';
+    function addActions(actions){
+      const wanted = [...new Set(actions || [])].filter(a => ["order", "wholesale", "whatsapp"].includes(a));
+      if (!wanted.length) return;
+      const row = document.createElement("div");
+      row.className = "ai-actions";
+      wanted.forEach(a => {
+        if (a === "whatsapp"){
+          const l = document.createElement("a");
+          l.className = "ai-act wa"; l.target = "_blank"; l.rel = "noopener";
+          l.href = waLink("السلام عليكم، عندي سؤال عن CalmGastro" + (lastQuestion ? `:\n${lastQuestion}` : ""));
+          l.innerHTML = ICON_WA + "<span>تواصل معنا عبر WhatsApp</span>";
+          row.appendChild(l);
+          return;
+        }
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "ai-act " + a;
+        b.textContent = a === "order" ? "اطلب الآن" : "استفسار عن الجملة";
+        b.addEventListener("click", () => goToOrder(a === "wholesale"));
+        row.appendChild(b);
+      });
+      log.appendChild(row); scrollDown();
+    }
+    function goToOrder(wholesale){
+      closePanel(false);
+      const wb = $("#f-wholesale");
+      if (wholesale && !wb.checked){ wb.checked = true; wb.dispatchEvent(new Event("change", { bubbles: true })); }
+      $("#order").scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+      const target = wholesale ? $("#f-wdetails") : $("#bundles input:checked") || $("#f-name");
+      setTimeout(() => target && target.focus({ preventScroll: true }), reduce ? 0 : 500);
+    }
+    function showTyping(){
+      const t = document.createElement("div");
+      t.className = "ai-typing"; t.setAttribute("aria-label", "المساعد يكتب");
+      t.innerHTML = "<span></span><span></span><span></span>";
+      log.appendChild(t); scrollDown();
+      return t;
+    }
+    function welcome(){
+      addMsg("bot", "أهلاً بك 👋 أنا مساعد CalmGastro. اختر سؤالاً سريعاً أو اكتب سؤالك.");
+      const chips = document.createElement("div");
+      chips.className = "ai-chips";
+      QUICK.forEach((item, i) => {
+        const c = document.createElement("button");
+        c.type = "button"; c.className = "ai-chip"; c.textContent = item.q;
+        c.addEventListener("click", () => ask(item.q, i));
+        chips.appendChild(c);
+      });
+      log.appendChild(chips);
+    }
+
+    /* ---------- السؤال والإجابة ---------- */
+    function remember(role, text){
+      history.push({ role, text: text.slice(0, 600) });
+      history = history.slice(-6);
+    }
+    async function ask(raw, quickIndex){
+      const q = String(raw || "").replace(/\s+/g, " ").trim().slice(0, 300);
+      if (!q || busy) return;
+      addMsg("user", q);
+      lastQuestion = q;
+
+      if (quickIndex != null){
+        const r = QUICK[quickIndex].answer();
+        addMsg("bot", r.text); addActions(r.actions);
+        remember("user", q); remember("assistant", r.text);
+        return;
+      }
+      if (!AI.endpoint){ addMsg("bot", UNAVAILABLE); addActions(["whatsapp"]); return; }
+
+      busy = true; aiSend.disabled = true;
+      const typing = showTyping();
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 25000);
+      let answer = "", actions = [];
+      try {
+        const r = await fetch(AI.endpoint, {
+          method: "POST", headers: { "Content-Type": "application/json" }, signal: ctrl.signal,
+          body: JSON.stringify({ message: q, history })
+        });
+        const j = r.ok ? await r.json() : null;
+        if (j && typeof j.answer === "string" && j.answer.trim()){ answer = j.answer.trim(); actions = Array.isArray(j.actions) ? j.actions : []; }
+      } catch (_) { /* انقطاع أو مهلة: نعرض البديل */ }
+      finally { clearTimeout(timer); typing.remove(); busy = false; aiSend.disabled = false; }
+
+      if (!answer){ addMsg("bot", UNAVAILABLE); addActions(["whatsapp"]); return; }
+      addMsg("bot", answer); addActions(actions);
+      remember("user", q); remember("assistant", answer);
+    }
+    aiForm.addEventListener("submit", e => {
+      e.preventDefault();
+      const q = aiInput.value;
+      if (!q.trim() || busy) return;
+      aiInput.value = "";
+      ask(q);
+    });
+
+    /* ---------- فتح وإغلاق، وتكيّف مع لوحة المفاتيح في الجوال ---------- */
+    function fitViewport(){
+      const vv = window.visualViewport;
+      if (panel.hidden || !isMobile() || !vv){ panel.style.height = ""; panel.style.top = ""; return; }
+      panel.style.height = vv.height + "px";
+      panel.style.top = vv.offsetTop + "px";
+      scrollDown();
+    }
+    if (window.visualViewport){
+      visualViewport.addEventListener("resize", fitViewport);
+      visualViewport.addEventListener("scroll", fitViewport);
+    }
+    function openPanel(){
+      panel.hidden = false;
+      document.body.classList.add("ai-open");
+      launcher.setAttribute("aria-expanded", "true");
+      if (!started){ started = true; welcome(); }
+      fitViewport();
+      // في الجوال لا نفتح لوحة المفاتيح تلقائياً حتى تظهر الأسئلة السريعة كاملة
+      (isMobile() ? panel : aiInput).focus({ preventScroll: true });
+    }
+    function closePanel(returnFocus = true){
+      panel.hidden = true;
+      document.body.classList.remove("ai-open");
+      launcher.setAttribute("aria-expanded", "false");
+      panel.style.height = ""; panel.style.top = "";
+      if (returnFocus && !launcher.classList.contains("away")) launcher.focus({ preventScroll: true });
+    }
+    launcher.hidden = false;
+    launcher.addEventListener("click", openPanel);
+    $("#aiClose").addEventListener("click", () => closePanel());
+    document.addEventListener("keydown", e => { if (e.key === "Escape" && !panel.hidden) closePanel(); });
+  }
 })();
 </script>
 </body>

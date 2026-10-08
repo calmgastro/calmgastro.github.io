@@ -1,0 +1,18 @@
+# إعدادات Cloudflare Worker لمساعد CalmGastro
+# النشر: npx wrangler deploy   ·   المفتاح السري: npx wrangler secret put GEMINI_API_KEY
+name = "calmgastro-assistant"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+
+# Workers AI: النموذج الاحتياطي المجاني (بدون مفتاح)
+[ai]
+binding = "AI"
+
+[vars]
+SITE_URL = "https://calmgastro.github.io/"
+ALLOWED_ORIGINS = "https://calmgastro.github.io"
+PROVIDERS = "gemini,workers-ai"
+GEMINI_MODEL = "gemini-3.1-flash-lite"
+WORKERS_AI_MODEL = "@cf/meta/llama-4-scout-17b-16e-instruct"
+
+# GEMINI_API_KEY لا يُكتب هنا أبداً. يضاف كـ Secret من لوحة Cloudflare أو بالأمر أعلاه.
