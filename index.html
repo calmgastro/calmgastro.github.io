@@ -1418,8 +1418,13 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, { ar: i.lt
         line = line.replace(/^\s*[-*•]\s+/, "• ");
         line.split(/\*\*(.+?)\*\*/g).forEach((part, k) => {
           if (!part) return;
-          if (k % 2){ const b = document.createElement("strong"); b.textContent = part; el.appendChild(b); }
-          else el.appendChild(document.createTextNode(part));
+          const box = k % 2 ? el.appendChild(document.createElement("strong")) : el;
+          // مصطلحات لاتينية مثل 5-HTP تبقى بترتيبها الصحيح داخل النص العربي
+          part.split(/([A-Za-z0-9]+(?:-[A-Za-z0-9]+)+)/).forEach((seg, n) => {
+            if (!seg) return;
+            if (n % 2){ const t = document.createElement("bdi"); t.dir = "ltr"; t.textContent = seg; box.appendChild(t); }
+            else box.appendChild(document.createTextNode(seg));
+          });
         });
       });
     }
