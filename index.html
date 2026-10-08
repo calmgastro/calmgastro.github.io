@@ -979,7 +979,7 @@ const CONFIG = Object.assign({}, PRODUCT.store, {
   reverseGeocode: { provider: "nominatim", endpoint: "", timeoutMs: 8000 },
   // مساعد CalmGastro: رابط Cloudflare Worker الذي ينتهي بـ /chat (لا يوضع هنا أي مفتاح API)
   // إذا كان فارغاً يختفي زر المساعد (للمعاينة فقط أضف ?assistant إلى رابط الموقع)
-  assistant: { endpoint: "" }
+  assistant: { endpoint: "https://calmgastro-assistant.calmgastro.workers.dev/chat" }
 });
 
 /* المكونات حسب الملصق، لكل ظرف واحد (من product-data) */

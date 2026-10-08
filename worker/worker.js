@@ -20,7 +20,7 @@ const DEFAULTS = {
   WORKERS_AI_MODEL: "@cf/meta/llama-4-scout-17b-16e-instruct",
   KB_TTL_SECONDS: 300
 };
-const LIMITS = { message: 300, historyTurns: 6, historyChars: 600, perIpPerMinute: 10, answerChars: 1500, timeoutMs: 15000 };
+const LIMITS = { message: 300, historyTurns: 6, historyChars: 600, perIpPerMinute: 10, answerChars: 1500, timeoutMs: 15000, geminiTimeoutMs: 10000 };
 
 const NOT_FOUND_ANSWER = "لا أملك معلومات مؤكدة عن هذا السؤال من معلومات المنتج المتاحة لدي. يمكنك التواصل معنا عبر واتساب وسنساعدك.";
 
@@ -164,7 +164,7 @@ async function askGemini(env, system, messages) {
       contents: messages.map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.text }] })),
       generationConfig: { temperature: 0.2, maxOutputTokens: 1024 }
     })
-  }), LIMITS.timeoutMs);
+  }), LIMITS.geminiTimeoutMs);
   if (!r.ok) throw new Error("gemini " + r.status);
   const j = await r.json();
   const parts = j?.candidates?.[0]?.content?.parts || [];
@@ -187,9 +187,27 @@ const PROVIDERS = {
 };
 
 /* ------------------------------------------------------------------ معالجة الإجابة */
-function finalize(raw, kb) {
+// شبكة أمان للأزرار: النموذج قد ينسى العلامة، فنكتشف النية من السؤال نفسه أيضاً
+const toLatinDigits = s => s.replace(/[٠-٩]/g, d => String(d.charCodeAt(0) - 0x0660));
+function detectIntents(message) {
+  const m = toLatinDigits(message || "");
+  const out = new Set();
+  const bigQty = [...m.matchAll(/(\d+)\s*(علب|علبه|علبة|كرتون|كراتين|حب[ةه]|حبات)/g)].some(x => Number(x[1]) >= 10);
+  if (bigQty || /جمل[ةه]|بالجمل|كمي(ة|ه|ات)\s*كبير|موزع|توزيع|لمحل|محلات|صيدلي|متجري|للمتجر|سوبر\s?ماركت|تاجر|wholesale|bulk/i.test(m)) out.add("wholesale");
+  if (/(^|\s)(أ|ا)?(طلب|اطلب|أطلب)(ه|ها)?(\s|$|[؟?!.])|ابي اطلب|ابغى اطلب|أبغى أطلب|أريد الطلب|اريد الطلب|(أ|ا)شتري|شراء|كيف (أ|ا)طلب|order|buy/i.test(m)) out.add("order");
+  return out;
+}
+
+function finalize(raw, kb, message = "") {
   const actions = new Set();
-  let text = raw.replace(/\[\[\s*(ORDER|WHOLESALE|WHATSAPP)\s*\]\]/gi, (_, a) => { actions.add(a.toLowerCase() === "whatsapp" ? "whatsapp" : a.toLowerCase()); return ""; });
+  // أي علامة [[...]] تُحذف من النص، حتى لو أخطأ النموذج في كتابتها (مثل [[WHOLSALE]])
+  let text = raw.replace(/\[\[\s*([A-Za-z_ ]{2,20})\s*\]\]/g, (_, tag) => {
+    const t = tag.toUpperCase().replace(/[^A-Z]/g, "");
+    if (t.startsWith("WHOL")) actions.add("wholesale");
+    else if (t.startsWith("ORD")) actions.add("order");
+    else if (t.startsWith("WHA") || t.startsWith("WA")) actions.add("whatsapp");
+    return "";
+  });
   text = text
     .replace(/https?:\/\/\S+/g, "")          // الأزرار تتولى الروابط
     .replace(/^#+\s*/gm, "")                  // بدون عناوين
@@ -204,7 +222,10 @@ function finalize(raw, kb) {
   }
   if (text.length > LIMITS.answerChars) text = text.slice(0, LIMITS.answerChars).replace(/\s+\S*$/, "") + "…";
   if (text.includes(NOT_FOUND_ANSWER.slice(0, 30))) actions.add("whatsapp");
-  return { answer: text, actions: [...actions] };
+  for (const a of detectIntents(message)) actions.add(a);
+  if (text.includes("لدي طلب بالجملة")) actions.add("wholesale");
+  // ترتيب ثابت للأزرار
+  return { answer: text, actions: ["order", "wholesale", "whatsapp"].filter(a => actions.has(a)) };
 }
 
 /* ------------------------------------------------------------------ حماية بسيطة من الإساءة */
@@ -277,7 +298,7 @@ export default {
         const raw = await PROVIDERS[name].ask(env, system, messages);
         if (!raw) throw new Error("empty answer");
         console.log(`answered by ${name} in ${Date.now() - t0}ms`); // لا نسجل نص السؤال
-        return json({ ...finalize(raw, kb), provider: name }, 200, cors);
+        return json({ ...finalize(raw, kb, input.message), provider: name }, 200, cors);
       } catch (e) {
         console.log(`${name} failed: ${e.message}`);
       }
