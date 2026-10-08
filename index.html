@@ -943,9 +943,9 @@
     "deliveryLong": "من 2 إلى 5 أيام عمل لجميع مدن المملكة، ونتواصل معك قبل التوصيل لتأكيد الموعد.",
     "defaultBundle": "b2",
     "bundles": [
-      {"id": "b1", "boxes": 1, "title": "علبة واحدة", "program": "برنامج شهر", "price": 199, "was": 249},
-      {"id": "b2", "boxes": 2, "title": "علبتان", "program": "برنامج شهرين", "price": 349, "was": 498, "tag": "الأكثر طلباً"},
-      {"id": "b3", "boxes": 3, "title": "3 علب", "program": "برنامج 3 أشهر", "price": 479, "was": 747, "tag": "أفضل قيمة"}
+      {"id": "b1", "boxes": 1, "title": "علبة واحدة", "program": "برنامج شهر", "price": 250},
+      {"id": "b2", "boxes": 2, "title": "علبتان", "program": "برنامج شهرين", "price": 450, "was": 500, "tag": "الأكثر طلباً"},
+      {"id": "b3", "boxes": 3, "title": "3 علب", "program": "برنامج 3 أشهر", "price": 600, "was": 750, "tag": "أفضل قيمة"}
     ]
   },
   "ingredients": [
@@ -1064,7 +1064,7 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, { ar: i.lt
   const box = $("#bundles");
   CONFIG.bundles.forEach(b => {
     const save = b.was ? Math.round((1 - b.price / b.was) * 100) : 0;
-    const per = Math.round(b.price / (b.boxes * 30));
+    const per = Math.round(b.price / (b.boxes * 30) * 10) / 10;  // 7.5 لا تُقرّب إلى 8 حتى يظهر فرق العروض
     const lab = document.createElement("label");
     lab.className = "bundle";
     lab.innerHTML = `
@@ -1396,7 +1396,7 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, { ar: i.lt
           text: ["أسعار العروض الحالية:", ...CONFIG.bundles.map(bundleLine), "", `${CONFIG.shippingNote}، و${CONFIG.payment}.`].join("\n"),
           actions: ["order"] }) },
       { q: "ما الفرق بين العروض؟", answer: () => ({
-          text: [...CONFIG.bundles.map(b => `- **${b.title}** ${b.tag ? `(${b.tag})` : ""}: ${b.boxes * 30} ظرفاً تكفي ${b.program.replace("برنامج ", "")}، بسعر ${money(b.price)}، أي حوالي ${Math.round(b.price / (b.boxes * 30))} ${CONFIG.currency} لليوم.`),
+          text: [...CONFIG.bundles.map(b => `- **${b.title}** ${b.tag ? `(${b.tag})` : ""}: ${b.boxes * 30} ظرفاً تكفي ${b.program.replace("برنامج ", "")}، بسعر ${money(b.price)}، أي حوالي ${Math.round(b.price / (b.boxes * 30) * 10) / 10} ${CONFIG.currency} لليوم.`),
                  "", lines("#order .sec-head p")[0] || ""].filter(Boolean).join("\n"),
           actions: ["order"] }) },
       { q: "كيف أطلب؟", answer: () => ({

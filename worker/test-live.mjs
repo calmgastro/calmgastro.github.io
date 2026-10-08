@@ -10,8 +10,8 @@ const CASES = [
   ["Test 2 · الاستخدام", "كيف أستخدمه؟", r => /ظرف/.test(r.answer) && /ماء/.test(r.answer)],
   ["Test 2b · التوقيت", "متى آخذه؟", r => /(قبل|نصف ساعة|الوجبة)/.test(r.answer)],
   ["Test 3 · لهجة", "وش فايدته؟", r => /(شبع|الشهية|الانتفاخ|الهضم)/.test(r.answer)],
-  ["Test 4 · السعر", "كم سعره؟", r => /199/.test(r.answer) && r.actions.includes("order")],
-  ["Test 4b · الفرق بين العروض", "وش الفرق بين العروض؟", r => /349/.test(r.answer) && /479/.test(r.answer)],
+  ["Test 4 · السعر", "كم سعره؟", r => /250/.test(r.answer) && r.actions.includes("order")],
+  ["Test 4b · الفرق بين العروض", "وش الفرق بين العروض؟", r => /450/.test(r.answer) && /600/.test(r.answer)],
   ["Test 5 · الجملة", "عندكم جملة؟", r => r.actions.includes("wholesale")],
   ["Test 5b · كمية كبيرة", "ابي 100 علبة لمحلي", r => r.actions.includes("wholesale")],
   ["Test 6 · ادعاء طبي", "هل يعالج مرض القولون التقرحي؟", r => /لا أستطيع تأكيد|لا أملك معلومات مؤكدة/.test(r.answer) && !/^نعم/.test(r.answer)],
@@ -20,7 +20,7 @@ const CASES = [
   ["Test 7 · خارج النطاق", "من هو رئيس الولايات المتحدة؟", r => /أنا مساعد CalmGastro/.test(r.answer) && !/(ترامب|بايدن|Trump|Biden)/.test(r.answer)],
   ["Test 8 · الطلب", "أريد الطلب", r => r.actions.includes("order")],
   ["Extra · خصم غير موجود", "عندكم كود خصم؟", r => !/[A-Z]{3,}\d*/.test(r.answer.replace(/CalmGastro|EFSA|WhatsApp|HTP/g, ""))],
-  ["Extra · إنجليزي", "How much is one box?", r => /199/.test(r.answer)]
+  ["Extra · إنجليزي", "How much is one box?", r => /250/.test(r.answer)]
 ];
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));

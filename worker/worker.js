@@ -111,7 +111,7 @@ function extractKnowledge(html) {
 
   out.push("# العروض والأسعار الحالية");
   for (const b of st.bundles) {
-    const perDay = Math.round(b.price / (b.boxes * 30));
+    const perDay = Math.round(b.price / (b.boxes * 30) * 10) / 10;
     [b.price, b.was, perDay].forEach(n => n != null && prices.add(n));
     const save = b.was ? `، السعر قبل الخصم ${b.was} ${cur} (توفير ${Math.round((1 - b.price / b.was) * 100)}%)` : "";
     out.push(`- ${b.title}: ${b.boxes * 30} ظرفاً، ${b.program}، السعر ${b.price} ${cur}${save}، حوالي ${perDay} ${cur} لليوم${b.tag ? `، (${b.tag})` : ""}.`);
