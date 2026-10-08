@@ -3,6 +3,20 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<script>
+/* لغة الصفحة: ?lang= أولاً، ثم اختيار الزائر المحفوظ، ثم لغة المتصفح (عربي إن كانت عربية، وإلا إنجليزي) */
+(function(){
+  var l = null, h = document.documentElement;
+  try {
+    var q = new URLSearchParams(location.search).get("lang");
+    if (q === "ar" || q === "en") { l = q; localStorage.setItem("cg-lang", q); } else { l = localStorage.getItem("cg-lang"); }
+  } catch (e) {}
+  if (l !== "ar" && l !== "en") { var n = (navigator.languages && navigator.languages[0]) || navigator.language || "ar"; l = /^ar\b/i.test(n) ? "ar" : "en"; }
+  window.CG_LANG = l; h.lang = l; h.dir = l === "ar" ? "rtl" : "ltr";
+  // نخفي الصفحة لحظة حتى تُطبّق الترجمة فلا يظهر النص العربي ثم يتغير
+  if (l === "en") { h.classList.add("i18n-wait"); setTimeout(function(){ h.classList.remove("i18n-wait"); }, 3000); }
+})();
+</script>
 <title>CalmGastro | رشاقتك تبدأ من الداخل</title>
 <meta name="description" content="CalmGastro Slim from Inside: ظرف واحد يومياً بنكهة الليمون والفراولة، فيه 2000 ملغ ألياف كونجاك مع الإنولين والزنجبيل والكروميوم. يساعدك تشبع أسرع وتخفف الانتفاخ. الدفع عند الاستلام.">
 <meta property="og:title" content="CalmGastro | رشاقتك تبدأ من الداخل">
@@ -434,6 +448,18 @@
   .ai-send svg{width:20px; height:20px}
   .ai-note{font-size:.72rem; color:var(--muted); text-align:center; padding:0 12px 10px; background:var(--white)}
 
+  /* ---------- اللغة ---------- */
+  html.i18n-wait body{visibility:hidden}
+  .top-actions{display:flex; align-items:center; gap:10px}
+  .lang-btn{
+    font-family:var(--f-display); font-weight:600; font-size:.9rem; line-height:1.4; color:var(--teal-deep);
+    background:transparent; border:1.5px solid var(--line); border-radius:999px; padding:.45em 1em; cursor:pointer;
+  }
+  .lang-btn:hover{border-color:var(--teal); background:var(--lime)}
+  [dir="ltr"] .tl .when::after{background:linear-gradient(to right, var(--orange), transparent)}
+  [dir="ltr"] .ai-send svg{transform:scaleX(-1)}
+  [dir="ltr"] #f-phone, [dir="ltr"] .ing .nm small, [dir="ltr"] .r-dose{text-align:left !important}
+
   /* ---------- reveal ---------- */
   .rv{opacity:0; transform:translateY(16px); transition:opacity .6s ease, transform .6s ease}
   .rv.in{opacity:1; transform:none}
@@ -498,7 +524,10 @@
       <a href="#reviews">آراء العملاء</a>
       <a href="#faq">الأسئلة الشائعة</a>
     </nav>
-    <a href="#order" class="btn btn-primary">اطلب الآن</a>
+    <div class="top-actions">
+      <button type="button" class="lang-btn" id="langBtn" lang="en" data-no-i18n aria-label="Switch to English">English</button>
+      <a href="#order" class="btn btn-primary">اطلب الآن</a>
+    </div>
   </div>
 </header>
 
@@ -942,34 +971,53 @@
     "deliveryShort": "2 – 5 أيام",
     "deliveryLong": "من 2 إلى 5 أيام عمل لجميع مدن المملكة، ونتواصل معك قبل التوصيل لتأكيد الموعد.",
     "defaultBundle": "b2",
+    "currency_en": "SAR",
+    "payment_en": "Cash on delivery",
+    "shippingNote_en": "Free shipping across Saudi Arabia",
+    "deliveryShort_en": "2–5 days",
+    "deliveryLong_en": "2 to 5 business days to all cities in Saudi Arabia. We’ll contact you before delivery to confirm the time.",
     "bundles": [
-      {"id": "b1", "boxes": 1, "title": "علبة واحدة", "program": "برنامج شهر", "price": 250},
-      {"id": "b2", "boxes": 2, "title": "علبتان", "program": "برنامج شهرين", "price": 450, "was": 500, "tag": "الأكثر طلباً"},
-      {"id": "b3", "boxes": 3, "title": "3 علب", "program": "برنامج 3 أشهر", "price": 600, "was": 750, "tag": "أفضل قيمة"}
+      {"id": "b1", "boxes": 1, "title": "علبة واحدة", "program": "برنامج شهر", "price": 250, "title_en": "1 box", "program_en": "1-month program"},
+      {"id": "b2", "boxes": 2, "title": "علبتان", "program": "برنامج شهرين", "price": 450, "was": 500, "tag": "الأكثر طلباً", "title_en": "2 boxes", "program_en": "2-month program", "tag_en": "Most popular"},
+      {"id": "b3", "boxes": 3, "title": "3 علب", "program": "برنامج 3 أشهر", "price": 600, "was": 750, "tag": "أفضل قيمة", "title_en": "3 boxes", "program_en": "3-month program", "tag_en": "Best value"}
     ]
   },
   "ingredients": [
-    {"ar": "ألياف الكونجاك", "en": "Konjac extract · Glucomannan 1800 mg", "dose": "2000 mg", "w": 2000, "color": "#0F5C57", "efsa": true, "role": "تمتص الماء وتتمدد في المعدة فتعطيك إحساساً بالامتلاء قبل الأكل. يساهم الغلوكومانان في الحفاظ على مستويات الكوليسترول الطبيعية في الدم."},
-    {"ar": "إنولين", "en": "Inulin", "dose": "1000 mg", "w": 1000, "color": "#13857B", "role": "ألياف بريبيوتيك تغذي البكتيريا النافعة في القولون، فتدعم انتظام الهضم وتقلل الغازات."},
-    {"ar": "مستخلص الشاي الأخضر", "en": "Green tea · Polyphenols 96 mg", "dose": "120 mg", "w": 120, "color": "#7FB77E", "role": "غني بالبوليفينولات الداعمة لعملية التمثيل الغذائي والطاقة."},
-    {"ar": "مستخلص القهوة", "en": "Coffee extract", "dose": "120 mg", "w": 120, "color": "#8A5A2B", "role": "يعطي دفعة طاقة خفيفة تساعدك على النشاط خلال اليوم."},
-    {"ar": "مستخلص الغارسينيا", "en": "Garcinia · HCA 60 mg", "dose": "120 mg", "w": 120, "color": "#F2941B", "role": "يحتوي على حمض الهيدروكسي ستريك (HCA) الذي يُستخدم تقليدياً لدعم التحكم في الشهية."},
-    {"ar": "ل-كارنيتين", "en": "L-Carnitine", "dose": "100 mg", "w": 100, "color": "#F7B955", "role": "يشارك في نقل الدهون إلى داخل الخلايا لتستخدمها مصدراً للطاقة."},
-    {"ar": "بروميلين", "en": "Bromelain", "dose": "50 mg", "w": 50, "color": "#E9D45C", "role": "إنزيم طبيعي من الأناناس يساعد على هضم البروتين ويخفف ثقل المعدة."},
-    {"ar": "مستخلص الزنجبيل", "en": "Ginger · Gingerol 2.5 mg", "dose": "50 mg", "w": 50, "color": "#D9822B", "role": "مريح للمعدة ويساعد على تخفيف الانتفاخ والغازات."},
-    {"ar": "5-HTP", "ltr": true, "en": "5-Hydroxytryptophan", "dose": "25 mg", "w": 25, "color": "#B9A6D9", "role": "يدخل في تكوين السيروتونين المرتبط بالمزاج والإحساس بالشبع، ويساعد على تقليل الأكل العاطفي."},
-    {"ar": "كروميوم", "en": "Chromium", "dose": "50 µg", "w": 12, "color": "#5E8FA8", "efsa": true, "role": "يساهم في الحفاظ على مستويات الجلوكوز الطبيعية في الدم، وفي التمثيل الغذائي الطبيعي للمغذيات الكبرى."},
-    {"ar": "فيتامين B12", "en": "Vitamin B12", "dose": "2.5 µg", "w": 10, "color": "#D9546A", "efsa": true, "role": "يساهم في التمثيل الغذائي الطبيعي لإنتاج الطاقة، ويقلل الإحساس بالتعب."}
+    {"ar": "ألياف الكونجاك", "en": "Konjac extract · Glucomannan 1800 mg", "dose": "2000 mg", "w": 2000, "color": "#0F5C57", "efsa": true, "role": "تمتص الماء وتتمدد في المعدة فتعطيك إحساساً بالامتلاء قبل الأكل. يساهم الغلوكومانان في الحفاظ على مستويات الكوليسترول الطبيعية في الدم.", "name_en": "Konjac fiber", "role_en": "Absorbs water and expands in the stomach, giving you a feeling of fullness before eating. Glucomannan contributes to the maintenance of normal blood cholesterol levels."},
+    {"ar": "إنولين", "en": "Inulin", "dose": "1000 mg", "w": 1000, "color": "#13857B", "role": "ألياف بريبيوتيك تغذي البكتيريا النافعة في القولون، فتدعم انتظام الهضم وتقلل الغازات.", "name_en": "Inulin", "role_en": "A prebiotic fiber that feeds the good bacteria in the colon, supporting regular digestion and reducing gas."},
+    {"ar": "مستخلص الشاي الأخضر", "en": "Green tea · Polyphenols 96 mg", "dose": "120 mg", "w": 120, "color": "#7FB77E", "role": "غني بالبوليفينولات الداعمة لعملية التمثيل الغذائي والطاقة.", "name_en": "Green tea extract", "role_en": "Rich in polyphenols that support metabolism and energy."},
+    {"ar": "مستخلص القهوة", "en": "Coffee extract", "dose": "120 mg", "w": 120, "color": "#8A5A2B", "role": "يعطي دفعة طاقة خفيفة تساعدك على النشاط خلال اليوم.", "name_en": "Coffee extract", "role_en": "Gives a light energy boost to help you stay active during the day."},
+    {"ar": "مستخلص الغارسينيا", "en": "Garcinia · HCA 60 mg", "dose": "120 mg", "w": 120, "color": "#F2941B", "role": "يحتوي على حمض الهيدروكسي ستريك (HCA) الذي يُستخدم تقليدياً لدعم التحكم في الشهية.", "name_en": "Garcinia extract", "role_en": "Contains hydroxycitric acid (HCA), traditionally used to support appetite control."},
+    {"ar": "ل-كارنيتين", "en": "L-Carnitine", "dose": "100 mg", "w": 100, "color": "#F7B955", "role": "يشارك في نقل الدهون إلى داخل الخلايا لتستخدمها مصدراً للطاقة.", "name_en": "L-Carnitine", "role_en": "Helps transport fats into cells to be used for energy."},
+    {"ar": "بروميلين", "en": "Bromelain", "dose": "50 mg", "w": 50, "color": "#E9D45C", "role": "إنزيم طبيعي من الأناناس يساعد على هضم البروتين ويخفف ثقل المعدة.", "name_en": "Bromelain", "role_en": "A natural enzyme from pineapple that helps digest protein and eases stomach heaviness."},
+    {"ar": "مستخلص الزنجبيل", "en": "Ginger · Gingerol 2.5 mg", "dose": "50 mg", "w": 50, "color": "#D9822B", "role": "مريح للمعدة ويساعد على تخفيف الانتفاخ والغازات.", "name_en": "Ginger extract", "role_en": "Soothing for the stomach and helps relieve bloating and gas."},
+    {"ar": "5-HTP", "ltr": true, "en": "5-Hydroxytryptophan", "dose": "25 mg", "w": 25, "color": "#B9A6D9", "role": "يدخل في تكوين السيروتونين المرتبط بالمزاج والإحساس بالشبع، ويساعد على تقليل الأكل العاطفي.", "name_en": "5-HTP", "role_en": "Involved in forming serotonin, which is linked to mood and satiety, and helps reduce emotional eating."},
+    {"ar": "كروميوم", "en": "Chromium", "dose": "50 µg", "w": 12, "color": "#5E8FA8", "efsa": true, "role": "يساهم في الحفاظ على مستويات الجلوكوز الطبيعية في الدم، وفي التمثيل الغذائي الطبيعي للمغذيات الكبرى.", "name_en": "Chromium", "role_en": "Contributes to the maintenance of normal blood glucose levels and to normal macronutrient metabolism."},
+    {"ar": "فيتامين B12", "en": "Vitamin B12", "dose": "2.5 µg", "w": 10, "color": "#D9546A", "efsa": true, "role": "يساهم في التمثيل الغذائي الطبيعي لإنتاج الطاقة، ويقلل الإحساس بالتعب.", "name_en": "Vitamin B12", "role_en": "Contributes to normal energy-yielding metabolism and helps reduce tiredness."}
   ]
 }
 </script>
 
+<script src="assets/i18n-en.js"></script>
 <script>
 /* ============================================================
    الإعدادات التقنية (بيانات المنتج نفسها في product-data أعلاه)
    ============================================================ */
 const PRODUCT = JSON.parse(document.getElementById("product-data").textContent);
-const CONFIG = Object.assign({}, PRODUCT.store, {
+
+/* ---------- اللغة: العربية من الصفحة نفسها، والإنجليزية من assets/i18n-en.js ---------- */
+const LANG = window.CG_LANG === "en" && window.I18N_EN ? "en" : "ar";
+const EN = LANG === "en" ? window.I18N_EN : null;
+// t("نص {n}", { n: 3 }) يعيد النص بلغة الصفحة
+const t = (ar, vars) => {
+  const s = EN && EN.ui[ar] != null ? EN.ui[ar] : ar;
+  return vars ? s.replace(/\{(\w+)\}/g, (_, k) => vars[k] != null ? vars[k] : "") : s;
+};
+const localized = (o, keys) => EN ? Object.assign({}, o, ...keys.filter(k => o[k + "_en"] != null).map(k => ({ [k]: o[k + "_en"] }))) : o;
+const STORE = Object.assign(localized(PRODUCT.store, ["currency", "payment", "shippingNote", "deliveryShort", "deliveryLong"]),
+  { bundles: PRODUCT.store.bundles.map(b => localized(b, ["title", "program", "tag"])) });
+
+const CONFIG = Object.assign({}, STORE, {
   orderEndpoint: "",                 // اختياري: رابط Google Apps Script أو أي API لحفظ الطلبات (POST JSON)
   // تحويل الإحداثيات إلى مدينة وحي. لا يُرسل شيء إلا بعد أن يضغط العميل «تحديد موقعي» ويوافق.
   //  "nominatim": خدمة OpenStreetMap المجانية، بلا مفتاح (مناسبة لعدد طلبات قليل إلى متوسط)
@@ -983,7 +1031,57 @@ const CONFIG = Object.assign({}, PRODUCT.store, {
 });
 
 /* المكونات حسب الملصق، لكل ظرف واحد (من product-data) */
-const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, { ar: i.ltr ? `<bdi dir="ltr">${i.ar}</bdi>` : i.ar }));
+const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
+  name: EN ? i.name_en : (i.ltr ? `<bdi dir="ltr">${i.ar}</bdi>` : i.ar),
+  role: EN ? i.role_en : i.role
+}));
+
+/* ---------- ترجمة الصفحة وزر تبديل اللغة ---------- */
+(function i18n(){
+  const html = document.documentElement;
+  html.lang = LANG; html.dir = LANG === "en" ? "ltr" : "rtl";
+  const btn = document.getElementById("langBtn");
+  if (EN){ btn.textContent = "العربية"; btn.lang = "ar"; btn.setAttribute("aria-label", "التبديل إلى العربية"); }
+  btn.addEventListener("click", () => {
+    const next = LANG === "en" ? "ar" : "en";
+    try { localStorage.setItem("cg-lang", next); } catch (_) {}
+    const u = new URL(location.href);
+    u.searchParams.set("lang", next); u.hash = "";
+    location.href = u.href;
+  });
+  if (EN){
+    const norm = s => s.replace(/\s+/g, " ").trim();
+    const AR = /[\u0600-\u06FF]/;
+    const SKIP = "script,style,svg,datalist,#bundles,#ingList,#readout,#aiLog,#glassFill,[data-no-i18n]";
+    for (const el of document.body.querySelectorAll("*")){
+      if (!el.isConnected || !AR.test(el.textContent) || el.closest(SKIP)) continue;
+      const en = EN.html[norm(el.innerHTML)];
+      if (en != null) el.innerHTML = en;
+    }
+    const missing = [];
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let n; (n = walker.nextNode());){
+      if (!AR.test(n.nodeValue) || n.parentElement.closest(SKIP)) continue;
+      const en = EN.text[norm(n.nodeValue)];
+      if (en != null) n.nodeValue = n.nodeValue.match(/^\s*/)[0] + en + n.nodeValue.match(/\s*$/)[0];
+      else missing.push(norm(n.nodeValue));
+    }
+    for (const el of document.querySelectorAll("[placeholder],[aria-label],[alt],[title]"))
+      for (const a of ["placeholder", "aria-label", "alt", "title"]){
+        const v = el.getAttribute(a);
+        if (v && EN.attr[norm(v)] != null) el.setAttribute(a, EN.attr[norm(v)]);
+      }
+    document.title = EN.meta.title;
+    const meta = (sel, v) => { const m = document.querySelector(sel); if (m) m.setAttribute("content", v); };
+    meta('meta[name="description"]', EN.meta.description);
+    meta('meta[property="og:title"]', EN.meta.ogTitle);
+    meta('meta[property="og:description"]', EN.meta.ogDescription);
+    document.getElementById("cities").innerHTML = EN.cities.map(c => `<option value="${c}">`).join("");
+    // عند تعديل نص عربي في الصفحة بدون تحديث مفتاحه في i18n-en.js يظهر هنا
+    if (missing.length) console.warn("[i18n] untranslated:", missing);
+  }
+  html.classList.remove("i18n-wait");
+})();
 
 (function(){
   const $ = (s, el=document) => el.querySelector(s);
@@ -997,7 +1095,7 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, { ar: i.lt
   /* ---------- whatsapp links ---------- */
   const waLink = msg => `https://wa.me/${CONFIG.whatsapp}?text=${encodeURIComponent(msg)}`;
   $$(".js-wa").forEach(a => {
-    a.href = waLink("السلام عليكم، عندي استفسار عن CalmGastro");
+    a.href = waLink(t("السلام عليكم، عندي استفسار عن CalmGastro"));
     a.target = "_blank"; a.rel = "noopener";
   });
 
@@ -1019,7 +1117,7 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, { ar: i.lt
     b.className = "layer"; b.type = "button";
     b.style.height = raw[i] + "%"; b.style.background = ing.color;
     b.style.transitionDelay = `0ms, 0ms, ${i * 70}ms`; // التأخير للتعبئة فقط وليس للتحديد
-    b.dataset.i = i; b.setAttribute("aria-label", `${ing.ar.replace(/<[^>]+>/g, "")} ${ing.dose}`);
+    b.dataset.i = i; b.setAttribute("aria-label", `${ing.name.replace(/<[^>]+>/g, "")} ${ing.dose}`);
     fill.appendChild(b);
   });
 
@@ -1027,7 +1125,7 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, { ar: i.lt
     const li = document.createElement("li");
     li.innerHTML = `<button type="button" class="ing" data-i="${i}" aria-pressed="false">
         <span class="sw" style="background:${ing.color}"></span>
-        <span class="nm">${ing.ar}${ing.efsa ? '<span class="efsa">EFSA</span>' : ''}<small dir="ltr" style="text-align:right">${ing.en}</small></span>
+        <span class="nm">${ing.name}${ing.efsa ? '<span class="efsa">EFSA</span>' : ''}<small dir="ltr" style="text-align:right">${ing.en}</small></span>
         <span class="ds">${ing.dose}</span></button>`;
     list.appendChild(li);
   });
@@ -1037,7 +1135,7 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, { ar: i.lt
     glass.classList.add("is-focus");
     $$(".layer", fill).forEach(l => l.classList.toggle("on", +l.dataset.i === i));
     $$(".ing", list).forEach(b => b.setAttribute("aria-pressed", String(+b.dataset.i === i)));
-    readout.innerHTML = `<div class="r-name">${ing.ar}</div><div class="r-dose" dir="ltr" style="text-align:right">${ing.dose}</div><p>${ing.role}</p>`;
+    readout.innerHTML = `<div class="r-name">${ing.name}</div><div class="r-dose" dir="ltr" style="text-align:right">${ing.dose}</div><p>${ing.role}</p>`;
   }
   fill.addEventListener("click", e => { const l = e.target.closest(".layer"); if (l) select(+l.dataset.i); });
   list.addEventListener("click", e => { const b = e.target.closest(".ing"); if (b) select(+b.dataset.i); });
@@ -1071,24 +1169,25 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, { ar: i.lt
       <input type="radio" name="bundle" value="${b.id}" ${b.id === CONFIG.defaultBundle ? "checked" : ""}>
       <span class="card">
         <span class="radio" aria-hidden="true"></span>
-        <span><span class="b-title">${b.title}</span><br><span class="b-sub">${b.boxes * 30} ظرفاً</span><br><span class="b-prog">${b.program}</span><br><span class="b-sub">≈ ${per} ${CONFIG.currency} لليوم</span></span>
+        <span><span class="b-title">${b.title}</span><br><span class="b-sub">${t("{n} ظرفاً", { n: b.boxes * 30 })}</span><br><span class="b-prog">${b.program}</span><br><span class="b-sub">${t("≈ {per} {cur} لليوم", { per, cur: CONFIG.currency })}</span></span>
         <span class="b-price">
           <span class="now">${money(b.price)}</span><br>
-          ${b.was ? `<span class="was">${money(b.was)}</span> <span class="b-save">وفّر ${save}%</span>` : ""}
+          ${b.was ? `<span class="was">${money(b.was)}</span> <span class="b-save">${t("وفّر {save}%", { save })}</span>` : ""}
         </span>
       </span>
       ${b.tag ? `<span class="tag">${b.tag}</span>` : ""}`;
     box.appendChild(lab);
   });
+  $("#bundles legend").textContent = t("اختر العرض");
   const current = () => CONFIG.bundles.find(b => b.id === ($("input[name=bundle]:checked")||{}).value) || CONFIG.bundles[0];
   function updateSummary(){
     if ($("#f-wholesale").checked){
-      $("#sumLabel").textContent = "استفسار عن طلب بالجملة";
-      $("#sumTotal").textContent = "حسب الكمية";
+      $("#sumLabel").textContent = t("استفسار عن طلب بالجملة");
+      $("#sumTotal").textContent = t("حسب الكمية");
       return;
     }
     const b = current();
-    $("#sumLabel").textContent = `${b.title} · ${b.boxes * 30} ظرفاً · ${b.program}`;
+    $("#sumLabel").textContent = t("{title} · {n} ظرفاً · {program}", { title: b.title, n: b.boxes * 30, program: b.program });
     $("#sumTotal").textContent = money(b.price);
   }
   box.addEventListener("change", updateSummary);
@@ -1114,17 +1213,18 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, { ar: i.lt
     if (d.length === 9 && d.startsWith("5")) d = "0" + d;
     return d;
   };
-  const boxesLabel = n => n === 1 ? "علبة واحدة" : n === 2 ? "علبتان" : n <= 10 ? `${n} علب` : `${n} علبة`;
+  const boxesLabel = n => EN ? (n === 1 ? "1 box" : `${n} boxes`)
+    : n === 1 ? "علبة واحدة" : n === 2 ? "علبتان" : n <= 10 ? `${n} علب` : `${n} علبة`;
 
   // موقع العميل: يبقى في الذاكرة فقط لهذه الصفحة، ولا يُحفظ في المتصفح أو أي قاعدة بيانات
   let loc = null; // { lat, lng }
 
   const rules = {
-    name:     v => v.trim().length >= 2 || "اكتب اسمك",
-    phone:    v => /^05\d{8}$/.test(normPhone(v)) || "اكتب رقم جوال سعودي صحيح يبدأ بـ 05 ومكوّن من 10 أرقام",
+    name:     v => v.trim().length >= 2 || t("اكتب اسمك"),
+    phone:    v => /^05\d{8}$/.test(normPhone(v)) || t("اكتب رقم جوال سعودي صحيح يبدأ بـ 05 ومكوّن من 10 أرقام"),
     // المدينة والحي مطلوبان إلا إذا حدد العميل موقعه (رابط الخريطة يكفي للتوصيل)
-    city:     v => v.trim().length >= 2 || !!loc || "اكتب مدينتك أو استخدم «تحديد موقعي»",
-    district: v => v.trim().length >= 2 || !!loc || "اكتب اسم الحي أو استخدم «تحديد موقعي»"
+    city:     v => v.trim().length >= 2 || !!loc || t("اكتب مدينتك أو استخدم «تحديد موقعي»"),
+    district: v => v.trim().length >= 2 || !!loc || t("اكتب اسم الحي أو استخدم «تحديد موقعي»")
   };
   function check(name){
     const input = form.elements[name], res = rules[name](input.value);
@@ -1136,7 +1236,7 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, { ar: i.lt
   function checkBundle(){
     const b = selected();
     const ok = isWholesale() || (!!b && Number.isInteger(b.boxes) && b.boxes > 0);
-    $("#e-bundle").textContent = ok ? "" : "اختر أحد العروض";
+    $("#e-bundle").textContent = ok ? "" : t("اختر أحد العروض");
     return ok;
   }
   Object.keys(rules).forEach(n => {
@@ -1147,7 +1247,7 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, { ar: i.lt
   box.addEventListener("change", checkBundle);
 
   /* ---------- طلب الجملة ---------- */
-  function setSubmitLabel(){ submitBtn.textContent = isWholesale() ? "أكّد الاستفسار" : "أكّد الطلب"; }
+  function setSubmitLabel(){ submitBtn.textContent = isWholesale() ? t("أكّد الاستفسار") : t("أكّد الطلب"); }
   form.elements.wholesale.addEventListener("change", () => {
     const on = isWholesale();
     $("#wholesaleField").hidden = !on;
@@ -1159,7 +1259,7 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, { ar: i.lt
 
   /* ---------- تحديد الموقع (اختياري، عند الضغط فقط) ---------- */
   const locBtn = $("#locBtn"), locBtnText = $("#locBtnText"), locStatus = $("#locStatus");
-  const LOC_FAIL = "لم نتمكن من تحديد موقعك. يمكنك إدخال المدينة والحي يدوياً.";
+  const LOC_FAIL = t("لم نتمكن من تحديد موقعك. يمكنك إدخال المدينة والحي يدوياً.");
   let locating = false;
 
   function showLoc(kind, lines, withClear){
@@ -1173,7 +1273,7 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, { ar: i.lt
     });
     if (withClear){
       const c = document.createElement("button");
-      c.type = "button"; c.className = "clear"; c.textContent = "إزالة الموقع";
+      c.type = "button"; c.className = "clear"; c.textContent = t("إزالة الموقع");
       c.addEventListener("click", clearLoc);
       locStatus.appendChild(c);
     }
@@ -1182,7 +1282,7 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, { ar: i.lt
   function clearLoc(){
     loc = null;
     locStatus.hidden = true; locStatus.textContent = "";
-    locBtnText.textContent = "تحديد موقعي تلقائياً";
+    locBtnText.textContent = t("تحديد موقعي تلقائياً");
     locBtn.focus();
   }
 
@@ -1200,7 +1300,7 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, { ar: i.lt
         return { city: String(j.city || "").trim(), district: String(j.district || "").trim() };
       }
       if (rg.provider === "nominatim"){
-        const u = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=16&addressdetails=1&accept-language=ar&lat=${lat}&lon=${lng}`;
+        const u = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=16&addressdetails=1&accept-language=${LANG}&lat=${lat}&lon=${lng}`;
         const r = await fetch(u, { signal: ctrl.signal });
         if (!r.ok) return null;
         const a = (await r.json()).address || {};
@@ -1219,14 +1319,14 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, { ar: i.lt
     if (!("geolocation" in navigator) || !window.isSecureContext){ showLoc("soft", [LOC_FAIL]); return; }
     locating = true; loc = null;
     locBtn.disabled = true;
-    locBtnText.textContent = "جارٍ تحديد موقعك…";
+    locBtnText.textContent = t("جارٍ تحديد موقعك…");
     locStatus.hidden = true;
 
     let settled = false;
     const finish = (label) => { locating = false; locBtn.disabled = false; locBtnText.textContent = label; };
     const fail = () => {
       if (settled) return; settled = true; clearTimeout(watchdog);
-      finish("تحديد موقعي تلقائياً");
+      finish(t("تحديد موقعي تلقائياً"));
       showLoc("soft", [LOC_FAIL]);
     };
     // بعض المتصفحات لا ترد أبداً إذا أُغلقت نافذة الإذن دون اختيار
@@ -1236,20 +1336,20 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, { ar: i.lt
       navigator.geolocation.getCurrentPosition(async pos => {
         if (settled) return; settled = true; clearTimeout(watchdog);
         loc = { lat: +pos.coords.latitude.toFixed(6), lng: +pos.coords.longitude.toFixed(6) };
-        locBtnText.textContent = "جارٍ تحديد المدينة والحي…";
+        locBtnText.textContent = t("جارٍ تحديد المدينة والحي…");
         const place = await reverseGeocode(loc.lat, loc.lng);
         if (!loc) return; // أزال العميل الموقع أثناء الانتظار
         if (place && place.city) form.elements.city.value = place.city;
         if (place && place.district) form.elements.district.value = place.district;
         check("city"); check("district");
-        const lines = ["✓ تم تحديد موقعك"];
+        const lines = [t("✓ تم تحديد موقعك")];
         if (place && (place.city || place.district)){
-          lines.push(`المدينة: ${place.city || "—"} — الحي: ${place.district || "—"}`);
-          lines.push("يمكنك تعديل المدينة والحي إذا لم تكن دقيقة.");
+          lines.push(t("المدينة: {city} — الحي: {district}", { city: place.city || "—", district: place.district || "—" }));
+          lines.push(t("يمكنك تعديل المدينة والحي إذا لم تكن دقيقة."));
         } else {
-          lines.push("سنرسل رابط موقعك مع الطلب. يمكنك كتابة المدينة والحي يدوياً.");
+          lines.push(t("سنرسل رابط موقعك مع الطلب. يمكنك كتابة المدينة والحي يدوياً."));
         }
-        finish("تحديث موقعي");
+        finish(t("تحديث موقعي"));
         showLoc("ok", lines, true);
       }, fail, { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 });
     } catch (_) { fail(); }
@@ -1260,28 +1360,28 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, { ar: i.lt
     const out = [];
     const sec = (title, rows) => { const r = rows.filter(Boolean); if (r.length) out.push("", title, ...r); };
     if (d.wholesale){
-      out.push("استفسار عن طلب بالجملة من موقع CalmGastro", "", "نوع الطلب: استفسار عن طلب بالجملة");
+      out.push(t("استفسار عن طلب بالجملة من موقع CalmGastro"), "", t("نوع الطلب: استفسار عن طلب بالجملة"));
     } else {
-      out.push("طلب جديد من موقع CalmGastro", "", "نوع الطلب: طلب عادي");
+      out.push(t("طلب جديد من موقع CalmGastro"), "", t("نوع الطلب: طلب عادي"));
     }
-    sec("بيانات العميل:", [`الاسم: ${d.name}`, `رقم الجوال: ${d.phone}`]);
+    sec(t("بيانات العميل:"), [t("الاسم: {v}", { v: d.name }), t("رقم الجوال: {v}", { v: d.phone })]);
     if (d.wholesale){
-      sec("تفاصيل الاستفسار:", [d.wdetails]);
+      sec(t("تفاصيل الاستفسار:"), [d.wdetails]);
     } else {
-      sec("تفاصيل الطلب:", [
-        `العرض: ${d.program}`,
-        `الكمية: ${boxesLabel(d.boxes)} (${d.boxes * 30} ظرفاً)`,
-        `الإجمالي: ${money(d.total)}`
+      sec(t("تفاصيل الطلب:"), [
+        t("العرض: {v}", { v: d.program }),
+        t("الكمية: {q} ({n} ظرفاً)", { q: boxesLabel(d.boxes), n: d.boxes * 30 }),
+        t("الإجمالي: {v}", { v: money(d.total) })
       ]);
     }
-    sec("بيانات التوصيل:", [d.city && `المدينة: ${d.city}`, d.district && `الحي: ${d.district}`]);
-    if (d.mapUrl) sec("الموقع:", [d.mapUrl]);
-    sec("ملاحظات:", [d.notes]);
+    sec(t("بيانات التوصيل:"), [d.city && t("المدينة: {v}", { v: d.city }), d.district && t("الحي: {v}", { v: d.district })]);
+    if (d.mapUrl) sec(t("الموقع:"), [d.mapUrl]);
+    sec(t("ملاحظات:"), [d.notes]);
     out.push("");
     if (d.wholesale){
-      out.push("أرغب في الاستفسار عن أسعار وكميات طلبات الجملة.");
+      out.push(t("أرغب في الاستفسار عن أسعار وكميات طلبات الجملة."));
     } else {
-      out.push("الدفع: الدفع عند الاستلام", "", "يرجى التواصل معي لتأكيد الطلب وموعد التوصيل.");
+      out.push(t("الدفع: الدفع عند الاستلام"), "", t("يرجى التواصل معي لتأكيد الطلب وموعد التوصيل."));
     }
     return out.join("\n");
   }
@@ -1301,7 +1401,7 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, { ar: i.lt
 
     opening = true;
     submitBtn.disabled = true;
-    submitBtn.textContent = "جارٍ تجهيز الرسالة…";
+    submitBtn.textContent = t("جارٍ تجهيز الرسالة…");
 
     const wholesale = isWholesale();
     const b = selected();
@@ -1322,14 +1422,13 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, { ar: i.lt
     const win = window.open(link, "_blank");
     if (win) { try { win.opener = null; } catch (_) {} }
 
-    const what = wholesale ? "استفسارك" : "طلبك";
-    $("#okTitle").textContent = wholesale ? "تم تجهيز استفسارك في واتساب" : "تم تجهيز طلبك في واتساب";
+    $("#okTitle").textContent = wholesale ? t("تم تجهيز استفسارك في واتساب") : t("تم تجهيز طلبك في واتساب");
     $("#okText").textContent = win
-      ? `ستفتح لك محادثة واتساب برسالة ${wholesale ? "الاستفسار" : "الطلب"} جاهزة. اضغط إرسال لإكمال ${what}.`
-      : `لم يُفتح واتساب تلقائياً. اضغط الزر بالأسفل، ثم اضغط إرسال لإكمال ${what}.`;
+      ? (wholesale ? t("ستفتح لك محادثة واتساب برسالة الاستفسار جاهزة. اضغط إرسال لإكمال استفسارك.") : t("ستفتح لك محادثة واتساب برسالة الطلب جاهزة. اضغط إرسال لإكمال طلبك."))
+      : (wholesale ? t("لم يُفتح واتساب تلقائياً. اضغط الزر بالأسفل، ثم اضغط إرسال لإكمال استفسارك.") : t("لم يُفتح واتساب تلقائياً. اضغط الزر بالأسفل، ثم اضغط إرسال لإكمال طلبك."));
     const okWa = $("#okWa");
     okWa.href = link;
-    okWa.textContent = wholesale ? "إرسال الاستفسار عبر واتساب" : "إرسال الطلب عبر واتساب";
+    okWa.textContent = wholesale ? t("إرسال الاستفسار عبر واتساب") : t("إرسال الطلب عبر واتساب");
     form.classList.add("done");
     form.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" });
 
@@ -1365,7 +1464,7 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, { ar: i.lt
   if (AI.endpoint || aiPreview){
     const launcher = $("#aiLauncher"), panel = $("#aiPanel"), log = $("#aiLog");
     const aiForm = $("#aiForm"), aiInput = $("#aiInput"), aiSend = $("#aiSend");
-    const UNAVAILABLE = "المساعد غير متاح حالياً، يمكنك التواصل معنا مباشرة عبر WhatsApp.";
+    const UNAVAILABLE = t("المساعد غير متاح حالياً، يمكنك التواصل معنا مباشرة عبر WhatsApp.");
     const isMobile = () => matchMedia("(max-width: 640px)").matches;
     const plain = html => html.replace(/<[^>]+>/g, "");
     const lines = (sel, root = document) => $$(sel, root).map(el => el.textContent.replace(/\s+/g, " ").trim()).filter(Boolean);
@@ -1373,39 +1472,41 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, { ar: i.lt
 
     /* ---------- إجابات الأسئلة السريعة (من نفس مصدر بيانات الصفحة) ---------- */
     const bundleLine = b => {
-      const save = b.was ? ` بدل ${money(b.was)} (وفّر ${Math.round((1 - b.price / b.was) * 100)}%)` : "";
-      return `- ${b.title} (${b.boxes * 30} ظرفاً · ${b.program}): **${money(b.price)}**${save}`;
+      const save = b.was ? t("بدل {was} (وفّر {save}%)", { was: money(b.was), save: Math.round((1 - b.price / b.was) * 100) }) : "";
+      return t("- {title} ({n} ظرفاً · {program}): **{price}** {save}", { title: b.title, n: b.boxes * 30, program: b.program, price: money(b.price), save }).trim();
     };
     const QUICK = [
-      { q: "ما مكونات المنتج؟", answer: () => ({
-          text: ["كل ظرف يحتوي على:", ...INGREDIENTS.map(i => `- ${plain(i.ar)}: ${i.dose}`),
-                 "", "الجرعات مطابقة للملصق الخلفي للعلبة، ويحتوي المنتج على مُحلٍّ."].join("\n"),
+      { q: t("ما مكونات المنتج؟"), answer: () => ({
+          text: [t("كل ظرف يحتوي على:"), ...INGREDIENTS.map(i => `- ${plain(i.name)}: ${i.dose}`),
+                 "", t("الجرعات مطابقة للملصق الخلفي للعلبة، ويحتوي المنتج على مُحلٍّ.")].join("\n"),
           actions: ["order"] }) },
-      { q: "كيف أستخدم المنتج؟", answer: () => {
+      { q: t("كيف أستخدم المنتج؟"), answer: () => {
           const steps = $$("#how .step").map((st, i) => `${i + 1}. ${lines("h3", st)[0]}: ${lines("p", st)[0]}`);
           const heavy = $("#safety .plan .accent");
           return { text: [...steps, "", lines("#how .tip")[0] || "",
-                          heavy ? `\n${lines("h3", heavy)[0]}: ${lines(".dose span", heavy).join("، ثم ")}. ${lines("p.after", heavy)[0] || ""}` : ""]
+                          heavy ? `\n${lines("h3", heavy)[0]}: ${lines(".dose span", heavy).map((x, i) => EN && i ? x.charAt(0).toLowerCase() + x.slice(1) : x).join(t("، ثم "))}. ${lines("p.after", heavy)[0] || ""}` : ""]
                           .filter(Boolean).join("\n"), actions: ["order"] };
         } },
-      { q: "ما فوائد المنتج؟", answer: () => ({
+      { q: t("ما فوائد المنتج؟"), answer: () => ({
           text: [...$$("#why .problem").map(c => `- **${lines(".q", c)[0]}**: ${lines("p", c)[0]}`),
                  "", lines("#results .disclaim")[0] || ""].filter(Boolean).join("\n"),
           actions: ["order"] }) },
-      { q: "كم السعر؟", answer: () => ({
-          text: ["أسعار العروض الحالية:", ...CONFIG.bundles.map(bundleLine), "", `${CONFIG.shippingNote}، و${CONFIG.payment}.`].join("\n"),
+      { q: t("كم السعر؟"), answer: () => ({
+          text: [t("أسعار العروض الحالية:"), ...CONFIG.bundles.map(bundleLine), "", t("{ship}، و{pay}.", { ship: CONFIG.shippingNote, pay: CONFIG.payment })].join("\n"),
           actions: ["order"] }) },
-      { q: "ما الفرق بين العروض؟", answer: () => ({
-          text: [...CONFIG.bundles.map(b => `- **${b.title}** ${b.tag ? `(${b.tag})` : ""}: ${b.boxes * 30} ظرفاً تكفي ${b.program.replace("برنامج ", "")}، بسعر ${money(b.price)}، أي حوالي ${Math.round(b.price / (b.boxes * 30) * 10) / 10} ${CONFIG.currency} لليوم.`),
+      { q: t("ما الفرق بين العروض؟"), answer: () => ({
+          text: [...CONFIG.bundles.map(b => t("- **{title}** {tag}: {n} ظرفاً تكفي {dur}، بسعر {price}، أي حوالي {per} {cur} لليوم.", {
+                   title: b.title, tag: b.tag ? `(${b.tag})` : "", n: b.boxes * 30, dur: b.program.replace("برنامج ", ""), program: b.program,
+                   price: money(b.price), per: Math.round(b.price / (b.boxes * 30) * 10) / 10, cur: CONFIG.currency })),
                  "", lines("#order .sec-head p")[0] || ""].filter(Boolean).join("\n"),
           actions: ["order"] }) },
-      { q: "كيف أطلب؟", answer: () => ({
-          text: ["أكيد، يمكنك إكمال طلبك من قسم الطلب، وسأساعدك إذا كان لديك أي سؤال عن المنتج.",
-                 "1. اختر العرض المناسب.", "2. اكتب بيانات التوصيل.", "3. اضغط «أكّد الطلب» فيفتح واتساب برسالة طلبك جاهزة، ثم اضغط إرسال.",
-                 "", `${CONFIG.payment}، والتوصيل ${CONFIG.deliveryShort}.`].join("\n"),
+      { q: t("كيف أطلب؟"), answer: () => ({
+          text: [t("أكيد، يمكنك إكمال طلبك من قسم الطلب، وسأساعدك إذا كان لديك أي سؤال عن المنتج."),
+                 t("1. اختر العرض المناسب."), t("2. اكتب بيانات التوصيل."), t("3. اضغط «أكّد الطلب» فيفتح واتساب برسالة طلبك جاهزة، ثم اضغط إرسال."),
+                 "", t("{pay}، والتوصيل {del}.", { pay: CONFIG.payment, del: CONFIG.deliveryShort })].join("\n"),
           actions: ["order"] }) },
-      { q: "هل يوجد بيع بالجملة؟", answer: () => ({
-          text: "لدينا خيار للاستفسار عن طلبات الجملة. يمكنك اختيار «لدي طلب بالجملة» في نموذج الطلب، واكتب الكمية التي تحتاجها، ونرد عليك بالأسعار عبر واتساب.",
+      { q: t("هل يوجد بيع بالجملة؟"), answer: () => ({
+          text: t("لدينا خيار للاستفسار عن طلبات الجملة. يمكنك اختيار «لدي طلب بالجملة» في نموذج الطلب، واكتب الكمية التي تحتاجها، ونرد عليك بالأسعار عبر واتساب."),
           actions: ["wholesale", "whatsapp"] }) }
     ];
 
@@ -1445,15 +1546,15 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, { ar: i.lt
         if (a === "whatsapp"){
           const l = document.createElement("a");
           l.className = "ai-act wa"; l.target = "_blank"; l.rel = "noopener";
-          l.href = waLink("السلام عليكم، عندي سؤال عن CalmGastro" + (lastQuestion ? `:\n${lastQuestion}` : ""));
-          l.innerHTML = ICON_WA + "<span>تواصل معنا عبر WhatsApp</span>";
+          l.href = waLink(t("السلام عليكم، عندي سؤال عن CalmGastro") + (lastQuestion ? `:\n${lastQuestion}` : ""));
+          l.innerHTML = ICON_WA + `<span>${t("تواصل معنا عبر WhatsApp")}</span>`;
           row.appendChild(l);
           return;
         }
         const b = document.createElement("button");
         b.type = "button";
         b.className = "ai-act " + a;
-        b.textContent = a === "order" ? "اطلب الآن" : "استفسار عن الجملة";
+        b.textContent = a === "order" ? t("اطلب الآن") : t("استفسار عن الجملة");
         b.addEventListener("click", () => goToOrder(a === "wholesale"));
         row.appendChild(b);
       });
@@ -1469,13 +1570,13 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, { ar: i.lt
     }
     function showTyping(){
       const t = document.createElement("div");
-      t.className = "ai-typing"; t.setAttribute("aria-label", "المساعد يكتب");
+      t.className = "ai-typing"; t.setAttribute("aria-label", window.I18N_EN && LANG === "en" ? window.I18N_EN.ui["المساعد يكتب"] : "المساعد يكتب");
       t.innerHTML = "<span></span><span></span><span></span>";
       log.appendChild(t); scrollDown();
       return t;
     }
     function welcome(){
-      addMsg("bot", "أهلاً بك 👋 أنا مساعد CalmGastro. اختر سؤالاً سريعاً أو اكتب سؤالك.");
+      addMsg("bot", t("أهلاً بك 👋 أنا مساعد CalmGastro. اختر سؤالاً سريعاً أو اكتب سؤالك."));
       const chips = document.createElement("div");
       chips.className = "ai-chips";
       QUICK.forEach((item, i) => {
@@ -1514,7 +1615,7 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, { ar: i.lt
       try {
         const r = await fetch(AI.endpoint, {
           method: "POST", headers: { "Content-Type": "application/json" }, signal: ctrl.signal,
-          body: JSON.stringify({ message: q, history })
+          body: JSON.stringify({ message: q, history, lang: LANG })
         });
         const j = r.ok ? await r.json() : null;
         if (j && typeof j.answer === "string" && j.answer.trim()){ answer = j.answer.trim(); actions = Array.isArray(j.actions) ? j.actions : []; }

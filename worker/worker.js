@@ -55,6 +55,16 @@ LANGUAGE AND STYLE:
 - Quote prices exactly as written in <knowledge>, with the currency "ر.س".
 - Never ask for or repeat personal data (name, phone, address, location). For ordering, point to the order form.`;
 
+// نسخة الموقع الإنجليزية: نفس القواعد، لكن الرد بالإنجليزية وبجمل ثابتة مقابلة
+const NOT_FOUND_EN = "I don't have confirmed information about this in the product details available to me. You can contact us on WhatsApp and we'll help.";
+const ENGLISH_RULES = `LANGUAGE OVERRIDE: the visitor is using the English version of the website.
+- Reply in clear, friendly English. Translate facts from <knowledge> faithfully and add nothing. Write prices like "250 SAR".
+- Use these English sentences instead of the Arabic ones above:
+  - not in <knowledge>: "${NOT_FOUND_EN}"
+  - unconfirmed health claim: "I can't confirm that based on the official product information."
+  - off-topic: "I'm the CalmGastro assistant, here to help with questions about our product and ordering."
+  - wholesale: "You can send a wholesale inquiry: tick “I have a wholesale order” in the order form."`;
+
 /* ------------------------------------------------------------------ قراءة المعرفة من الموقع */
 let KB_CACHE = null; // { text, prices:Set<number>, at }
 
@@ -194,7 +204,7 @@ const toLatinDigits = s => s.replace(/[٠-٩]/g, d => String(d.charCodeAt(0) - 0
 function detectIntents(message) {
   const m = toLatinDigits(message || "");
   const out = new Set();
-  const bigQty = [...m.matchAll(/(\d+)\s*(علب|علبه|علبة|كرتون|كراتين|حب[ةه]|حبات)/g)].some(x => Number(x[1]) >= 10);
+  const bigQty = [...m.matchAll(/(\d+)\s*(علب|علبه|علبة|كرتون|كراتين|حب[ةه]|حبات|boxes|box|packs?|cartons?)/gi)].some(x => Number(x[1]) >= 10);
   if (bigQty || /جمل[ةه]|بالجمل|كمي(ة|ه|ات)\s*كبير|موزع|توزيع|لمحل|محلات|صيدلي|متجري|للمتجر|سوبر\s?ماركت|تاجر|wholesale|bulk/i.test(m)) out.add("wholesale");
   if (/(^|\s)(أ|ا)?(طلب|اطلب|أطلب)(ه|ها)?(\s|$|[؟?!.])|ابي اطلب|ابغى اطلب|أبغى أطلب|أريد الطلب|اريد الطلب|(أ|ا)شتري|شراء|كيف (أ|ا)طلب|order|buy/i.test(m)) out.add("order");
   return out;
@@ -223,9 +233,9 @@ function finalize(raw, kb, message = "") {
     return { answer: NOT_FOUND_ANSWER, actions: ["whatsapp"] };
   }
   if (text.length > LIMITS.answerChars) text = text.slice(0, LIMITS.answerChars).replace(/\s+\S*$/, "") + "…";
-  if (text.includes(NOT_FOUND_ANSWER.slice(0, 30))) actions.add("whatsapp");
+  if (text.includes(NOT_FOUND_ANSWER.slice(0, 30)) || text.includes(NOT_FOUND_EN.slice(0, 40))) actions.add("whatsapp");
   for (const a of detectIntents(message)) actions.add(a);
-  if (text.includes("لدي طلب بالجملة")) actions.add("wholesale");
+  if (text.includes("لدي طلب بالجملة") || /wholesale order/i.test(text)) actions.add("wholesale");
   // ترتيب ثابت للأزرار
   return { answer: text, actions: ["order", "wholesale", "whatsapp"].filter(a => actions.has(a)) };
 }
@@ -250,7 +260,7 @@ function cleanInput(body) {
     .map(h => ({ role: h.role, text: strip(h.text).slice(0, LIMITS.historyChars) }))
     .filter(h => h.text);
   while (history.length && history[0].role !== "user") history.shift();
-  return { message, history };
+  return { message, history, lang: body?.lang === "en" ? "en" : "ar" };
 }
 
 /* ------------------------------------------------------------------ HTTP */
@@ -290,7 +300,7 @@ export default {
     let kb;
     try { kb = await getKnowledge(env); } catch (e) { console.log("kb error:", e.message); return json({ error: "unavailable" }, 503, cors); }
 
-    const system = `${RULES}\n\n<knowledge>\n${kb.text}\n</knowledge>`;
+    const system = `${RULES}${input.lang === "en" ? "\n\n" + ENGLISH_RULES : ""}\n\n<knowledge>\n${kb.text}\n</knowledge>`;
     const messages = [...input.history, { role: "user", text: input.message }];
     const order = (env.PROVIDERS || DEFAULTS.PROVIDERS).split(",").map(s => s.trim()).filter(p => PROVIDERS[p]?.ready(env));
 
