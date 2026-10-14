@@ -200,7 +200,11 @@ window.I18N_EN = {
   "مساعد CalmGastro": "CalmGastro Assistant",
   "اسألني عن المنتج، المكونات، طريقة الاستخدام، العروض أو الطلب.": "Ask me about the product, ingredients, how to use it, offers or ordering.",
   "اكتب سؤالك": "Type your question",
-  "لا تكتب بياناتك الشخصية هنا. الإجابات من معلومات المنتج في الموقع.": "Don’t share personal information here. Answers come from the product information on this site."
+  "لا تكتب بياناتك الشخصية هنا. الإجابات من معلومات المنتج في الموقع.": "Don’t share personal information here. Answers come from the product information on this site.",
+  "تابعنا على": "Follow us on",
+  "CalmGastro على انستقرام (@calm.gastro)": "CalmGastro on Instagram (@calm.gastro)",
+  "CalmGastro على تيك توك (@calm.gastro)": "CalmGastro on TikTok (@calm.gastro)",
+  "CalmGastro على فيسبوك (@calm.gastroo)": "CalmGastro on Facebook (@calm.gastroo)"
  },
  "text": {
   "اسألنا على واتساب": "Ask us on WhatsApp",
