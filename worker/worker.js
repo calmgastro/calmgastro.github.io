@@ -134,6 +134,19 @@ function extractKnowledge(html) {
   out.push("- طريقة الطلب: من قسم الطلب في الموقع: اختيار العرض، كتابة الاسم والجوال والمدينة والحي، ثم «أكّد الطلب» فيفتح واتساب برسالة الطلب جاهزة ويضغط العميل إرسال. تحديد الموقع على الخريطة اختياري.");
   out.push("- طلبات الجملة: في نموذج الطلب خيار «لدي طلب بالجملة» مع حقل للكمية المطلوبة، ويُرسل كاستفسار عبر واتساب. أسعار الجملة غير منشورة في الموقع.");
 
+  // حسابات التواصل الاجتماعي: تُقرأ من روابط الموقع نفسها (أي حساب يُضاف للصفحة يظهر هنا تلقائياً)
+  const PLATFORMS = { "instagram.com": "انستقرام (Instagram)", "tiktok.com": "تيك توك (TikTok)", "facebook.com": "فيسبوك (Facebook)",
+    "x.com": "إكس (X)", "twitter.com": "إكس (X)", "snapchat.com": "سناب شات (Snapchat)", "youtube.com": "يوتيوب (YouTube)" };
+  const social = new Map();
+  for (const [, host, handle] of html.matchAll(/href="https?:\/\/(?:www\.)?([a-z]+\.com)\/(?:add\/)?@?([A-Za-z0-9._-]+)/g)) {
+    if (PLATFORMS[host] && !social.has(host)) social.set(host, handle);
+  }
+  if (social.size) {
+    out.push("", "# حسابات التواصل الاجتماعي");
+    for (const [host, handle] of social) out.push(`- ${PLATFORMS[host]}: @${handle}`);
+    out.push("- روابط الحسابات موجودة أسفل الموقع تحت «تابعنا على».");
+  }
+
   out.push("", "# المكونات لكل ظرف واحد (من ملصق العلبة)");
   for (const i of data.ingredients) {
     out.push(`- ${i.ar} (${i.en}): ${i.dose}. ${i.role}${i.efsa ? " [ادعاء صحي معتمد من EFSA]" : ""}`);
