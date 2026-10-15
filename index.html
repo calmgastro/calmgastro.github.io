@@ -153,6 +153,8 @@
   .sec-head h2{font-size:clamp(1.9rem,4vw,2.9rem); font-weight:800; color:var(--teal-deep); text-wrap:balance}
   .sec-head p{color:var(--muted); margin-top:.8rem; font-size:1.08rem}
   .tint{background:var(--lime)}
+  /* قسم الطلب أول الصفحة: مسافة علوية أقل من باقي الأقسام */
+  section.order-first{padding-top:clamp(28px,4vw,56px)}
   .dark{background:var(--teal-deep); color:var(--lime)}
   .dark .sec-head h2{color:var(--white)}
   .dark .sec-head p{color:#BFD8C9}
@@ -432,6 +434,10 @@
   .ai-launcher svg{width:1.3em; height:1.3em; flex:none}
   .ai-launcher .dot{color:var(--orange); direction:ltr}
   .ai-launcher.away, body.ai-open .ai-launcher{display:none}
+  /* فوق قسم الطلب على الكمبيوتر: أيقونة دائرية صغيرة حتى لا تغطي بطاقات العروض */
+  .ai-launcher.compact{width:56px; height:56px; padding:0; justify-content:center}
+  .ai-launcher.compact svg{width:1.6em; height:1.6em}
+  .ai-launcher.compact span{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap}
   .ai-panel{
     position:fixed; z-index:60; inset-block-end:20px; inset-inline-start:20px;
     width:min(390px, calc(100vw - 32px)); height:min(620px, calc(100vh - 100px));
@@ -571,6 +577,95 @@
 </header>
 
 <main id="top">
+
+<!-- ================= ORDER ================= -->
+<section class="block tint order-first" id="order" data-kb="order">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <span class="eyebrow">اطلب الآن</span>
+      <h2>اختر عرضك، وادفع عند الاستلام</h2>
+      <p>كل علبة تكفي 30 يوماً. ننصح بثلاثة أشهر لترسيخ العادة والحصول على أفضل نتيجة.</p>
+    </div>
+    <div class="order">
+      <div class="bundles-col">
+        <fieldset class="bundles" id="bundles" style="border:0;padding:0;margin:0">
+          <legend class="sr-only">اختر العرض</legend>
+        </fieldset>
+        <p class="bundle-err" id="e-bundle" role="alert"></p>
+        <div class="assure">
+          <div><b>دفع عند الاستلام</b>ادفع لما توصلك</div>
+          <div><b data-cfg="deliveryShort">2 – 5 أيام</b>توصيل لباب البيت</div>
+          <div><b>دعم واتساب</b>نرد على استفساراتك</div>
+        </div>
+      </div>
+
+      <form class="order-form" id="orderForm" novalidate>
+        <div class="form-body">
+          <h3 class="form-title">بيانات التوصيل</h3>
+          <div class="field">
+            <label for="f-name">الاسم<span class="req" aria-hidden="true">*</span></label>
+            <input id="f-name" name="name" autocomplete="name" maxlength="60" required>
+            <span class="err" id="e-name"></span>
+          </div>
+          <div class="field">
+            <label for="f-phone">رقم الجوال<span class="req" aria-hidden="true">*</span></label>
+            <input id="f-phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="05XXXXXXXX" dir="ltr" style="text-align:right" maxlength="20" required>
+            <span class="err" id="e-phone"></span>
+          </div>
+          <div class="row2">
+            <div class="field">
+              <label for="f-city">المدينة<span class="req" aria-hidden="true">*</span></label>
+              <input id="f-city" name="city" list="cities" autocomplete="address-level2" maxlength="60" required>
+              <datalist id="cities">
+                <option value="الرياض"><option value="جدة"><option value="مكة المكرمة"><option value="المدينة المنورة"><option value="الدمام"><option value="الخبر"><option value="الطائف"><option value="تبوك"><option value="بريدة"><option value="أبها"><option value="خميس مشيط"><option value="حائل"><option value="جازان"><option value="نجران"><option value="الأحساء">
+              </datalist>
+              <span class="err" id="e-city"></span>
+            </div>
+            <div class="field">
+              <label for="f-district">الحي<span class="req" aria-hidden="true">*</span></label>
+              <input id="f-district" name="district" autocomplete="address-line2" maxlength="60" required>
+              <span class="err" id="e-district"></span>
+            </div>
+          </div>
+          <div class="loc">
+            <button type="button" class="loc-btn" id="locBtn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 21s-7-6.1-7-11.5A7 7 0 0 1 19 9.5C19 14.9 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.5"/></svg>
+              <span id="locBtnText">تحديد موقعي تلقائياً</span>
+            </button>
+            <p class="loc-help">اختياري — يساعدنا على تحديد المدينة والحي وموقع التوصيل بدقة.</p>
+            <div class="loc-status" id="locStatus" role="status" aria-live="polite" hidden></div>
+          </div>
+          <div class="field">
+            <label for="f-notes">ملاحظات <span class="opt">(اختياري)</span></label>
+            <textarea id="f-notes" name="notes" rows="2" maxlength="500" placeholder="مثلاً: أقرب معلم، أو وقت مناسب للتوصيل"></textarea>
+          </div>
+          <label class="check">
+            <input type="checkbox" id="f-wholesale" name="wholesale">
+            <span class="box" aria-hidden="true"></span>
+            <span>لدي طلب بالجملة</span>
+          </label>
+          <div class="field" id="wholesaleField" hidden>
+            <label for="f-wdetails">الكمية المطلوبة / تفاصيل طلب الجملة <span class="opt">(اختياري)</span></label>
+            <textarea id="f-wdetails" name="wdetails" rows="2" maxlength="500" placeholder="مثال: أحتاج 50 علبة"></textarea>
+          </div>
+          <div class="summary">
+            <span class="lbl" id="sumLabel">علبة واحدة</span>
+            <span class="tot" id="sumTotal"></span>
+          </div>
+          <button type="submit" class="btn btn-primary" id="submitBtn">أكّد الطلب</button>
+          <p class="form-note">بعد التأكيد يفتح واتساب برسالة طلبك جاهزة. اضغط «إرسال» داخل واتساب لإكمال الطلب، ونتواصل معك لتأكيد موعد التوصيل.</p>
+        </div>
+        <div class="success" role="status">
+          <div class="ok"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></div>
+          <h3 id="okTitle">تم تجهيز طلبك في واتساب</h3>
+          <p id="okText">ستفتح لك محادثة واتساب برسالة الطلب جاهزة. اضغط إرسال لإكمال طلبك.</p>
+          <a href="#" class="btn btn-primary" id="okWa" target="_blank" rel="noopener">إرسال الطلب عبر واتساب</a>
+          <button type="button" class="link-btn" id="editOrder">تعديل الطلب</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</section>
 
 <!-- ================= HERO ================= -->
 <section class="hero" data-kb="overview">
@@ -779,95 +874,6 @@
       <figure class="review rv"><div class="stars" aria-label="5 من 5">★★★★★</div><blockquote>«طعمه حلو وسهل الاستخدام.»</blockquote><figcaption class="who"><span class="av">أ</span>أحمد</figcaption></figure>
       <figure class="review rv"><div class="stars" aria-label="5 من 5">★★★★★</div><blockquote>«أعاني من قولون عصبي، وما ارتحت إلا عليه.»</blockquote><figcaption class="who"><span class="av">ل</span>ليلى، 27 سنة</figcaption></figure>
       <figure class="review rv"><div class="stars" aria-label="5 من 5">★★★★★</div><blockquote>«منتج فعّال من جد.»</blockquote><figcaption class="who"><span class="av">ع</span>عميلة، 40 سنة</figcaption></figure>
-    </div>
-  </div>
-</section>
-
-<!-- ================= ORDER ================= -->
-<section class="block tint" id="order" data-kb="order">
-  <div class="wrap">
-    <div class="sec-head rv">
-      <span class="eyebrow">اطلب الآن</span>
-      <h2>اختر عرضك، وادفع عند الاستلام</h2>
-      <p>كل علبة تكفي 30 يوماً. ننصح بثلاثة أشهر لترسيخ العادة والحصول على أفضل نتيجة.</p>
-    </div>
-    <div class="order">
-      <div class="bundles-col">
-        <fieldset class="bundles" id="bundles" style="border:0;padding:0;margin:0">
-          <legend class="sr-only">اختر العرض</legend>
-        </fieldset>
-        <p class="bundle-err" id="e-bundle" role="alert"></p>
-        <div class="assure">
-          <div><b>دفع عند الاستلام</b>ادفع لما توصلك</div>
-          <div><b data-cfg="deliveryShort">2 – 5 أيام</b>توصيل لباب البيت</div>
-          <div><b>دعم واتساب</b>نرد على استفساراتك</div>
-        </div>
-      </div>
-
-      <form class="order-form" id="orderForm" novalidate>
-        <div class="form-body">
-          <h3 class="form-title">بيانات التوصيل</h3>
-          <div class="field">
-            <label for="f-name">الاسم<span class="req" aria-hidden="true">*</span></label>
-            <input id="f-name" name="name" autocomplete="name" maxlength="60" required>
-            <span class="err" id="e-name"></span>
-          </div>
-          <div class="field">
-            <label for="f-phone">رقم الجوال<span class="req" aria-hidden="true">*</span></label>
-            <input id="f-phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="05XXXXXXXX" dir="ltr" style="text-align:right" maxlength="20" required>
-            <span class="err" id="e-phone"></span>
-          </div>
-          <div class="row2">
-            <div class="field">
-              <label for="f-city">المدينة<span class="req" aria-hidden="true">*</span></label>
-              <input id="f-city" name="city" list="cities" autocomplete="address-level2" maxlength="60" required>
-              <datalist id="cities">
-                <option value="الرياض"><option value="جدة"><option value="مكة المكرمة"><option value="المدينة المنورة"><option value="الدمام"><option value="الخبر"><option value="الطائف"><option value="تبوك"><option value="بريدة"><option value="أبها"><option value="خميس مشيط"><option value="حائل"><option value="جازان"><option value="نجران"><option value="الأحساء">
-              </datalist>
-              <span class="err" id="e-city"></span>
-            </div>
-            <div class="field">
-              <label for="f-district">الحي<span class="req" aria-hidden="true">*</span></label>
-              <input id="f-district" name="district" autocomplete="address-line2" maxlength="60" required>
-              <span class="err" id="e-district"></span>
-            </div>
-          </div>
-          <div class="loc">
-            <button type="button" class="loc-btn" id="locBtn">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 21s-7-6.1-7-11.5A7 7 0 0 1 19 9.5C19 14.9 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.5"/></svg>
-              <span id="locBtnText">تحديد موقعي تلقائياً</span>
-            </button>
-            <p class="loc-help">اختياري — يساعدنا على تحديد المدينة والحي وموقع التوصيل بدقة.</p>
-            <div class="loc-status" id="locStatus" role="status" aria-live="polite" hidden></div>
-          </div>
-          <div class="field">
-            <label for="f-notes">ملاحظات <span class="opt">(اختياري)</span></label>
-            <textarea id="f-notes" name="notes" rows="2" maxlength="500" placeholder="مثلاً: أقرب معلم، أو وقت مناسب للتوصيل"></textarea>
-          </div>
-          <label class="check">
-            <input type="checkbox" id="f-wholesale" name="wholesale">
-            <span class="box" aria-hidden="true"></span>
-            <span>لدي طلب بالجملة</span>
-          </label>
-          <div class="field" id="wholesaleField" hidden>
-            <label for="f-wdetails">الكمية المطلوبة / تفاصيل طلب الجملة <span class="opt">(اختياري)</span></label>
-            <textarea id="f-wdetails" name="wdetails" rows="2" maxlength="500" placeholder="مثال: أحتاج 50 علبة"></textarea>
-          </div>
-          <div class="summary">
-            <span class="lbl" id="sumLabel">علبة واحدة</span>
-            <span class="tot" id="sumTotal"></span>
-          </div>
-          <button type="submit" class="btn btn-primary" id="submitBtn">أكّد الطلب</button>
-          <p class="form-note">بعد التأكيد يفتح واتساب برسالة طلبك جاهزة. اضغط «إرسال» داخل واتساب لإكمال الطلب، ونتواصل معك لتأكيد موعد التوصيل.</p>
-        </div>
-        <div class="success" role="status">
-          <div class="ok"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></div>
-          <h3 id="okTitle">تم تجهيز طلبك في واتساب</h3>
-          <p id="okText">ستفتح لك محادثة واتساب برسالة الطلب جاهزة. اضغط إرسال لإكمال طلبك.</p>
-          <a href="#" class="btn btn-primary" id="okWa" target="_blank" rel="noopener">إرسال الطلب عبر واتساب</a>
-          <button type="button" class="link-btn" id="editOrder">تعديل الطلب</button>
-        </div>
-      </form>
     </div>
   </div>
 </section>
@@ -1250,13 +1256,14 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
   updateSummary();
   $("#mbarPrice").textContent = money(Math.min(...CONFIG.bundles.map(b => b.price)));
   // شريط «اطلب الآن» وزر واتساب العائم يختفيان داخل قسم الطلب حتى لا يغطيا النموذج وزر التأكيد
-  // وفي الجوال يختفي زرا واتساب والمساعد العائمان أيضاً ما دام زر «اطلب» في أعلى الصفحة ظاهراً، حتى لا يغطياه
+  // زرا واتساب والمساعد العائمان يختفيان في الجوال فقط (فوق نموذج الطلب أو زر «اطلب» في البداية) حتى لا يغطيا أي منهما
   if ("IntersectionObserver" in window){
     const seen = { order: false, hero: false };
     const mobile = matchMedia("(max-width: 640px)");
     const apply = () => {
       $(".mbar").classList.toggle("away", seen.order);
-      [$(".wa-float"), $("#aiLauncher")].forEach(el => el.classList.toggle("away", seen.order || (mobile.matches && seen.hero)));
+      [$(".wa-float"), $("#aiLauncher")].forEach(el => el.classList.toggle("away", mobile.matches && (seen.order || seen.hero)));
+      $("#aiLauncher").classList.toggle("compact", !mobile.matches && seen.order);
     };
     new IntersectionObserver(([en]) => { seen.order = en.isIntersecting; apply(); }).observe($("#order"));
     new IntersectionObserver(([en]) => { seen.hero = en.isIntersecting; apply(); }).observe($(".hero-copy .cta-row"));
