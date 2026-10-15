@@ -9,7 +9,7 @@ compatibility_date = "2026-09-01"
 binding = "AI"
 
 [vars]
-SITE_URL = "https://calmgastro.github.io/"
+SITE_URL = "https://vitamik.com/"
 ALLOWED_ORIGINS = "https://calmgastro.github.io,https://vitamik.com,https://www.vitamik.com"
 PROVIDERS = "gemini,workers-ai"
 GEMINI_MODEL = "gemini-3.1-flash-lite"
