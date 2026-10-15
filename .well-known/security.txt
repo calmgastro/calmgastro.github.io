@@ -1,0 +1,4 @@
+Contact: mailto:info@vitamik.com
+Expires: 2027-10-15T00:00:00.000Z
+Preferred-Languages: ar, en
+Canonical: https://vitamik.com/.well-known/security.txt

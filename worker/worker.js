@@ -20,7 +20,7 @@ const DEFAULTS = {
   WORKERS_AI_MODEL: "@cf/meta/llama-4-scout-17b-16e-instruct",
   KB_TTL_SECONDS: 300
 };
-const LIMITS = { message: 300, historyTurns: 6, historyChars: 600, perIpPerMinute: 10, answerChars: 1500, timeoutMs: 15000, geminiTimeoutMs: 10000 };
+const LIMITS = { bodyBytes: 8192, message: 300, historyTurns: 6, historyChars: 600, perIpPerMinute: 10, answerChars: 1500, timeoutMs: 15000, geminiTimeoutMs: 10000 };
 
 const NOT_FOUND_ANSWER = "لا أملك معلومات مؤكدة عن هذا السؤال من معلومات المنتج المتاحة لدي. يمكنك التواصل معنا عبر واتساب وسنساعدك.";
 
@@ -285,7 +285,7 @@ function corsHeaders(env, origin) {
   return { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Methods": "POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Max-Age": "86400", "Vary": "Origin" };
 }
 const json = (obj, status = 200, extra = {}) =>
-  new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", ...extra } });
+  new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", ...extra } });
 
 export default {
   async fetch(request, env) {
@@ -308,8 +308,14 @@ export default {
     const ip = request.headers.get("CF-Connecting-IP") || "unknown";
     if (!(await allowed(env, ip))) return json({ error: "rate_limited" }, 429, cors);
 
+    // حد لحجم الطلب: يمنع إرسال بيانات ضخمة لاستهلاك الخادم
+    if (Number(request.headers.get("Content-Length") || 0) > LIMITS.bodyBytes) return json({ error: "too_large" }, 413, cors);
     let input;
-    try { input = cleanInput(await request.json()); } catch (_) { input = null; }
+    try {
+      const raw = await request.text();
+      if (raw.length > LIMITS.bodyBytes) return json({ error: "too_large" }, 413, cors);
+      input = cleanInput(JSON.parse(raw));
+    } catch (_) { input = null; }
     if (!input) return json({ error: "bad_request" }, 400, cors);
 
     let kb;

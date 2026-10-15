@@ -16,3 +16,9 @@ GEMINI_MODEL = "gemini-3.1-flash-lite"
 WORKERS_AI_MODEL = "@cf/meta/llama-4-scout-17b-16e-instruct"
 
 # GEMINI_API_KEY لا يُكتب هنا أبداً. يضاف كـ Secret من لوحة Cloudflare أو بالأمر أعلاه.
+
+# حد الطلبات من Cloudflare نفسها (أقوى من العدّاد الداخلي): 20 سؤالاً في الدقيقة لكل عنوان IP
+[[ratelimits]]
+name = "RATE_LIMITER"
+namespace_id = "1001"
+simple = { limit = 20, period = 60 }
