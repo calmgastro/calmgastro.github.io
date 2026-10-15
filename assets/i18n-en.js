@@ -35,7 +35,6 @@ window.I18N_EN = {
   "اطلب الآن": "Order now",
   "رشاقتك تبدأ <em>من الداخل</em>": "A slimmer you starts <em>from within</em>",
   "ظرف واحد في كوب ماء قبل وجبتك بنصف ساعة. <strong>ألياف الكونجاك تتمدد في معدتك فتشبع أسرع</strong>، والزنجبيل والإنولين يخففان الانتفاخ. وزن أخف بدون حرمان ولا أنظمة قاسية.": "One sachet in a glass of water half an hour before your meal. <strong>Konjac fiber expands in your stomach so you feel full sooner</strong>, while ginger and inulin ease bloating. A lighter body without deprivation or harsh diets.",
-  "اختر عرضك واطلب": "Choose your offer",
   "<b class=\"num\">30</b><span>ظرف تكفي شهراً</span>": "<b class=\"num\">30</b><span>sachets last a month</span>",
   "<b><span class=\"num\">2000</span> ملغ</b><span>ألياف كونجاك بكل ظرف</span>": "<b><span class=\"num\">2000</span> mg</b><span>konjac fiber per sachet</span>",
   "<b>ليمون وفراولة</b><span>نكهة منعشة بلا مرارة</span>": "<b>Lemon &amp; strawberry</b><span>refreshing, never bitter</span>",
@@ -68,7 +67,6 @@ window.I18N_EN = {
   "أذِب الظرف في كوب ماء (250 مل)، حرّكه جيداً، واشربه مباشرة قبل أن يتماسك.": "Dissolve the sachet in a glass of water (250 ml), stir well and drink it right away before it thickens.",
   "قبل وجبتك بنصف ساعة": "Half an hour before your meal",
   "يفضَّل قبل الوجبة الرئيسية، حتى تكون الألياف قد تمددت وأنت تبدأ الأكل.": "Best before your main meal, so the fiber has expanded by the time you start eating.",
-  "💧 <strong>مهم:</strong> اشرب كوب ماء إضافياً بعده. الألياف تحتاج سوائل كافية لتعمل بأمان، وهذا تحذير مطبوع على العلبة نفسها.": "💧 <strong>Important:</strong> drink an extra glass of water afterwards. Fiber needs enough fluid to work safely, and this warning is printed on the box itself.",
   "ماذا تتوقع": "What to expect",
   "نتائج تحسّها قبل أن تراها على الميزان": "Results you feel before you see them on the scale",
   "لن نعدك بعشرة كيلو في الشهر. CalmGastro مكمل غذائي يعمل مع جسمك تدريجياً، وهذا ما يلاحظه أغلب المستخدمين مع الالتزام ونظام أكل متوازن:": "We won’t promise ten kilos a month. CalmGastro is a dietary supplement that works with your body gradually. Here’s what most users notice with consistent use and a balanced diet:",
@@ -94,7 +92,6 @@ window.I18N_EN = {
   "منتجات التنحيف السريعة": "Quick slimming products",
   "التركيبة": "Formula",
   "<span class=\"mark y\">✓</span>ألياف وفيتامين B12 وكروميوم ومكونات غذائية داعمة": "<span class=\"mark y\">✓</span>Fiber, vitamin B12, chromium and supporting nutrients",
-  "تعتمد غالباً على «حرق» أو تأثير سريع": "Often rely on “fat burning” or a quick effect",
   "طريقة التأثير": "How it works",
   "<span class=\"mark y\">✓</span>يدعم الشبع والهضم والعادات اليومية": "<span class=\"mark y\">✓</span>Supports fullness, digestion and daily habits",
   "تقليل الشهية بشدة أو التأثير في سوائل الجسم": "Sharp appetite suppression or effects on body fluids",
@@ -204,13 +201,17 @@ window.I18N_EN = {
   "تابعنا على": "Follow us on",
   "CalmGastro على انستقرام (@calm.gastro)": "CalmGastro on Instagram (@calm.gastro)",
   "CalmGastro على تيك توك (@calm.gastro)": "CalmGastro on TikTok (@calm.gastro)",
-  "CalmGastro على فيسبوك (@calm.gastroo)": "CalmGastro on Facebook (@calm.gastroo)"
+  "CalmGastro على فيسبوك (@calm.gastroo)": "CalmGastro on Facebook (@calm.gastroo)",
+  "<span class=\"tip-ico\" aria-hidden=\"true\">!</span><span><strong>تنبيه:</strong> اشرب كوب ماء إضافياً بعده. الألياف تحتاج سوائل كافية لتعمل بأمان، وهذا تحذير مطبوع على العلبة نفسها.</span>": "<span class=\"tip-ico\" aria-hidden=\"true\">!</span><span><strong>Warning:</strong> drink an extra glass of water afterwards. Fiber needs enough fluid to work safely, and this warning is printed on the box itself.</span>",
+  "تعتمد غالباً على «حرق» أو تأثير سريع أو مواد كيميائية": "Often rely on “fat burning”, a quick effect or chemicals",
+  "للطلب بالجملة تواصل عبر الإيميل: <a href=\"mailto:info@vitamik.com?subject=%D8%A7%D8%B3%D8%AA%D9%81%D8%B3%D8%A7%D8%B1%20%D8%B9%D9%86%20%D8%B7%D9%84%D8%A8%20%D8%A8%D8%A7%D9%84%D8%AC%D9%85%D9%84%D8%A9%20-%20CalmGastro\" dir=\"ltr\">info@vitamik.com</a>": "For wholesale orders, email us: <a href=\"mailto:info@vitamik.com?subject=Wholesale%20inquiry%20-%20CalmGastro\" dir=\"ltr\">info@vitamik.com</a>"
  },
  "text": {
   "اسألنا على واتساب": "Ask us on WhatsApp",
   "موافقة مكمل غذائي رقم": "Food supplement approval no.",
   "تركيبة مطوّرة في أمريكا": "Formulated in the USA",
-  "ادعاءات صحية معتمدة من EFSA": "EFSA-approved health claims"
+  "ادعاءات صحية معتمدة من EFSA": "EFSA-approved health claims",
+  "للطلب بالجملة تواصل عبر الإيميل:": "For wholesale orders, email us:"
  },
  "attr": {
   "CalmGastro الصفحة الرئيسية": "CalmGastro home",
@@ -308,6 +309,7 @@ window.I18N_EN = {
   "اطلب الآن": "Order now",
   "استفسار عن الجملة": "Wholesale inquiry",
   "المساعد يكتب": "The assistant is typing",
-  "أهلاً بك 👋 أنا مساعد CalmGastro. اختر سؤالاً سريعاً أو اكتب سؤالك.": "Hi 👋 I’m the CalmGastro assistant. Pick a quick question or type your own."
+  "أهلاً بك 👋 أنا مساعد CalmGastro. اختر سؤالاً سريعاً أو اكتب سؤالك.": "Hi 👋 I’m the CalmGastro assistant. Pick a quick question or type your own.",
+  "أو راسلنا على الإيميل: {email}": "Or email us: {email}"
  }
 };

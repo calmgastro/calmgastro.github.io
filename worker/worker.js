@@ -45,7 +45,7 @@ SCOPE:
 
 ACTIONS (append these markers at the very end when relevant; they become buttons):
 - [[ORDER]] when the user wants to order/buy, asks how to order, or asks about prices/offers.
-- [[WHOLESALE]] when the user mentions wholesale, large quantities, resale, a shop/pharmacy, or numbers like 20, 50 or 100 boxes. Tell them: "لدينا خيار للاستفسار عن طلبات الجملة. يمكنك اختيار «لدي طلب بالجملة» في نموذج الطلب." Wholesale prices are not published, so never quote them.
+- [[WHOLESALE]] when the user mentions wholesale, large quantities, resale, a shop/pharmacy, or numbers like 20, 50 or 100 boxes. Tell them: "لدينا خيار للاستفسار عن طلبات الجملة. يمكنك اختيار «لدي طلب بالجملة» في نموذج الطلب." and, if <knowledge> lists a wholesale email, give it too. Wholesale prices are not published, so never quote them.
 - [[WHATSAPP]] when you cannot answer from <knowledge>, for medical questions, or when the user asks to talk to someone.
 
 LANGUAGE AND STYLE:
@@ -63,7 +63,7 @@ const ENGLISH_RULES = `LANGUAGE OVERRIDE: the visitor is using the English versi
   - not in <knowledge>: "${NOT_FOUND_EN}"
   - unconfirmed health claim: "I can't confirm that based on the official product information."
   - off-topic: "I'm the CalmGastro assistant, here to help with questions about our product and ordering."
-  - wholesale: "You can send a wholesale inquiry: tick “I have a wholesale order” in the order form."`;
+  - wholesale: "You can send a wholesale inquiry: tick “I have a wholesale order” in the order form." and, if <knowledge> lists a wholesale email, give it too.`;
 
 /* ------------------------------------------------------------------ قراءة المعرفة من الموقع */
 let KB_CACHE = null; // { text, prices:Set<number>, at }
@@ -133,6 +133,8 @@ function extractKnowledge(html) {
   out.push(`- واتساب للطلبات والاستفسارات: 0${st.whatsapp.replace(/^966/, "")}.`);
   out.push("- طريقة الطلب: من قسم الطلب في الموقع: اختيار العرض، كتابة الاسم والجوال والمدينة والحي، ثم «أكّد الطلب» فيفتح واتساب برسالة الطلب جاهزة ويضغط العميل إرسال. تحديد الموقع على الخريطة اختياري.");
   out.push("- طلبات الجملة: في نموذج الطلب خيار «لدي طلب بالجملة» مع حقل للكمية المطلوبة، ويُرسل كاستفسار عبر واتساب. أسعار الجملة غير منشورة في الموقع.");
+  // أي سطر في الصفحة يحتوي رابط بريد (mailto) يُضاف كما هو، مثل إيميل طلبات الجملة أعلى الموقع
+  for (const [, inner] of html.matchAll(/<p\b[^>]*>((?:(?!<\/p>)[\s\S])*?mailto:[\s\S]*?)<\/p>/g)) out.push(`- ${htmlToText(inner).replace(/\n/g, " ")}`);
 
   // حسابات التواصل الاجتماعي: تُقرأ من روابط الموقع نفسها (أي حساب يُضاف للصفحة يظهر هنا تلقائياً)
   const PLATFORMS = { "instagram.com": "انستقرام (Instagram)", "tiktok.com": "تيك توك (TikTok)", "facebook.com": "فيسبوك (Facebook)",

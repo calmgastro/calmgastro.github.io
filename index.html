@@ -26,6 +26,9 @@
 <meta property="og:type" content="website">
 <meta property="og:image" content="https://vitamik.com/assets/hero-product.jpg">
 <meta name="theme-color" content="#0F5C57">
+<link rel="icon" href="favicon.ico" sizes="48x48">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Alexandria:wght@400;600;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
@@ -86,6 +89,10 @@
   /* ---------- announcement + header ---------- */
   .announce{background:var(--teal-deep); color:var(--lime); font-size:.88rem; text-align:center; padding:.5em var(--gutter)}
   .announce strong{color:var(--butter)}
+  .announce p{margin:0}
+  .announce-sub{font-size:.8rem; color:#BFD8C9; margin-top:2px}
+  .announce-sub a{color:var(--butter); font-weight:600; text-decoration:none; border-bottom:1px dashed rgba(247,240,176,.55); unicode-bidi:isolate}
+  .announce-sub a:hover{border-bottom-style:solid}
   header.top{
     position:sticky; top:0; z-index:40; background:rgba(251,252,246,.92);
     backdrop-filter:saturate(1.4) blur(10px); border-bottom:1px solid var(--line);
@@ -214,7 +221,9 @@
   }
   .step h3{font-size:1.2rem; color:var(--white); margin-bottom:.4rem}
   .step p{color:#C9DDD1; font-size:.95rem}
-  .tip{margin-top:28px; padding:1rem 1.2rem; border-radius:var(--r-md); background:rgba(242,148,27,.14); border:1px solid rgba(242,148,27,.4); color:var(--butter); font-size:.95rem}
+  .tip{margin-top:28px; padding:1rem 1.2rem; border-radius:var(--r-md); background:rgba(229,72,77,.10); border:1.5px solid #E5484D; color:var(--butter); font-size:.95rem; display:flex; gap:.8rem; align-items:flex-start}
+  .tip strong{color:#FF8E86}
+  .tip-ico{flex:none; width:26px; height:26px; border-radius:50%; background:#E5484D; color:#fff; display:grid; place-items:center; font-family:var(--f-mono); font-weight:700; font-size:.9rem; margin-top:.1em}
 
   /* ---------- plan cards (commitment) ---------- */
   .plan{display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-bottom:clamp(40px,6vw,72px)}
@@ -488,6 +497,13 @@
   @media (max-width:860px){
     .hero .wrap, .inside, .order, .safety{grid-template-columns:1fr}
     .hero-media{order:-1; max-width:440px; margin-inline:auto; width:100%}
+    /* في الجوال: زر الطلب مباشرة تحت العنوان حتى يظهر في أول شاشة */
+    .hero-copy{display:flex; flex-direction:column}
+    .hero-copy .eyebrow{align-self:flex-start}
+    .hero-copy .cta-row{order:3; margin-top:1.1rem}
+    .hero-copy .lede{order:4; margin:1.2rem 0 0}
+    .hero-copy .facts{order:5}
+    .hero-copy .trust{order:6}
     .glass-stage{position:static}
     .steps, .timeline, .plan, .idea{grid-template-columns:1fr; gap:16px}
     .tl{padding:0}
@@ -515,6 +531,10 @@
     .mbar.away{display:none}
     .wa-float{inset-block-end:86px; width:50px; height:50px}
     .ai-launcher{inset-block-end:86px; inset-inline-start:16px; padding:.7em 1em; font-size:.9rem}
+    /* أول شاشة في الجوال: صورة أصغر قليلاً حتى يظهر زر «اطلب» فوق الأزرار العائمة */
+    .hero{padding-top:16px}
+    .hero-media{max-width:285px}
+    .hero-copy .lede{font-size:1rem}
     .ai-panel{inset:0 0 auto 0; width:100%; height:100dvh; border-radius:0}
     body.ai-open{overflow:hidden}
     .compare th, .compare td{padding:.8rem; font-size:.88rem}
@@ -529,7 +549,10 @@
 </head>
 <body>
 
-<div class="announce">🚚 <strong data-cfg="shippingNote">شحن مجاني لجميع مدن المملكة</strong> · والدفع عند الاستلام</div>
+<div class="announce">
+  <p class="announce-main">🚚 <strong data-cfg="shippingNote">شحن مجاني لجميع مدن المملكة</strong> · والدفع عند الاستلام</p>
+  <p class="announce-sub">للطلب بالجملة تواصل عبر الإيميل: <a href="mailto:info@vitamik.com?subject=%D8%A7%D8%B3%D8%AA%D9%81%D8%B3%D8%A7%D8%B1%20%D8%B9%D9%86%20%D8%B7%D9%84%D8%A8%20%D8%A8%D8%A7%D9%84%D8%AC%D9%85%D9%84%D8%A9%20-%20CalmGastro" dir="ltr">info@vitamik.com</a></p>
+</div>
 
 <header class="top">
   <div class="wrap">
@@ -552,12 +575,12 @@
 <!-- ================= HERO ================= -->
 <section class="hero" data-kb="overview">
   <div class="wrap">
-    <div>
+    <div class="hero-copy">
       <span class="eyebrow">Slim from inside</span>
       <h1>رشاقتك تبدأ <em>من الداخل</em></h1>
       <p class="lede">ظرف واحد في كوب ماء قبل وجبتك بنصف ساعة. <strong>ألياف الكونجاك تتمدد في معدتك فتشبع أسرع</strong>، والزنجبيل والإنولين يخففان الانتفاخ. وزن أخف بدون حرمان ولا أنظمة قاسية.</p>
       <div class="cta-row">
-        <a href="#order" class="btn btn-primary">اختر عرضك واطلب</a>
+        <a href="#order" class="btn btn-primary">اطلب CalmGastro الآن</a>
         <a href="#" class="btn btn-ghost js-wa">
           <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.04 2a9.9 9.9 0 0 0-8.5 15l-1.4 5.1 5.2-1.4A9.9 9.9 0 1 0 12.04 2Zm0 18.1a8.2 8.2 0 0 1-4.2-1.15l-.3-.18-3.1.8.83-3-.2-.31a8.2 8.2 0 1 1 6.97 3.84Zm4.5-6.1c-.25-.12-1.46-.72-1.69-.8-.23-.08-.39-.12-.55.12-.16.25-.63.8-.78.96-.14.17-.29.19-.53.07a6.7 6.7 0 0 1-3.32-2.9c-.25-.43.25-.4.72-1.33.08-.16.04-.3-.02-.42-.06-.12-.55-1.33-.76-1.82-.2-.48-.4-.41-.55-.42h-.47a.9.9 0 0 0-.65.3 2.7 2.7 0 0 0-.85 2.02 4.7 4.7 0 0 0 1 2.5 10.8 10.8 0 0 0 4.13 3.65c1.54.66 2.14.72 2.91.6.47-.07 1.46-.6 1.66-1.17.2-.58.2-1.07.15-1.17-.06-.1-.22-.17-.46-.29Z"/></svg>
           اسألنا على واتساب
@@ -670,7 +693,7 @@
         <p>يفضَّل قبل الوجبة الرئيسية، حتى تكون الألياف قد تمددت وأنت تبدأ الأكل.</p>
       </div>
     </div>
-    <p class="tip rv">💧 <strong>مهم:</strong> اشرب كوب ماء إضافياً بعده. الألياف تحتاج سوائل كافية لتعمل بأمان، وهذا تحذير مطبوع على العلبة نفسها.</p>
+    <p class="tip rv"><span class="tip-ico" aria-hidden="true">!</span><span><strong>تنبيه:</strong> اشرب كوب ماء إضافياً بعده. الألياف تحتاج سوائل كافية لتعمل بأمان، وهذا تحذير مطبوع على العلبة نفسها.</span></p>
   </div>
 </section>
 
@@ -728,7 +751,7 @@
           <tr><th scope="col"><span class="sr-only">المعيار</span></th><th scope="col" class="us">CalmGastro</th><th scope="col">منتجات التنحيف السريعة</th></tr>
         </thead>
         <tbody>
-          <tr><th scope="row">التركيبة</th><td class="us"><span class="mark y">✓</span>ألياف وفيتامين B12 وكروميوم ومكونات غذائية داعمة</td><td class="them">تعتمد غالباً على «حرق» أو تأثير سريع</td></tr>
+          <tr><th scope="row">التركيبة</th><td class="us"><span class="mark y">✓</span>ألياف وفيتامين B12 وكروميوم ومكونات غذائية داعمة</td><td class="them">تعتمد غالباً على «حرق» أو تأثير سريع أو مواد كيميائية</td></tr>
           <tr><th scope="row">طريقة التأثير</th><td class="us"><span class="mark y">✓</span>يدعم الشبع والهضم والعادات اليومية</td><td class="them">تقليل الشهية بشدة أو التأثير في سوائل الجسم</td></tr>
           <tr><th scope="row">بعد التوقف</th><td class="us"><span class="mark y">✓</span>عادات أثبت تسهّل المحافظة على النتيجة</td><td class="them"><span class="mark n">✕</span>قد يعود الوزن إذا لم تتغير العادات</td></tr>
           <tr><th scope="row">الشكل</th><td class="us"><span class="mark y">✓</span>مشروب بنكهة ليمون وفراولة</td><td class="them">كبسولات تُبلع</td></tr>
@@ -1227,9 +1250,17 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
   updateSummary();
   $("#mbarPrice").textContent = money(Math.min(...CONFIG.bundles.map(b => b.price)));
   // شريط «اطلب الآن» وزر واتساب العائم يختفيان داخل قسم الطلب حتى لا يغطيا النموذج وزر التأكيد
+  // وفي الجوال يختفي زرا واتساب والمساعد العائمان أيضاً ما دام زر «اطلب» في أعلى الصفحة ظاهراً، حتى لا يغطياه
   if ("IntersectionObserver" in window){
-    const floaters = [$(".mbar"), $(".wa-float"), $("#aiLauncher")];
-    new IntersectionObserver(([en]) => floaters.forEach(el => el.classList.toggle("away", en.isIntersecting))).observe($("#order"));
+    const seen = { order: false, hero: false };
+    const mobile = matchMedia("(max-width: 640px)");
+    const apply = () => {
+      $(".mbar").classList.toggle("away", seen.order);
+      [$(".wa-float"), $("#aiLauncher")].forEach(el => el.classList.toggle("away", seen.order || (mobile.matches && seen.hero)));
+    };
+    new IntersectionObserver(([en]) => { seen.order = en.isIntersecting; apply(); }).observe($("#order"));
+    new IntersectionObserver(([en]) => { seen.hero = en.isIntersecting; apply(); }).observe($(".hero-copy .cta-row"));
+    mobile.addEventListener("change", apply);
   }
 
   /* ---------- form ---------- */
@@ -1539,7 +1570,8 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
                  "", t("{pay}، والتوصيل {del}.", { pay: CONFIG.payment, del: CONFIG.deliveryShort })].join("\n"),
           actions: ["order"] }) },
       { q: t("هل يوجد بيع بالجملة؟"), answer: () => ({
-          text: t("لدينا خيار للاستفسار عن طلبات الجملة. يمكنك اختيار «لدي طلب بالجملة» في نموذج الطلب، واكتب الكمية التي تحتاجها، ونرد عليك بالأسعار عبر واتساب."),
+          text: [t("لدينا خيار للاستفسار عن طلبات الجملة. يمكنك اختيار «لدي طلب بالجملة» في نموذج الطلب، واكتب الكمية التي تحتاجها، ونرد عليك بالأسعار عبر واتساب."),
+                 ...[...$$(".announce-sub a")].map(a => t("أو راسلنا على الإيميل: {email}", { email: a.textContent.trim() }))].join("\n"),
           actions: ["wholesale", "whatsapp"] }) }
     ];
 
