@@ -1,7 +1,7 @@
 /* يعمل أولاً قبل عرض الصفحة: (1) يمنع عرض الموقع داخل موقع آخر (2) يحدد لغة الصفحة */
 if (window.top !== window.self) {
-  try { window.top.location.replace(window.location.href); }
-  catch (e) { document.documentElement.style.display = "none"; }
+  document.documentElement.style.display = "none";      // لا يظهر شيء داخل موقع آخر في كل المتصفحات
+  try { window.top.location.replace(window.location.href); } catch (e) {}
 }
 /* لغة الصفحة: ?lang= أولاً، ثم اختيار الزائر المحفوظ، ثم لغة المتصفح (عربي إن كانت عربية، وإلا إنجليزي) */
 (function(){
