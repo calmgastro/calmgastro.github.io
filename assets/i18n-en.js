@@ -216,7 +216,6 @@ window.I18N_EN = {
  "attr": {
   "CalmGastro الصفحة الرئيسية": "CalmGastro home",
   "أقسام الصفحة": "Page sections",
-  "علبة CalmGastro Slim from Inside بنكهة الليمون والفراولة بجانب ليمون وفراولة وكوب عصير ليمون بارد": "CalmGastro Slim from Inside box, lemon-strawberry flavor, next to lemons, strawberries and a glass of iced lemonade",
   "مكونات غذائية داعمة": "Supporting nutrients",
   "5 من 5": "5 out of 5",
   "مثلاً: أقرب معلم، أو وقت مناسب للتوصيل": "e.g. nearest landmark or a good time for delivery",
@@ -225,7 +224,8 @@ window.I18N_EN = {
   "تواصل معنا عبر واتساب": "Contact us on WhatsApp",
   "إغلاق المساعد": "Close assistant",
   "اكتب سؤالك هنا…": "Type your question here…",
-  "إرسال": "Send"
+  "إرسال": "Send",
+  "علبة CalmGastro Slim from Inside بنكهة الليمون والفراولة بجانب ليمون وفراولة وكوب عصير ليمون وفراولة بارد": "CalmGastro Slim from Inside box, lemon-strawberry flavor, next to lemons, strawberries and a glass of iced strawberry lemonade"
  },
  "ui": {
   "السلام عليكم، عندي استفسار عن CalmGastro": "Hello, I have a question about CalmGastro",
