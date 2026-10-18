@@ -202,7 +202,8 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
       [$(".wa-float"), $("#aiLauncher")].forEach(el => el.classList.toggle("away", mobile.matches && (seen.order || ctas.size > 0)));
       $("#aiLauncher").classList.toggle("compact", !mobile.matches && seen.order);
     };
-    new IntersectionObserver(([en]) => { seen.order = en.isIntersecting; apply(); }).observe($("#order"));
+    // الهامش يتجاهل حافة القسم الملاصقة للشاشة (أو المختفية تحت الترويسة) حتى لا تختفي الأزرار بلا داعٍ
+    new IntersectionObserver(([en]) => { seen.order = en.isIntersecting; apply(); }, { rootMargin: "-80px 0px -40px 0px" }).observe($("#order"));
     const ctaIO = new IntersectionObserver(entries => { entries.forEach(en => en.isIntersecting ? ctas.add(en.target) : ctas.delete(en.target)); apply(); });
     $$(".hero-copy .cta-row, .final .btn").forEach(el => ctaIO.observe(el));
     mobile.addEventListener("change", apply);

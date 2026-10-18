@@ -6,7 +6,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://calmgastro-assistant.calmgastro.workers.dev https://nominatim.openstreetmap.org; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; manifest-src 'self'">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<script src="assets/lang.js?v=20261015b"></script>
+<script src="assets/lang.js?v=20261018a"></script>
 <title>CalmGastro | رشاقتك تبدأ من الداخل</title>
 <meta name="description" content="CalmGastro Slim from Inside: ظرف واحد يومياً بنكهة الليمون والفراولة، فيه 2000 ملغ ألياف كونجاك مع الإنولين والزنجبيل والكروميوم. يساعدك تشبع أسرع وتخفف الانتفاخ. الدفع عند الاستلام.">
 <meta property="og:title" content="CalmGastro | رشاقتك تبدأ من الداخل">
@@ -145,8 +145,6 @@
   .sec-head h2{font-size:clamp(1.9rem,4vw,2.9rem); font-weight:800; color:var(--teal-deep); text-wrap:balance}
   .sec-head p{color:var(--muted); margin-top:.8rem; font-size:1.08rem}
   .tint{background:var(--lime)}
-  /* قسم الطلب أول الصفحة: مسافة علوية أقل من باقي الأقسام */
-  section.order-first{padding-top:clamp(28px,4vw,56px)}
   .dark{background:var(--teal-deep); color:var(--lime)}
   .dark .sec-head h2{color:var(--white)}
   .dark .sec-head p{color:#BFD8C9}
@@ -594,8 +592,42 @@
 
 <main id="top">
 
+<!-- ================= HERO ================= -->
+<section class="hero" data-kb="overview">
+  <div class="wrap">
+    <div class="hero-copy">
+      <span class="eyebrow">Slim from inside</span>
+      <h1>رشاقتك تبدأ <em>من الداخل</em></h1>
+      <p class="lede">ظرف واحد في كوب ماء قبل وجبتك بنصف ساعة. <strong>ألياف الكونجاك تتمدد في معدتك فتشبع أسرع</strong>، والزنجبيل والإنولين يخففان الانتفاخ. وزن أخف بدون حرمان ولا أنظمة قاسية.</p>
+      <div class="cta-row">
+        <a href="#order" class="btn btn-primary">اطلب CalmGastro الآن</a>
+        <a href="#" class="btn btn-ghost js-wa">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.04 2a9.9 9.9 0 0 0-8.5 15l-1.4 5.1 5.2-1.4A9.9 9.9 0 1 0 12.04 2Zm0 18.1a8.2 8.2 0 0 1-4.2-1.15l-.3-.18-3.1.8.83-3-.2-.31a8.2 8.2 0 1 1 6.97 3.84Zm4.5-6.1c-.25-.12-1.46-.72-1.69-.8-.23-.08-.39-.12-.55.12-.16.25-.63.8-.78.96-.14.17-.29.19-.53.07a6.7 6.7 0 0 1-3.32-2.9c-.25-.43.25-.4.72-1.33.08-.16.04-.3-.02-.42-.06-.12-.55-1.33-.76-1.82-.2-.48-.4-.41-.55-.42h-.47a.9.9 0 0 0-.65.3 2.7 2.7 0 0 0-.85 2.02 4.7 4.7 0 0 0 1 2.5 10.8 10.8 0 0 0 4.13 3.65c1.54.66 2.14.72 2.91.6.47-.07 1.46-.6 1.66-1.17.2-.58.2-1.07.15-1.17-.06-.1-.22-.17-.46-.29Z"/></svg>
+          اسألنا على واتساب
+        </a>
+      </div>
+      <div class="facts">
+        <div><b class="num">30</b><span>ظرف تكفي شهراً</span></div>
+        <div><b><span class="num">2000</span> ملغ</b><span>ألياف كونجاك بكل ظرف</span></div>
+        <div><b>ليمون وفراولة</b><span>نكهة منعشة بلا مرارة</span></div>
+      </div>
+      <div class="trust">
+        <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>موافقة مكمل غذائي رقم <span class="num">023487</span></span>
+        <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>تركيبة مطوّرة في أمريكا</span>
+        <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>ادعاءات صحية معتمدة من EFSA</span>
+      </div>
+    </div>
+    <div class="hero-media">
+      <div class="hero-card">
+        <img src="assets/hero-product-2.jpg" alt="علبة CalmGastro Slim from Inside بنكهة الليمون والفراولة بجانب ليمون وفراولة وكوب عصير ليمون وفراولة بارد" width="1000" height="1000" fetchpriority="high">
+      </div>
+      <div class="sticker" aria-hidden="true"><div>ظرف واحد<b>1×</b>يومياً</div></div>
+    </div>
+  </div>
+</section>
+
 <!-- ================= ORDER ================= -->
-<section class="block tint order-first" id="order" data-kb="order">
+<section class="block tint" id="order" data-kb="order">
   <div class="wrap">
     <div class="sec-head rv">
       <span class="eyebrow">اطلب الآن</span>
@@ -679,40 +711,6 @@
           <button type="button" class="link-btn" id="editOrder">تعديل الطلب</button>
         </div>
       </form>
-    </div>
-  </div>
-</section>
-
-<!-- ================= HERO ================= -->
-<section class="hero" data-kb="overview">
-  <div class="wrap">
-    <div class="hero-copy">
-      <span class="eyebrow">Slim from inside</span>
-      <h1>رشاقتك تبدأ <em>من الداخل</em></h1>
-      <p class="lede">ظرف واحد في كوب ماء قبل وجبتك بنصف ساعة. <strong>ألياف الكونجاك تتمدد في معدتك فتشبع أسرع</strong>، والزنجبيل والإنولين يخففان الانتفاخ. وزن أخف بدون حرمان ولا أنظمة قاسية.</p>
-      <div class="cta-row">
-        <a href="#order" class="btn btn-primary">اطلب CalmGastro الآن</a>
-        <a href="#" class="btn btn-ghost js-wa">
-          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.04 2a9.9 9.9 0 0 0-8.5 15l-1.4 5.1 5.2-1.4A9.9 9.9 0 1 0 12.04 2Zm0 18.1a8.2 8.2 0 0 1-4.2-1.15l-.3-.18-3.1.8.83-3-.2-.31a8.2 8.2 0 1 1 6.97 3.84Zm4.5-6.1c-.25-.12-1.46-.72-1.69-.8-.23-.08-.39-.12-.55.12-.16.25-.63.8-.78.96-.14.17-.29.19-.53.07a6.7 6.7 0 0 1-3.32-2.9c-.25-.43.25-.4.72-1.33.08-.16.04-.3-.02-.42-.06-.12-.55-1.33-.76-1.82-.2-.48-.4-.41-.55-.42h-.47a.9.9 0 0 0-.65.3 2.7 2.7 0 0 0-.85 2.02 4.7 4.7 0 0 0 1 2.5 10.8 10.8 0 0 0 4.13 3.65c1.54.66 2.14.72 2.91.6.47-.07 1.46-.6 1.66-1.17.2-.58.2-1.07.15-1.17-.06-.1-.22-.17-.46-.29Z"/></svg>
-          اسألنا على واتساب
-        </a>
-      </div>
-      <div class="facts">
-        <div><b class="num">30</b><span>ظرف تكفي شهراً</span></div>
-        <div><b><span class="num">2000</span> ملغ</b><span>ألياف كونجاك بكل ظرف</span></div>
-        <div><b>ليمون وفراولة</b><span>نكهة منعشة بلا مرارة</span></div>
-      </div>
-      <div class="trust">
-        <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>موافقة مكمل غذائي رقم <span class="num">023487</span></span>
-        <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>تركيبة مطوّرة في أمريكا</span>
-        <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>ادعاءات صحية معتمدة من EFSA</span>
-      </div>
-    </div>
-    <div class="hero-media">
-      <div class="hero-card">
-        <img src="assets/hero-product-2.jpg" alt="علبة CalmGastro Slim from Inside بنكهة الليمون والفراولة بجانب ليمون وفراولة وكوب عصير ليمون وفراولة بارد" width="1000" height="1000" fetchpriority="high">
-      </div>
-      <div class="sticker" aria-hidden="true"><div>ظرف واحد<b>1×</b>يومياً</div></div>
     </div>
   </div>
 </section>
@@ -1076,7 +1074,7 @@
 }
 </script>
 
-<script src="assets/i18n-en.js?v=20261015b"></script>
-<script src="assets/app.js?v=20261015b"></script>
+<script src="assets/i18n-en.js?v=20261018a"></script>
+<script src="assets/app.js?v=20261018a"></script>
 </body>
 </html>
