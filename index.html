@@ -30,6 +30,7 @@
     --orange:#F2941B;
     --lime:#E9F3CF;
     --butter:#F7F0B0;
+    --mist:#E2F0EB;
     --ink:#12302E;
     --muted:#4F6663;
     --paper:#FBFCF6;
@@ -145,6 +146,8 @@
   .sec-head h2{font-size:clamp(1.9rem,4vw,2.9rem); font-weight:800; color:var(--teal-deep); text-wrap:balance}
   .sec-head p{color:var(--muted); margin-top:.8rem; font-size:1.08rem}
   .tint{background:var(--lime)}
+  /* لون ثانٍ للأقسام الملوّنة حتى لا يتجاور قسمان بنفس الخلفية (الطلب ثم «لمن صُمم») */
+  .mist{background:var(--mist)}
   .dark{background:var(--teal-deep); color:var(--lime)}
   .dark .sec-head h2{color:var(--white)}
   .dark .sec-head p{color:#BFD8C9}
@@ -716,7 +719,7 @@
 </section>
 
 <!-- ================= PROBLEMS ================= -->
-<section class="block tint" id="why" data-kb="problems">
+<section class="block mist" id="why" data-kb="problems">
   <div class="wrap">
     <div class="sec-head rv">
       <span class="eyebrow">لمن صُمم CalmGastro؟</span>
