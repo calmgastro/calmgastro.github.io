@@ -442,6 +442,13 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
     form.classList.add("done");
     form.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" });
 
+    // Snap Pixel: حدث «طلب» لقياس الإعلانات. نرسل المبلغ والعرض فقط؛ مكتبة Snap نفسها تضيف رقم الجوال مشفّراً (SHA-256)
+    // إذا كانت «المطابقة المتقدمة التلقائية» مفعّلة في إعدادات البكسل بحساب Snapchat الإعلاني
+    if (!wholesale && b && typeof window.snaptr === "function"){
+      try { snaptr("track", "PURCHASE", { price: b.price, currency: "SAR", item_ids: [b.id], number_items: b.boxes,
+        transaction_id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8) }); } catch (_) {}
+    }
+
     // اختياري: حفظ نسخة من الطلب في خدمتك. لا يؤخر فتح واتساب، ولا يتضمن إحداثيات العميل
     if (CONFIG.orderEndpoint){
       const { mapUrl, ...rest } = data;
