@@ -58,12 +58,12 @@ async function publicApi(request, env, url, cors) {
 
   if (url.pathname === "/api/orders") {
     if (body.hp) throw new HttpError(422, { error: "validation", fields: {} });     // honeypot field filled by a bot
-    if (!(await allowed(env, "ORDER_LIMITER", ip, 5, url))) throw new HttpError(429, { error: "rate_limited" });
+    if (!(await allowed(env, "ORDER_LIMITER", ip, 10, url))) throw new HttpError(429, { error: "rate_limited" });
     const { replay, number } = await createOrder(env, body);
     return json(await viewResponse(env, number, true, { token: await orderToken(env, number), replay }), replay ? 200 : 201, cors);
   }
 
-  if (!(await allowed(env, "LOOKUP_LIMITER", ip, 15, url))) throw new HttpError(429, { error: "rate_limited" });
+  if (!(await allowed(env, "LOOKUP_LIMITER", ip, 30, url))) throw new HttpError(429, { error: "rate_limited" });
   const number = normalizeOrderNumber(body.orderNumber);
 
   if (url.pathname === "/api/orders/view") {

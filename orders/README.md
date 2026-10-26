@@ -68,7 +68,7 @@ Allowed changes are fixed in `TRANSITIONS` (`src/orders.js`); `delivered` and `c
 ## Security
 
 - CORS: only `ALLOWED_ORIGINS` (vitamik.com) may call `/api/*`; 16 KB body limit; honeypot field.
-- Rate limits per IP (Cloudflare bindings): 5 orders/min, 15 lookups/min, 5 admin logins/min.
+- Rate limits per IP (Cloudflare bindings): 10 orders/min, 30 lookups/min, 5 admin logins/min.
 - Duplicate protection: the page disables the button and reuses one `idempotencyKey` per attempt; the key is UNIQUE in the database, so double clicks, retries after a lost response and parallel requests all return the same order.
 - Customer access: confirmation uses an HMAC token derived from the order number (`TOKEN_SECRET`, never stored); tracking requires order number + the same mobile number. Unknown order and wrong phone return the same `404`.
 - Admin: password (`ADMIN_PASSWORD`) → signed `__Host-` cookie (HttpOnly, Secure, SameSite=Strict, 12 h); every change also needs the `X-CG-Admin` header from the same origin (CSRF). Changing the password signs everyone out. Admin page has a strict CSP, no framing, `noindex`.
