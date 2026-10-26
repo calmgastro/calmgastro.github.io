@@ -45,7 +45,7 @@ SCOPE:
 
 ACTIONS (append these markers at the very end when relevant; they become buttons):
 - [[ORDER]] when the user wants to order/buy, asks how to order, or asks about prices/offers.
-- [[WHOLESALE]] when the user mentions wholesale, large quantities, resale, a shop/pharmacy, or numbers like 20, 50 or 100 boxes. Tell them: "لدينا خيار للاستفسار عن طلبات الجملة. يمكنك اختيار «لدي طلب بالجملة» في نموذج الطلب." and, if <knowledge> lists a wholesale email, give it too. Wholesale prices are not published, so never quote them.
+- [[WHOLESALE]] when the user mentions wholesale, large quantities, resale, a shop/pharmacy, or numbers like 20, 50 or 100 boxes. Tell them: "لدينا خيار للاستفسار عن طلبات الجملة. اضغط «استفسار عن الجملة» لتصلنا رسالتك عبر واتساب." and, if <knowledge> lists a wholesale email, give it too. Wholesale prices are not published, so never quote them.
 - [[WHATSAPP]] when you cannot answer from <knowledge>, for medical questions, or when the user asks to talk to someone.
 
 LANGUAGE AND STYLE:
@@ -53,7 +53,7 @@ LANGUAGE AND STYLE:
 - Reply in clear, friendly Arabic (Saudi-friendly Modern Standard Arabic). If the user writes in English, reply in English.
 - Be brief: at most about 120 words. Use short "- " bullet lines for lists. No headings, no tables, no links or URLs.
 - Quote prices exactly as written in <knowledge>, with the currency "ر.س".
-- Never ask for or repeat personal data (name, phone, address, location). For ordering, point to the order form.`;
+- Never ask for or repeat personal data (name, phone, address, location). For ordering, point to the cart and checkout on the website; for order status, point to «تتبع الطلب» (order number + mobile number). You cannot see or look up any order.`;
 
 // نسخة الموقع الإنجليزية: نفس القواعد، لكن الرد بالإنجليزية وبجمل ثابتة مقابلة
 const NOT_FOUND_EN = "I don't have confirmed information about this in the product details available to me. You can contact us on WhatsApp and we'll help.";
@@ -63,7 +63,7 @@ const ENGLISH_RULES = `LANGUAGE OVERRIDE: the visitor is using the English versi
   - not in <knowledge>: "${NOT_FOUND_EN}"
   - unconfirmed health claim: "I can't confirm that based on the official product information."
   - off-topic: "I'm the CalmGastro assistant, here to help with questions about our product and ordering."
-  - wholesale: "You can send a wholesale inquiry: tick “I have a wholesale order” in the order form." and, if <knowledge> lists a wholesale email, give it too.`;
+  - wholesale: "You can send a wholesale inquiry: press “Wholesale inquiry” to message us on WhatsApp." and, if <knowledge> lists a wholesale email, give it too.`;
 
 /* ------------------------------------------------------------------ قراءة المعرفة من الموقع */
 let KB_CACHE = null; // { text, prices:Set<number>, at }
@@ -126,13 +126,23 @@ function extractKnowledge(html) {
     const save = b.was ? `، السعر قبل الخصم ${b.was} ${cur} (توفير ${Math.round((1 - b.price / b.was) * 100)}%)` : "";
     out.push(`- ${b.title}: ${b.boxes * 30} ظرفاً، ${b.program}، السعر ${b.price} ${cur}${save}، حوالي ${perDay} ${cur} لليوم${b.tag ? `، (${b.tag})` : ""}.`);
   }
+  // سعر العلبة فوق أكبر باقة (مثلاً 4 علب = 4 × 200)، وأسعار الكميات حتى الحد الأقصى للطلب الواحد
+  const after = st.pricing && st.pricing.boxPriceAfterBundles, maxBundle = Math.max(...st.bundles.map(b => b.boxes));
+  if (after) {
+    const maxBoxes = (st.orders && st.orders.maxBoxesPerOrder) || 30;
+    prices.add(after);
+    for (let n = maxBundle + 1; n <= maxBoxes; n++) prices.add(n * after);
+    out.push(`- أكثر من ${maxBundle} علب: سعر العلبة ${after} ${cur} (مثلاً ${maxBundle + 1} علب = ${(maxBundle + 1) * after} ${cur}، و${maxBundle + 3} علب = ${(maxBundle + 3) * after} ${cur}). الحد الأقصى للطلب الواحد ${maxBoxes} علبة.`);
+  }
+  out.push(`- السلة تطبّق أفضل سعر تلقائياً حسب عدد العلب (مثلاً إضافة «علبة واحدة» مرتين تُحسب كعلبتين بسعر ${(st.bundles.find(b => b.boxes === 2) || {}).price || ""} ${cur}).`);
   out.push(`- كل علبة فيها 30 ظرفاً. لا توجد عروض أو أكواد خصم غير المذكورة هنا.`);
 
   out.push("", "# الدفع والتوصيل والتواصل");
   out.push(`- الدفع: ${st.payment}.`, `- الشحن: ${st.shippingNote}.`, `- التوصيل: ${st.deliveryLong}`);
-  out.push(`- واتساب للطلبات والاستفسارات: 0${st.whatsapp.replace(/^966/, "")}.`);
-  out.push("- طريقة الطلب: من قسم الطلب في الموقع: اختيار العرض، كتابة الاسم والجوال والمدينة والحي، ثم «أكّد الطلب» فيفتح واتساب برسالة الطلب جاهزة ويضغط العميل إرسال. تحديد الموقع على الخريطة اختياري.");
-  out.push("- طلبات الجملة: في نموذج الطلب خيار «لدي طلب بالجملة» مع حقل للكمية المطلوبة، ويُرسل كاستفسار عبر واتساب. أسعار الجملة غير منشورة في الموقع.");
+  out.push(`- واتساب لخدمة العملاء والاستفسارات (الطلب نفسه يتم من الموقع): 0${st.whatsapp.replace(/^966/, "")}.`);
+  out.push("- طريقة الطلب من الموقع: اختيار العرض والضغط على «إضافة للسلة»، ثم «إتمام الطلب» وكتابة الاسم والجوال والمدينة والحي وعنوان التوصيل، ثم مراجعة الطلب والضغط على «تأكيد الطلب». يُسجَّل الطلب فوراً ويحصل العميل على رقم طلب (مثل CG-2026-000123). لا يحتاج لإرسال رسالة واتساب. تحديد الموقع على الخريطة اختياري.");
+  out.push("- متابعة الطلب: من «تتبع الطلب» في الموقع برقم الطلب ورقم الجوال المستخدم في الطلب. مراحل الطلب: بانتظار التأكيد، تم تأكيد الطلب، جاري التجهيز، تم الشحن، خرج للتوصيل، تم التوصيل. واتساب متاح للاستفسار عن أي طلب.");
+  out.push("- طلبات الجملة: زر «استفسار عن الجملة» يفتح رسالة واتساب جاهزة، أو عبر الإيميل. أسعار الجملة غير منشورة في الموقع.");
   // أي سطر في الصفحة يحتوي رابط بريد (mailto) يُضاف كما هو، مثل إيميل طلبات الجملة أعلى الموقع
   for (const [, inner] of html.matchAll(/<p\b[^>]*>((?:(?!<\/p>)[\s\S])*?mailto:[\s\S]*?)<\/p>/g)) out.push(`- ${htmlToText(inner).replace(/\n/g, " ")}`);
 
@@ -250,7 +260,7 @@ function finalize(raw, kb, message = "") {
   if (text.length > LIMITS.answerChars) text = text.slice(0, LIMITS.answerChars).replace(/\s+\S*$/, "") + "…";
   if (text.includes(NOT_FOUND_ANSWER.slice(0, 30)) || text.includes(NOT_FOUND_EN.slice(0, 40))) actions.add("whatsapp");
   for (const a of detectIntents(message)) actions.add(a);
-  if (text.includes("لدي طلب بالجملة") || /wholesale order/i.test(text)) actions.add("wholesale");
+  if (text.includes("استفسار عن الجملة") || /wholesale (order|inquiry)/i.test(text)) actions.add("wholesale");
   // ترتيب ثابت للأزرار
   return { answer: text, actions: ["order", "wholesale", "whatsapp"].filter(a => actions.has(a)) };
 }

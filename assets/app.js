@@ -16,7 +16,8 @@ const STORE = Object.assign(localized(PRODUCT.store, ["currency", "payment", "sh
   { bundles: PRODUCT.store.bundles.map(b => localized(b, ["title", "program", "tag"])) });
 
 const CONFIG = Object.assign({}, STORE, {
-  orderEndpoint: "",                 // اختياري: رابط Google Apps Script أو أي API لحفظ الطلبات (POST JSON) — أضف نطاقه إلى connect-src في سياسة الأمان (CSP) أعلى index.html
+  // خادم الطلبات (orders/ على Cloudflare Workers + D1): يُنشئ الطلب ويعطي رقمه. نطاقه مضاف إلى connect-src في CSP
+  ordersApi: { endpoint: "https://calmgastro-orders.calmgastro.workers.dev" },
   // تحويل الإحداثيات إلى مدينة وحي. لا يُرسل شيء إلا بعد أن يضغط العميل «تحديد موقعي» ويوافق.
   //  "nominatim": خدمة OpenStreetMap المجانية، بلا مفتاح (مناسبة لعدد طلبات قليل إلى متوسط)
   //  "endpoint":  خدمتك الخاصة لاحقاً (Backend أو Serverless) تستقبل GET ?lat=..&lng=.. وترجع {"city":"..","district":".."}
@@ -156,49 +157,14 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
     glass.classList.add("filled");
   }
 
-  /* ---------- bundles ---------- */
-  const box = $("#bundles");
-  CONFIG.bundles.forEach(b => {
-    const save = b.was ? Math.round((1 - b.price / b.was) * 100) : 0;
-    const per = Math.round(b.price / (b.boxes * 30) * 10) / 10;  // 7.5 لا تُقرّب إلى 8 حتى يظهر فرق العروض
-    const lab = document.createElement("label");
-    lab.className = "bundle";
-    lab.innerHTML = `
-      <input type="radio" name="bundle" value="${b.id}" ${b.id === CONFIG.defaultBundle ? "checked" : ""}>
-      <span class="card">
-        <span class="radio" aria-hidden="true"></span>
-        <span><span class="b-title">${b.title}</span><br><span class="b-sub">${t("{n} ظرفاً", { n: b.boxes * 30 })}</span><br><span class="b-prog">${b.program}</span><br><span class="b-sub">${t("≈ {per} {cur} لليوم", { per, cur: CONFIG.currency })}</span></span>
-        <span class="b-price">
-          <span class="now">${money(b.price)}</span><br>
-          ${b.was ? `<span class="was">${money(b.was)}</span> <span class="b-save">${t("وفّر {save}%", { save })}</span>` : ""}
-        </span>
-      </span>
-      ${b.tag ? `<span class="tag">${b.tag}</span>` : ""}`;
-    box.appendChild(lab);
-  });
-  $("#bundles legend").textContent = t("اختر العرض");
-  const current = () => CONFIG.bundles.find(b => b.id === ($("input[name=bundle]:checked")||{}).value) || CONFIG.bundles[0];
-  function updateSummary(){
-    if ($("#f-wholesale").checked){
-      $("#sumLabel").textContent = t("استفسار عن طلب بالجملة");
-      $("#sumTotal").textContent = t("حسب الكمية");
-      return;
-    }
-    const b = current();
-    $("#sumLabel").textContent = t("{title} · {n} ظرفاً · {program}", { title: b.title, n: b.boxes * 30, program: b.program });
-    $("#sumTotal").textContent = money(b.price);
-  }
-  box.addEventListener("change", updateSummary);
-  updateSummary();
-  $("#mbarPrice").textContent = money(Math.min(...CONFIG.bundles.map(b => b.price)));
-  // شريط «اطلب الآن» وزر واتساب العائم يختفيان داخل قسم الطلب حتى لا يغطيا النموذج وزر التأكيد
+  // شريط الجوال يختفي داخل قسم العروض ما دامت السلة فارغة؛ وعند وجود منتجات يبقى ظاهراً بزر «إتمام الطلب»
   // زرا واتساب والمساعد العائمان يختفيان في الجوال فقط (فوق نموذج الطلب أو زر «اطلب» في البداية) حتى لا يغطيا أي منهما
   if ("IntersectionObserver" in window){
     const seen = { order: false };
     const ctas = new Set();   // أزرار «اطلب» الرئيسية الظاهرة الآن (أعلى الصفحة وآخرها)
     const mobile = matchMedia("(max-width: 640px)");
     const apply = () => {
-      $(".mbar").classList.toggle("away", seen.order);
+      $(".mbar").classList.toggle("away", seen.order && !document.body.classList.contains("has-cart"));
       [$(".wa-float"), $("#aiLauncher")].forEach(el => el.classList.toggle("away", mobile.matches && (seen.order || ctas.size > 0)));
       $("#aiLauncher").classList.toggle("compact", !mobile.matches && seen.order);
     };
@@ -207,268 +173,8 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
     const ctaIO = new IntersectionObserver(entries => { entries.forEach(en => en.isIntersecting ? ctas.add(en.target) : ctas.delete(en.target)); apply(); });
     $$(".hero-copy .cta-row, .final .btn").forEach(el => ctaIO.observe(el));
     mobile.addEventListener("change", apply);
+    window.addEventListener("cg:cart", apply);            // من shop.js عند تغيّر السلة
   }
-
-  /* ---------- form ---------- */
-  const form = $("#orderForm");
-  const submitBtn = $("#submitBtn");
-  const isWholesale = () => form.elements.wholesale.checked;
-  const selected = () => CONFIG.bundles.find(b => b.id === ($("input[name=bundle]:checked")||{}).value) || null;
-  const toLatinDigits = v => v
-    .replace(/[٠-٩]/g, d => String(d.charCodeAt(0) - 0x0660))
-    .replace(/[۰-۹]/g, d => String(d.charCodeAt(0) - 0x06F0));
-  const normPhone = v => {
-    let d = toLatinDigits(v).replace(/[^\d]/g, "").replace(/^00/, "");
-    if (d.startsWith("966")) d = "0" + d.slice(3);
-    if (d.length === 9 && d.startsWith("5")) d = "0" + d;
-    return d;
-  };
-  const boxesLabel = n => EN ? (n === 1 ? "1 box" : `${n} boxes`)
-    : n === 1 ? "علبة واحدة" : n === 2 ? "علبتان" : n <= 10 ? `${n} علب` : `${n} علبة`;
-
-  // موقع العميل: يبقى في الذاكرة فقط لهذه الصفحة، ولا يُحفظ في المتصفح أو أي قاعدة بيانات
-  let loc = null; // { lat, lng }
-
-  const rules = {
-    name:     v => v.trim().length >= 2 || t("اكتب اسمك"),
-    phone:    v => /^05\d{8}$/.test(normPhone(v)) || t("اكتب رقم جوال سعودي صحيح يبدأ بـ 05 ومكوّن من 10 أرقام"),
-    // المدينة والحي مطلوبان إلا إذا حدد العميل موقعه (رابط الخريطة يكفي للتوصيل)
-    city:     v => v.trim().length >= 2 || !!loc || t("اكتب مدينتك أو استخدم «تحديد موقعي»"),
-    district: v => v.trim().length >= 2 || !!loc || t("اكتب اسم الحي أو استخدم «تحديد موقعي»")
-  };
-  function check(name){
-    const input = form.elements[name], res = rules[name](input.value);
-    const ok = res === true;
-    input.setAttribute("aria-invalid", ok ? "false" : "true");
-    $("#e-" + name).textContent = ok ? "" : res;
-    return ok;
-  }
-  function checkBundle(){
-    const b = selected();
-    const ok = isWholesale() || (!!b && Number.isInteger(b.boxes) && b.boxes > 0);
-    $("#e-bundle").textContent = ok ? "" : t("اختر أحد العروض");
-    return ok;
-  }
-  Object.keys(rules).forEach(n => {
-    const el = form.elements[n];
-    el.addEventListener("blur", () => el.value && check(n));
-    el.addEventListener("input", () => el.getAttribute("aria-invalid") === "true" && check(n));
-  });
-  box.addEventListener("change", checkBundle);
-
-  /* ---------- طلب الجملة ---------- */
-  function setSubmitLabel(){ submitBtn.textContent = isWholesale() ? t("أكّد الاستفسار") : t("أكّد الطلب"); }
-  form.elements.wholesale.addEventListener("change", () => {
-    const on = isWholesale();
-    $("#wholesaleField").hidden = !on;
-    $(".order").classList.toggle("is-wholesale", on);
-    if (on) $("#e-bundle").textContent = "";
-    setSubmitLabel();
-    updateSummary();
-  });
-
-  /* ---------- تحديد الموقع (اختياري، عند الضغط فقط) ---------- */
-  const locBtn = $("#locBtn"), locBtnText = $("#locBtnText"), locStatus = $("#locStatus");
-  const LOC_FAIL = t("لم نتمكن من تحديد موقعك. يمكنك إدخال المدينة والحي يدوياً.");
-  let locating = false;
-
-  function showLoc(kind, lines, withClear){
-    locStatus.className = "loc-status " + kind;
-    locStatus.textContent = "";
-    lines.forEach((t, i) => {
-      const d = document.createElement("div");
-      if (i === 0) d.className = "t";
-      d.textContent = t;              // نص فقط؛ لا نُدخل HTML قادماً من خدمة خارجية
-      locStatus.appendChild(d);
-    });
-    if (withClear){
-      const c = document.createElement("button");
-      c.type = "button"; c.className = "clear"; c.textContent = t("إزالة الموقع");
-      c.addEventListener("click", clearLoc);
-      locStatus.appendChild(c);
-    }
-    locStatus.hidden = false;
-  }
-  function clearLoc(){
-    loc = null;
-    locStatus.hidden = true; locStatus.textContent = "";
-    locBtnText.textContent = t("تحديد موقعي تلقائياً");
-    locBtn.focus();
-  }
-
-  // قابل للاستبدال: غيّر CONFIG.reverseGeocode فقط
-  async function reverseGeocode(lat, lng){
-    const rg = CONFIG.reverseGeocode || {};
-    if (!rg.provider || rg.provider === "none") return null;
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), rg.timeoutMs || 8000);
-    try {
-      if (rg.provider === "endpoint" && rg.endpoint){
-        const r = await fetch(`${rg.endpoint}?lat=${lat}&lng=${lng}`, { signal: ctrl.signal });
-        if (!r.ok) return null;
-        const j = await r.json();
-        return { city: String(j.city || "").trim(), district: String(j.district || "").trim() };
-      }
-      if (rg.provider === "nominatim"){
-        const u = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=16&addressdetails=1&accept-language=${LANG}&lat=${lat}&lon=${lng}`;
-        const r = await fetch(u, { signal: ctrl.signal });
-        if (!r.ok) return null;
-        const a = (await r.json()).address || {};
-        return {
-          city: (a.city || a.town || a.village || a.municipality || a.county || "").trim(),
-          district: (a.suburb || a.neighbourhood || a.quarter || a.city_district || a.residential || a.hamlet || "").trim()
-        };
-      }
-    } catch (_) { /* انقطاع أو مهلة: نكمل بدون أسماء */ }
-    finally { clearTimeout(timer); }
-    return null;
-  }
-
-  locBtn.addEventListener("click", () => {
-    if (locating) return;
-    if (!("geolocation" in navigator) || !window.isSecureContext){ showLoc("soft", [LOC_FAIL]); return; }
-    locating = true; loc = null;
-    locBtn.disabled = true;
-    locBtnText.textContent = t("جارٍ تحديد موقعك…");
-    locStatus.hidden = true;
-
-    let settled = false;
-    const finish = (label) => { locating = false; locBtn.disabled = false; locBtnText.textContent = label; };
-    const fail = () => {
-      if (settled) return; settled = true; clearTimeout(watchdog);
-      finish(t("تحديد موقعي تلقائياً"));
-      showLoc("soft", [LOC_FAIL]);
-    };
-    // بعض المتصفحات لا ترد أبداً إذا أُغلقت نافذة الإذن دون اختيار
-    const watchdog = setTimeout(fail, 30000);
-
-    try {
-      navigator.geolocation.getCurrentPosition(async pos => {
-        if (settled) return; settled = true; clearTimeout(watchdog);
-        loc = { lat: +pos.coords.latitude.toFixed(6), lng: +pos.coords.longitude.toFixed(6) };
-        locBtnText.textContent = t("جارٍ تحديد المدينة والحي…");
-        const place = await reverseGeocode(loc.lat, loc.lng);
-        if (!loc) return; // أزال العميل الموقع أثناء الانتظار
-        if (place && place.city) form.elements.city.value = place.city;
-        if (place && place.district) form.elements.district.value = place.district;
-        check("city"); check("district");
-        const lines = [t("✓ تم تحديد موقعك")];
-        if (place && (place.city || place.district)){
-          lines.push(t("المدينة: {city} — الحي: {district}", { city: place.city || "—", district: place.district || "—" }));
-          lines.push(t("يمكنك تعديل المدينة والحي إذا لم تكن دقيقة."));
-        } else {
-          lines.push(t("سنرسل رابط موقعك مع الطلب. يمكنك كتابة المدينة والحي يدوياً."));
-        }
-        finish(t("تحديث موقعي"));
-        showLoc("ok", lines, true);
-      }, fail, { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 });
-    } catch (_) { fail(); }
-  });
-
-  /* ---------- رسالة واتساب ---------- */
-  function buildMessage(d){
-    const out = [];
-    const sec = (title, rows) => { const r = rows.filter(Boolean); if (r.length) out.push("", title, ...r); };
-    if (d.wholesale){
-      out.push(t("استفسار عن طلب بالجملة من موقع CalmGastro"), "", t("نوع الطلب: استفسار عن طلب بالجملة"));
-    } else {
-      out.push(t("طلب جديد من موقع CalmGastro"), "", t("نوع الطلب: طلب عادي"));
-    }
-    sec(t("بيانات العميل:"), [t("الاسم: {v}", { v: d.name }), t("رقم الجوال: {v}", { v: d.phone })]);
-    if (d.wholesale){
-      sec(t("تفاصيل الاستفسار:"), [d.wdetails]);
-    } else {
-      sec(t("تفاصيل الطلب:"), [
-        t("العرض: {v}", { v: d.program }),
-        t("الكمية: {q} ({n} ظرفاً)", { q: boxesLabel(d.boxes), n: d.boxes * 30 }),
-        t("الإجمالي: {v}", { v: money(d.total) })
-      ]);
-    }
-    sec(t("بيانات التوصيل:"), [d.city && t("المدينة: {v}", { v: d.city }), d.district && t("الحي: {v}", { v: d.district })]);
-    if (d.mapUrl) sec(t("الموقع:"), [d.mapUrl]);
-    sec(t("ملاحظات:"), [d.notes]);
-    out.push("");
-    if (d.wholesale){
-      out.push(t("أرغب في الاستفسار عن أسعار وكميات طلبات الجملة."));
-    } else {
-      out.push(t("الدفع: الدفع عند الاستلام"), "", t("يرجى التواصل معي لتأكيد الطلب وموعد التوصيل."));
-    }
-    return out.join("\n");
-  }
-
-  /* ---------- تأكيد الطلب: يفتح واتساب برسالة جاهزة، والعميل هو من يضغط «إرسال» ---------- */
-  let opening = false;
-  form.addEventListener("submit", e => {
-    e.preventDefault();
-    if (opening) return;
-
-    const bad = Object.keys(rules).filter(n => !check(n));
-    const bundleOk = checkBundle();
-    if (bad.length || !bundleOk){
-      (bad.length ? form.elements[bad[0]] : $("input[name=bundle]")).focus();
-      return;
-    }
-
-    opening = true;
-    submitBtn.disabled = true;
-    submitBtn.textContent = t("جارٍ تجهيز الرسالة…");
-
-    const wholesale = isWholesale();
-    const b = selected();
-    const data = {
-      wholesale,
-      name: form.elements.name.value.trim(),
-      phone: normPhone(form.elements.phone.value),
-      city: form.elements.city.value.trim(),
-      district: form.elements.district.value.trim(),
-      notes: form.elements.notes.value.trim(),
-      wdetails: wholesale ? form.elements.wdetails.value.trim() : "",
-      bundle: b ? b.title : "", program: b ? b.program : "", boxes: b ? b.boxes : 0, total: b ? b.price : 0,
-      mapUrl: loc ? `https://www.google.com/maps?q=${loc.lat},${loc.lng}` : ""
-    };
-    const link = waLink(buildMessage(data));
-
-    // يجب أن يُفتح واتساب مباشرة داخل حدث الضغط (بدون انتظار) حتى لا يحجبه Safari
-    const win = window.open(link, "_blank");
-    if (win) { try { win.opener = null; } catch (_) {} }
-
-    $("#okTitle").textContent = wholesale ? t("تم تجهيز استفسارك في واتساب") : t("تم تجهيز طلبك في واتساب");
-    $("#okText").textContent = win
-      ? (wholesale ? t("ستفتح لك محادثة واتساب برسالة الاستفسار جاهزة. اضغط إرسال لإكمال استفسارك.") : t("ستفتح لك محادثة واتساب برسالة الطلب جاهزة. اضغط إرسال لإكمال طلبك."))
-      : (wholesale ? t("لم يُفتح واتساب تلقائياً. اضغط الزر بالأسفل، ثم اضغط إرسال لإكمال استفسارك.") : t("لم يُفتح واتساب تلقائياً. اضغط الزر بالأسفل، ثم اضغط إرسال لإكمال طلبك."));
-    const okWa = $("#okWa");
-    okWa.href = link;
-    okWa.textContent = wholesale ? t("إرسال الاستفسار عبر واتساب") : t("إرسال الطلب عبر واتساب");
-    form.classList.add("done");
-    form.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" });
-
-    // Snap Pixel: حدث «طلب» لقياس الإعلانات. نرسل المبلغ والعرض فقط؛ مكتبة Snap نفسها تضيف رقم الجوال مشفّراً (SHA-256)
-    // إذا كانت «المطابقة المتقدمة التلقائية» مفعّلة في إعدادات البكسل بحساب Snapchat الإعلاني
-    if (!wholesale && b && typeof window.snaptr === "function"){
-      try { snaptr("track", "PURCHASE", { price: b.price, currency: "SAR", item_ids: [b.id], number_items: b.boxes,
-        transaction_id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8) }); } catch (_) {}
-    }
-
-    // اختياري: حفظ نسخة من الطلب في خدمتك. لا يؤخر فتح واتساب، ولا يتضمن إحداثيات العميل
-    if (CONFIG.orderEndpoint){
-      const { mapUrl, ...rest } = data;
-      try {
-        fetch(CONFIG.orderEndpoint, { method:"POST", mode:"no-cors", keepalive:true,
-          headers:{ "Content-Type":"text/plain;charset=utf-8" },
-          body: JSON.stringify({ ...rest, hasLocation: !!mapUrl, currency: CONFIG.currency, at: new Date().toISOString() }) }).catch(() => {});
-      } catch (_) {}
-    }
-    opening = false;
-  });
-
-  // يرجع للنموذج بنفس البيانات لتعديلها وإعادة التأكيد
-  $("#editOrder").addEventListener("click", () => {
-    form.classList.remove("done");
-    submitBtn.disabled = false;
-    setSubmitLabel();
-    form.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
-    form.elements.name.focus({ preventScroll: true });
-  });
 
   /* ============================================================
      مساعد CalmGastro
@@ -509,7 +215,10 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
                  "", lines("#results .disclaim")[0] || ""].filter(Boolean).join("\n"),
           actions: ["order"] }) },
       { q: t("كم السعر؟"), answer: () => ({
-          text: [t("أسعار العروض الحالية:"), ...CONFIG.bundles.map(bundleLine), "", t("{ship}، و{pay}.", { ship: CONFIG.shippingNote, pay: CONFIG.payment })].join("\n"),
+          text: [t("أسعار العروض الحالية:"), ...CONFIG.bundles.map(bundleLine),
+                 CONFIG.pricing && CONFIG.pricing.boxPriceAfterBundles ? t("- أكثر من {max} علب: **{p}** للعلبة (مثلاً 4 علب = {four}).", {
+                   max: Math.max(...CONFIG.bundles.map(b => b.boxes)), p: money(CONFIG.pricing.boxPriceAfterBundles), four: money(4 * CONFIG.pricing.boxPriceAfterBundles) }) : "",
+                 "", t("{ship}، و{pay}.", { ship: CONFIG.shippingNote, pay: CONFIG.payment })].filter((x, i, a) => x || a[i - 1]).join("\n"),
           actions: ["order"] }) },
       { q: t("ما الفرق بين العروض؟"), answer: () => ({
           text: [...CONFIG.bundles.map(b => t("- **{title}** {tag}: {n} ظرفاً تكفي {dur}، بسعر {price}، أي حوالي {per} {cur} لليوم.", {
@@ -518,12 +227,12 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
                  "", lines("#order .sec-head p")[0] || ""].filter(Boolean).join("\n"),
           actions: ["order"] }) },
       { q: t("كيف أطلب؟"), answer: () => ({
-          text: [t("أكيد، يمكنك إكمال طلبك من قسم الطلب، وسأساعدك إذا كان لديك أي سؤال عن المنتج."),
-                 t("1. اختر العرض المناسب."), t("2. اكتب بيانات التوصيل."), t("3. اضغط «أكّد الطلب» فيفتح واتساب برسالة طلبك جاهزة، ثم اضغط إرسال."),
+          text: [t("أكيد، يمكنك الطلب من الموقع مباشرة، وسأساعدك إذا كان لديك أي سؤال عن المنتج."),
+                 t("1. اختر العرض واضغط «إضافة للسلة»."), t("2. اضغط «إتمام الطلب» واكتب بيانات التوصيل."), t("3. راجع طلبك ثم اضغط «تأكيد الطلب»، فيُسجَّل طلبك فوراً وتحصل على رقم طلب تتابع به حالته."),
                  "", t("{pay}، والتوصيل {del}.", { pay: CONFIG.payment, del: CONFIG.deliveryShort })].join("\n"),
           actions: ["order"] }) },
       { q: t("هل يوجد بيع بالجملة؟"), answer: () => ({
-          text: [t("لدينا خيار للاستفسار عن طلبات الجملة. يمكنك اختيار «لدي طلب بالجملة» في نموذج الطلب، واكتب الكمية التي تحتاجها، ونرد عليك بالأسعار عبر واتساب."),
+          text: [t("لدينا خيار للاستفسار عن طلبات الجملة. اضغط «استفسار عن الجملة» لتصلنا رسالتك عبر واتساب، واكتب الكمية التي تحتاجها، ونرد عليك بالأسعار."),
                  ...[...$$(".announce-sub a")].map(a => t("أو راسلنا على الإيميل: {email}", { email: a.textContent.trim() }))].join("\n"),
           actions: ["wholesale", "whatsapp"] }) }
     ];
@@ -580,11 +289,12 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
       log.appendChild(row); scrollDown();
     }
     function goToOrder(wholesale){
+      // الجملة: استفسار عبر واتساب برسالة جاهزة (ليس طلباً من السلة)
+      if (wholesale){ const w = $(".js-wa-wholesale"); if (w) window.open(w.href, "_blank", "noopener"); return; }
       closePanel(false);
-      const wb = $("#f-wholesale");
-      if (wholesale && !wb.checked){ wb.checked = true; wb.dispatchEvent(new Event("change", { bubbles: true })); }
+      if (location.hash.startsWith("#/")){ location.hash = "#order"; return; }
       $("#order").scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
-      const target = wholesale ? $("#f-wdetails") : $("#bundles input:checked") || $("#f-name");
+      const target = $("#bundles .add-btn");
       setTimeout(() => target && target.focus({ preventScroll: true }), reduce ? 0 : 500);
     }
     function showTyping(){
