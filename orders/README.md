@@ -4,7 +4,10 @@ The website (GitHub Pages, static) is the shop front. This Cloudflare Worker + D
 **system of record**: every order is created here before the customer sees a confirmation, gets a
 number like `CG-2026-000123`, and is managed from the admin panel. WhatsApp is only a support channel.
 
-- API + admin: `https://calmgastro-orders.calmgastro.workers.dev` — admin at `/admin` (also `https://vitamik.com/admin/`)
+- API + admin: `https://api.vitamik.com` — admin at `/admin` (also `https://vitamik.com/admin/`). The original
+  `https://calmgastro-orders.calmgastro.workers.dev` stays on as a fallback: some Wi-Fi filters, ad blockers and VPNs block
+  `*.workers.dev`, so the site tries `api.vitamik.com` first and, only if the request gets no response at all, repeats it on
+  workers.dev with the same idempotency key (one order, never two). Custom domain declared in `wrangler.toml`; DNS zone on Cloudflare.
 - Database: D1 `calmgastro-orders` (free plan); schema in `migrations/`
 - Code: `src/index.js` routes · `src/orders.js` order creation + customer views · `src/catalog.js` trusted prices ·
   `src/statuses.js` lifecycle · `src/auth.js` login, sessions, 2FA · `src/admin.js` admin API · `public/admin/` admin UI

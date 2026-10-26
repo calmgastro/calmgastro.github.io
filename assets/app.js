@@ -17,7 +17,8 @@ const STORE = Object.assign(localized(PRODUCT.store, ["currency", "payment", "sh
 
 const CONFIG = Object.assign({}, STORE, {
   // خادم الطلبات (orders/ على Cloudflare Workers + D1): يُنشئ الطلب ويعطي رقمه. نطاقه مضاف إلى connect-src في CSP
-  ordersApi: { endpoint: "https://calmgastro-orders.calmgastro.workers.dev" },
+  // العنوان الأول على نطاقنا (لا تحجبه الشبكات)، والثاني احتياطي يُستخدم تلقائياً إن تعذّر الاتصال بالأول
+  ordersApi: { endpoints: ["https://api.vitamik.com", "https://calmgastro-orders.calmgastro.workers.dev"] },
   // تحويل الإحداثيات إلى مدينة وحي. لا يُرسل شيء إلا بعد أن يضغط العميل «تحديد موقعي» ويوافق.
   //  "nominatim": خدمة OpenStreetMap المجانية، بلا مفتاح (مناسبة لعدد طلبات قليل إلى متوسط)
   //  "endpoint":  خدمتك الخاصة لاحقاً (Backend أو Serverless) تستقبل GET ?lat=..&lng=.. وترجع {"city":"..","district":".."}
@@ -26,7 +27,7 @@ const CONFIG = Object.assign({}, STORE, {
   reverseGeocode: { provider: "nominatim", endpoint: "", timeoutMs: 8000 },
   // مساعد CalmGastro: رابط Cloudflare Worker الذي ينتهي بـ /chat (لا يوضع هنا أي مفتاح API)
   // إذا كان فارغاً يختفي زر المساعد (للمعاينة فقط أضف ?assistant إلى رابط الموقع)
-  assistant: { endpoint: "https://calmgastro-assistant.calmgastro.workers.dev/chat" }
+  assistant: { endpoints: ["https://assistant.vitamik.com/chat", "https://calmgastro-assistant.calmgastro.workers.dev/chat"] }
 });
 
 /* المكونات حسب الملصق، لكل ظرف واحد (من product-data) */
@@ -179,12 +180,12 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
   /* ============================================================
      مساعد CalmGastro
      - الأسئلة السريعة تُجاب هنا مباشرة من بيانات الصفحة (بدون ذكاء اصطناعي وبدون تكلفة)
-     - الأسئلة المكتوبة تذهب إلى CONFIG.assistant.endpoint (Cloudflare Worker) فقط
+     - الأسئلة المكتوبة تذهب إلى CONFIG.assistant.endpoints (Cloudflare Worker) فقط
      - لا يُرسل للمساعد أي شيء من نموذج الطلب (الاسم، الجوال، الموقع، العنوان)
      ============================================================ */
   const AI = CONFIG.assistant || {};
   const aiPreview = /[?&]assistant(=|&|$)/.test(location.search);
-  if (AI.endpoint || aiPreview){
+  if ((AI.endpoints || []).length || aiPreview){
     const launcher = $("#aiLauncher"), panel = $("#aiPanel"), log = $("#aiLog");
     const aiForm = $("#aiForm"), aiInput = $("#aiInput"), aiSend = $("#aiSend");
     const UNAVAILABLE = t("المساعد غير متاح حالياً، يمكنك التواصل معنا مباشرة عبر WhatsApp.");
@@ -334,7 +335,8 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
         remember("user", q); remember("assistant", r.text);
         return;
       }
-      if (!AI.endpoint){ addMsg("bot", UNAVAILABLE); addActions(["whatsapp"]); return; }
+      const urls = AI.endpoints || [];
+      if (!urls.length){ addMsg("bot", UNAVAILABLE); addActions(["whatsapp"]); return; }
 
       busy = true; aiSend.disabled = true;
       const typing = showTyping();
@@ -342,11 +344,14 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
       const timer = setTimeout(() => ctrl.abort(), 25000);
       let answer = "", actions = [];
       try {
-        const r = await fetch(AI.endpoint, {
-          method: "POST", headers: { "Content-Type": "text/plain;charset=UTF-8" }, signal: ctrl.signal,   // بلا preflight (انظر shop.js)
-          body: JSON.stringify({ message: q, history, lang: LANG })
-        });
-        const j = r.ok ? await r.json() : null;
+        let r = null;
+        for (const u of urls){   // العنوان التالي فقط إن لم يصل الطلب إطلاقاً (حجب/شبكة)
+          try { r = await fetch(u, {
+            method: "POST", headers: { "Content-Type": "text/plain;charset=UTF-8" }, signal: ctrl.signal,   // بلا preflight (انظر shop.js)
+            body: JSON.stringify({ message: q, history, lang: LANG })
+          }); break; } catch (e) { if (e.name === "AbortError") throw e; }
+        }
+        const j = r && r.ok ? await r.json() : null;
         if (j && typeof j.answer === "string" && j.answer.trim()){ answer = j.answer.trim(); actions = Array.isArray(j.actions) ? j.actions : []; }
       } catch (_) { /* انقطاع أو مهلة: نعرض البديل */ }
       finally { clearTimeout(timer); typing.remove(); busy = false; aiSend.disabled = false; }

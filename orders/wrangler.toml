@@ -9,6 +9,11 @@ name = "calmgastro-orders"
 main = "src/index.js"
 compatibility_date = "2026-09-01"
 
+# Addresses: api.vitamik.com (own domain: not blocked by Wi-Fi filters / ad blockers that block *.workers.dev)
+# and calmgastro-orders.calmgastro.workers.dev, kept on as the automatic fallback used by the site.
+workers_dev = true
+routes = [ { pattern = "api.vitamik.com", custom_domain = true } ]
+
 # Admin interface files (public/admin/*), served through the Worker so every response gets the security headers
 [assets]
 directory = "./public"

@@ -11,7 +11,8 @@
   const fmt = n => Number(n).toLocaleString("en-US");
   const money = n => `${fmt(n)} ${CONFIG.currency}`;
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const API = (CONFIG.ordersApi && CONFIG.ordersApi.endpoint || "").replace(/\/$/, "");
+  const APIS = ((CONFIG.ordersApi || {}).endpoints || []).map(u => u.replace(/\/$/, ""));
+  let apiAt = 0;   // آخر عنوان نجح على هذا الجهاز نبدأ به
   const RULES = {
     after: (CONFIG.pricing || {}).boxPriceAfterBundles,
     maxBoxes: (CONFIG.orders || {}).maxBoxesPerOrder || 30,
@@ -25,6 +26,24 @@
   // نرسل JSON كنص عادي حتى يكون الطلب «بسيطاً» بلا طلب تحقق مسبق (CORS preflight): خطوة إضافية كانت تفشل
   // على بعض الجوالات والشبكات (آيفون خاصة) فيظهر «حدث خطأ أثناء إنشاء الطلب». الخادم يقرأ JSON من النص كما هو.
   const JSON_AS_TEXT = { "Content-Type": "text/plain;charset=UTF-8" };
+
+  // يرسل لعنواننا الأول (api.vitamik.com)؛ إن لم يصل الطلب إطلاقاً (حجب، شبكة، مهلة) يعيد على العنوان الاحتياطي.
+  // أي رد من الخادم (حتى خطأ) يُعتمد ولا يُعاد. إعادة إنشاء الطلب آمنة: نفس مفتاح الطلب ⇒ يُسجَّل مرة واحدة فقط.
+  async function postApi(path, body, ms){
+    if (!APIS.length) throw new Error("no endpoint");
+    let err;
+    for (let i = 0; i < APIS.length; i++){
+      const at = (apiAt + i) % APIS.length;
+      const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), ms);
+      try {
+        const res = await fetch(APIS[at] + path, { method: "POST", headers: JSON_AS_TEXT, body: JSON.stringify(body), signal: ctrl.signal });
+        apiAt = at;
+        return res;
+      } catch (e) { err = e; }
+      finally { clearTimeout(timer); }
+    }
+    throw err;
+  }
 
   // عنصر DOM آمن: النصوص دائماً textContent
   function h(tag, attrs, ...kids){
@@ -508,13 +527,8 @@
     errBox.hidden = true; $("#priceNote").hidden = true;
     let res = null, data = null, failure = "NET";
     try {
-      if (!API) throw new Error("no endpoint");
-      const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), 20000);
-      try {
-        res = await fetch(API + "/api/orders", { method: "POST", headers: JSON_AS_TEXT, signal: ctrl.signal,
-          body: JSON.stringify({ ...payload, idempotencyKey: attempt.key, expectedTotal: attempt.expectedTotal, hp: $("#f-hp").value }) });
-        data = await res.json().catch(() => null);
-      } finally { clearTimeout(timer); }
+      res = await postApi("/api/orders", { ...payload, idempotencyKey: attempt.key, expectedTotal: attempt.expectedTotal, hp: $("#f-hp").value }, 15000);
+      data = await res.json().catch(() => null);
     } catch (e) { res = null; failure = e && e.name === "AbortError" ? "TIMEOUT" : navigator.onLine === false ? "OFFLINE" : "NET"; }
     placing = false; placeBtn.disabled = false; placeBtn.classList.remove("loading");
 
@@ -681,12 +695,10 @@
   }
 
   async function api(path, body){
-    const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), 15000);
     try {
-      const r = await fetch(API + path, { method: "POST", headers: JSON_AS_TEXT, body: JSON.stringify(body), signal: ctrl.signal });
+      const r = await postApi(path, body, 12000);
       return { status: r.status, data: await r.json().catch(() => null) };
     } catch (_) { return { status: 0, data: null }; }
-    finally { clearTimeout(timer); }
   }
 
   async function openOrderPage(number){
