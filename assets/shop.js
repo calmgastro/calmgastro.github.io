@@ -294,6 +294,7 @@
   }
   function onRoute(){
     closeDrawer(false);
+    if (/^#\/order\/[^?]+\?k=/.test(location.hash)) captureLinkToken();
     const prev = route.name;
     route = parseRoute();
     show(route.name);
@@ -563,26 +564,58 @@
   function rememberOrder(n, token){
     try { localStorage.setItem(ORDERS_KEY, JSON.stringify([{ n, t: token }, ...savedOrders().filter(o => o.n !== n)].slice(0, 10))); } catch (_) {}
   }
+  // الحالات كما في الخادم (orders/src/statuses.js): ست مراحل عادية + ثلاث استثنائية تظهر فقط إذا حدثت
+  const FLOW = ["RECEIVED", "CONFIRMED", "PREPARING", "SHIPPED", "OUT_FOR_DELIVERY", "DELIVERED"];
   const STATUS = {
-    pending: t("بانتظار التأكيد"), confirmed: t("تم تأكيد الطلب"), preparing: t("جاري تجهيز الطلب"), shipped: t("تم شحن الطلب"),
-    out_for_delivery: t("خرج للتوصيل"), delivered: t("تم التوصيل"), cancelled: t("ملغي"), problem: t("يوجد مشكلة في الطلب")
+    RECEIVED: t("تم استلام الطلب"), CONFIRMED: t("تم تأكيد الطلب"), PREPARING: t("جاري التجهيز"), SHIPPED: t("تم الشحن"),
+    OUT_FOR_DELIVERY: t("خرج للتوصيل"), DELIVERED: t("تم التوصيل"), CANCELLED: t("ملغي"), FAILED: t("تعذّر إكمال الطلب"), ON_HOLD: t("معلّق")
   };
-  const STAGES = [["pending", t("تم استلام الطلب")], ["confirmed", t("تم تأكيد الطلب")], ["preparing", t("جاري التجهيز")],
-                  ["shipped", t("تم الشحن")], ["out_for_delivery", t("خرج للتوصيل")], ["delivered", t("تم التوصيل")]];
+  const MSG = {
+    RECEIVED: t("تم استلام طلبك بنجاح."), CONFIRMED: t("تم تأكيد طلبك من فريقنا."), PREPARING: t("جاري تجهيز طلبك."),
+    SHIPPED: t("تم تسليم طلبك لشركة الشحن."), OUT_FOR_DELIVERY: t("طلبك في الطريق إليك."), DELIVERED: t("تم توصيل طلبك بنجاح."),
+    CANCELLED: t("تم إلغاء طلبك."), FAILED: t("تعذّر إكمال طلبك. سنتواصل معك."), ON_HOLD: t("طلبك معلّق مؤقتاً، وسنتواصل معك.")
+  };
   const dateFmt = new Intl.DateTimeFormat(EN ? "en-GB" : "ar-SA-u-nu-latn-ca-gregory", { timeZone: "Asia/Riyadh", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" });
   const when = iso => dateFmt.format(new Date(iso));
 
+  /* المسار: المراحل المكتملة مختلفة شكلاً ونصاً عن القادمة، والحالية مميزة؛ لكل مرحلة وقتها ورسالتها */
   function timeline(o){
-    const reached = new Map(o.history.map(x => [x.status, x.at]));
-    const idx = STAGES.findIndex(([s]) => s === o.status);
-    const last = idx >= 0 ? idx : Math.max(...o.history.map(x => STAGES.findIndex(([s]) => s === x.status)));
-    return h("ol", { class: "otl" }, STAGES.map(([s, label], i) => {
-      const done = i <= last && o.status !== "cancelled" || (o.status === "cancelled" && reached.has(s));
-      return h("li", { class: (done ? "done" : "") + (i === idx ? " current" : ""), "aria-current": i === idx ? "step" : null },
+    const last = {};                                   // آخر وقت وملاحظة لكل حالة
+    let pos = -1;                                      // آخر مرحلة عادية وصلها الطلب
+    for (const x of o.history){
+      last[x.status] = { at: x.at, note: x.note || "" };
+      const i = FLOW.indexOf(x.status); if (i >= 0) pos = i;
+    }
+    const exc = FLOW.includes(o.status) ? null : o.status;
+    const stage = (key, state) => {
+      const info = last[key], mark = { done: t("(مكتملة)"), current: t("(الحالية)"), next: t("(لم تبدأ بعد)"), exc: t("(الحالية)") }[state];
+      return h("li", { class: state, "aria-current": state === "current" || state === "exc" ? "step" : null },
         h("span", { class: "dot", "aria-hidden": "true" }),
-        h("span", null, h("b", { text: label }), reached.has(s) ? h("small", { text: when(reached.get(s)) }) : null));
-    }));
+        h("span", null,
+          h("b", { text: STATUS[key] }), h("span", { class: "sr-only", text: " " + mark }),
+          info && state !== "next" ? h("small", { text: when(info.at) }) : null,
+          state !== "next" ? h("small", { class: "msg", text: MSG[key] }) : null,
+          info && info.note && state !== "next" ? h("small", { class: "cnote", text: info.note }) : null));
+    };
+    const items = [];
+    FLOW.forEach((key, i) => {
+      if (exc && exc !== "ON_HOLD" && i > pos) return;                  // ملغي / متعذّر: لا نعرض مراحل لن تحدث
+      items.push(stage(key, i < pos || (i === pos && exc) ? "done" : i === pos ? "current" : "next"));
+      if (exc && i === pos) items.push(stage(exc, "exc"));
+    });
+    return h("ol", { class: "otl" }, items);
   }
+
+  /* الرابط الآمن: الرمز بعد علامة # فلا يصل لأي خادم، ويُزال من شريط العنوان فوراً (lang.js) قبل أي أداة قياس */
+  function captureLinkToken(){
+    const m = location.hash.match(/^#\/order\/([A-Za-z0-9-]{6,24})\?k=([A-Za-z0-9_-]{20,64})$/);
+    if (m){ rememberOrder(m[1], m[2]); history.replaceState(null, "", location.pathname + location.search + "#/order/" + m[1]); }
+    try {
+      const s = JSON.parse(sessionStorage.getItem("cg-link") || "null");
+      if (s && s.n && s.t){ rememberOrder(s.n, s.t); sessionStorage.removeItem("cg-link"); }
+    } catch (_) {}
+  }
+  const secureLink = (n, token) => `${location.origin}${location.pathname}#/order/${n}?k=${token}`;
 
   function renderOrder(container, o, { created, full }){
     container.textContent = "";
@@ -595,7 +628,19 @@
       h("span", null, h("b", { text: "CalmGastro · " + (EN ? i.nameEn : i.name) }), h("small", { text: t("الكمية: {q}", { q: i.quantity }) + " · " + money(i.unitPrice) })),
       h("b", { class: "num-sum", text: money(i.lineTotal) })));
     const d = o.delivery;
-    const special = o.status === "cancelled" || o.status === "problem";
+    const special = ["CANCELLED", "FAILED", "ON_HOLD"].includes(o.status);
+    const saved = full ? savedOrders().find(x => x.n === o.orderNumber) : null;
+    let linkBox = null;
+    if (saved && saved.t){
+      const link = secureLink(o.orderNumber, saved.t);
+      const input = h("input", { class: "link-input num", value: link, readonly: true, "aria-label": t("رابط طلبك الآمن") });
+      input.addEventListener("focus", () => input.select());
+      const copy = h("button", { type: "button", class: "btn btn-ghost", text: t("نسخ الرابط") });
+      copy.addEventListener("click", async () => { try { await navigator.clipboard.writeText(link); copy.textContent = t("تم النسخ"); setTimeout(() => { copy.textContent = t("نسخ الرابط"); }, 1500); } catch (_) { input.select(); } });
+      linkBox = h("section", { class: "obox" }, h("h2", { text: t("رابط طلبك الآمن") }),
+        h("p", { class: "link-help", text: t("احفظ هذا الرابط لفتح طلبك في أي وقت ومن أي جهاز دون إدخال رقم الجوال. لا تشاركه مع أحد.") }),
+        h("div", { class: "link-row" }, input, copy));
+    }
     put(container,
       created ? h("div", { class: "ok-head" },
         h("span", { class: "ok-icon", html: ICON.check }),
@@ -606,8 +651,9 @@
         h("small", { text: t("احتفظ بهذا الرقم لمتابعة طلبك أو عند التواصل معنا.") })),
       h("section", { class: "obox" }, h("h2", { text: t("حالة الطلب") }),
         h("p", { class: "ostatus" }, h("span", { class: "st st-" + o.status, text: STATUS[o.status] || o.status }), h("small", { text: t("آخر تحديث: {d}", { d: when(o.updatedAt) }) })),
-        special ? h("p", { class: "ospecial", text: o.status === "cancelled" ? t("تم إلغاء هذا الطلب. للاستفسار تواصل معنا عبر واتساب.") : t("يوجد أمر يحتاج متابعة في طلبك، وسنتواصل معك قريباً.") }) : null,
+        special ? h("p", { class: "ospecial", text: MSG[o.status] + " " + t("للاستفسار تواصل معنا عبر واتساب.") }) : null,
         timeline(o)),
+      linkBox,
       h("section", { class: "obox" }, h("h2", { text: t("ملخص الطلب") }), h("ul", { class: "sum-lines" }, items), totalsRows(o)),
       h("section", { class: "obox" }, h("h2", { text: t("بيانات التوصيل") }),
         h("dl", { class: "kv" },
@@ -637,6 +683,7 @@
 
   async function openOrderPage(number){
     const box = $("#orderBody");
+    captureLinkToken();
     if (justCreated && justCreated.orderNumber === number){
       renderOrder(box, justCreated, { created: true, full: true });
       setSteps("done"); justCreated = null;
@@ -662,8 +709,14 @@
     tResult.textContent = ""; tErr.textContent = "";
     tForm.hidden = false;
     if (number) tForm.elements.orderNumber.value = number;
+    const list = $("#savedOrders"), mine = savedOrders();
+    list.textContent = "";
+    if (mine.length) list.append(h("p", { class: "saved-title", text: t("طلباتك المحفوظة على هذا الجهاز:") }),
+      h("ul", { class: "saved-list" }, mine.map(o => h("li", null, h("a", { href: "#/order/" + o.n, class: "num", text: o.n })))));
     track("track_viewed", {});
   }
+  // استرجاع رقم الطلب عبر الدعم: رسالة عامة بدون أي بيانات شخصية؛ فريق الدعم يتحقق من الهوية يدوياً
+  $$(".js-wa-recover").forEach(a => { a.href = waLink(t("مرحباً، أحتاج المساعدة في استرجاع رقم طلبي.")); a.target = "_blank"; a.rel = "noopener"; a.addEventListener("click", () => track("whatsapp_click", { context: "recover_order" })); });
   tForm.addEventListener("submit", async e => {
     e.preventDefault();
     tErr.textContent = "";

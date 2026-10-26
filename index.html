@@ -6,7 +6,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://sc-static.net https://tr.snapchat.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://tr.snapchat.com; connect-src 'self' https://calmgastro-assistant.calmgastro.workers.dev https://calmgastro-orders.calmgastro.workers.dev https://nominatim.openstreetmap.org https://tr.snapchat.com https://tr6.snapchat.com https://tr-shadow.snapchat.com; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src https://tr.snapchat.com; manifest-src 'self'">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<script src="assets/lang.js?v=20261024a"></script>
+<script src="assets/lang.js?v=20261027a"></script>
 <script src="assets/pixel.js?v=20261025b"></script>
 <title>CalmGastro | رشاقتك تبدأ من الداخل</title>
 <meta name="description" content="CalmGastro Slim from Inside: ظرف واحد يومياً بنكهة الليمون والفراولة، فيه 2000 ملغ ألياف كونجاك مع الإنولين والزنجبيل والكروميوم. يساعدك تشبع أسرع وتخفف الانتفاخ. الدفع عند الاستلام.">
@@ -519,9 +519,9 @@
   .ostatus{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:1rem}
   .ostatus small{color:var(--muted); font-size:.85rem}
   .st{display:inline-block; border-radius:999px; padding:.2em .9em; font-weight:700; font-size:.92rem}
-  .st-pending{background:#FFF1D6; color:#7A4A00} .st-confirmed{background:#DDF0FF; color:#0B4F80} .st-preparing{background:#EDE4FF; color:#4B2A93}
-  .st-shipped{background:#DCF3EE; color:#0F5C57} .st-out_for_delivery{background:#E3F6D5; color:#2F6B12} .st-delivered{background:var(--teal-deep); color:var(--white)}
-  .st-cancelled{background:#ECECEC; color:#555} .st-problem{background:#F8E3DE; color:var(--danger)}
+  .st-RECEIVED{background:#FFF1D6; color:#7A4A00} .st-CONFIRMED{background:#DDF0FF; color:#0B4F80} .st-PREPARING{background:#EDE4FF; color:#4B2A93}
+  .st-SHIPPED{background:#DCF3EE; color:#0F5C57} .st-OUT_FOR_DELIVERY{background:#E3F6D5; color:#2F6B12} .st-DELIVERED{background:var(--teal-deep); color:var(--white)}
+  .st-CANCELLED{background:#ECECEC; color:#555} .st-FAILED, .st-ON_HOLD{background:#F8E3DE; color:var(--danger)}
   .ospecial{background:#F8E3DE; color:var(--danger); border-radius:10px; padding:.6rem .8rem; margin-bottom:.8rem; font-size:.9rem}
   .otl{list-style:none; margin:0; padding:0}
   .otl li{position:relative; display:grid; grid-template-columns:22px 1fr; gap:12px; padding-bottom:16px; color:var(--muted)}
@@ -533,8 +533,26 @@
   .otl li.done .dot{background:var(--teal); border-color:var(--teal)}
   .otl li.done .dot::after{content:""; position:absolute; inset:0; margin:auto; width:5px; height:9px; border:solid var(--white); border-width:0 2px 2px 0; transform:translateY(-1px) rotate(45deg)}
   .otl li.done:not(:last-child)::before{background:var(--teal)}
-  .otl li.current .dot{box-shadow:0 0 0 5px rgba(19,133,123,.2)}
+  .otl li.current{color:var(--ink)}
+  .otl li.current .dot{background:var(--white); border:6px solid var(--teal-deep); box-shadow:0 0 0 5px rgba(19,133,123,.2)}
   .otl li.current b{color:var(--teal-deep)}
+  .otl li.next b{font-weight:500}
+  .otl li.exc{color:var(--danger)}
+  .otl li.exc .dot{background:var(--danger); border-color:var(--danger)}
+  .otl li.exc .dot::after{content:"!"; position:absolute; inset:0; display:grid; place-items:center; color:var(--white); font-weight:700; font-size:.8rem; line-height:1}
+  .otl .msg{display:block; font-size:.85rem; color:var(--muted)}
+  .otl .cnote{display:block; margin-top:4px; background:var(--lime); color:var(--teal-deep); border-radius:8px; padding:.3em .6em; font-size:.85rem}
+  .link-row{display:flex; gap:8px; align-items:center}
+  .link-input{flex:1; min-width:0; min-height:44px; font-size:.85rem; padding:.6rem .8rem; border-radius:10px; border:1.5px solid var(--line); background:var(--paper); color:var(--ink); direction:ltr}
+  .link-row .btn{flex:none; padding:.6em 1em; font-size:.95rem}
+  .link-help{color:var(--muted); font-size:.9rem; margin-bottom:.6rem}
+  @media (max-width:480px){ .link-row{flex-wrap:wrap} .link-input{flex-basis:100%} .link-row .btn{width:100%} }
+  .forgot{margin-top:18px}
+  .forgot p{color:var(--muted); font-size:.92rem; margin-bottom:.5rem}
+  .forgot .btn{margin-top:.4rem}
+  .saved-title{color:var(--ink) !important; font-weight:600}
+  .saved-list{list-style:none; margin:0 0 .8rem; padding:0; display:flex; flex-wrap:wrap; gap:8px}
+  .saved-list a{display:inline-block; padding:.4em .8em; border:1.5px solid var(--line); border-radius:999px; text-decoration:none; color:var(--teal-deep); background:var(--white); min-height:40px; line-height:1.9}
   .otl small{display:block; font-size:.8rem; color:var(--muted)}
   .oactions{display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:center; margin-top:18px}
   .btn-wa{background:#25D366; color:#fff}
@@ -1251,6 +1269,13 @@
         <button type="submit" class="btn btn-primary" id="trackBtn">تتبع الطلب</button>
       </form>
       <div id="trackResult" aria-live="polite"></div>
+      <section class="obox forgot" aria-labelledby="forgotTitle">
+        <h2 id="forgotTitle">نسيت رقم الطلب؟</h2>
+        <div id="savedOrders"></div>
+        <p>رقم الطلب يظهر في صفحة تأكيد الطلب، وفي «رابط طلبك الآمن» إذا حفظته بعد الطلب.</p>
+        <p>لم تجده؟ فريقنا يساعدك بعد التحقق من هويتك.</p>
+        <a class="btn btn-wa js-wa-recover" href="#">تواصل معنا عبر واتساب</a>
+      </section>
     </div>
   </section>
 </div>
@@ -1392,8 +1417,8 @@
 }
 </script>
 
-<script src="assets/i18n-en.js?v=20261026b"></script>
+<script src="assets/i18n-en.js?v=20261027a"></script>
 <script src="assets/app.js?v=20261026b"></script>
-<script src="assets/shop.js?v=20261026b"></script>
+<script src="assets/shop.js?v=20261027a"></script>
 </body>
 </html>

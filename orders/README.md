@@ -1,89 +1,127 @@
-# CalmGastro orders: API, database and admin panel
+# CalmGastro orders: API, database and admin system
 
-The website (GitHub Pages, static) is the shop front. This Worker is the **system of record for orders**:
-it creates every order in a Cloudflare D1 database before the customer sees a confirmation, gives it a
-number like `CG-2026-000123`, and lets the owner manage it from an admin panel. WhatsApp is only a
-support channel; it never creates or completes an order.
+The website (GitHub Pages, static) is the shop front. This Cloudflare Worker + D1 database is the
+**system of record**: every order is created here before the customer sees a confirmation, gets a
+number like `CG-2026-000123`, and is managed from the admin panel. WhatsApp is only a support channel.
 
-- API + admin: `https://calmgastro-orders.calmgastro.workers.dev` (admin panel at `/admin`, also reachable via `https://vitamik.com/admin/`)
-- Database: D1 `calmgastro-orders` (free plan), schema in `migrations/`
-- Code: `src/index.js` (routes, CORS, rate limits), `src/orders.js` (validation, creation, customer views),
-  `src/catalog.js` (trusted prices), `src/admin.js` (login + admin API), `src/admin-ui.js` (panel)
+- API + admin: `https://calmgastro-orders.calmgastro.workers.dev` — admin at `/admin` (also `https://vitamik.com/admin/`)
+- Database: D1 `calmgastro-orders` (free plan); schema in `migrations/`
+- Code: `src/index.js` routes · `src/orders.js` order creation + customer views · `src/catalog.js` trusted prices ·
+  `src/statuses.js` lifecycle · `src/auth.js` login, sessions, 2FA · `src/admin.js` admin API · `public/admin/` admin UI
 
-## Flow
+## Customer flow
 
-Landing → «إضافة للسلة» → cart (header icon / side panel, saved in `localStorage`) → `#/checkout`
-(delivery details → review) → «تأكيد الطلب» → `POST /api/orders` → order saved → `#/order/CG-…`
-(confirmation) → `#/track` (order number + mobile).
+Offers → «إضافة للسلة» → cart → `#/checkout` (delivery → review) → «تأكيد الطلب» → `POST /api/orders` →
+`#/order/CG-…` confirmation (with the secure link) → `#/track` (order number + mobile).
 
-The browser sends **product ids and quantities only**. The Worker reads prices from the
-`product-data` block of the live site (the same single source the page uses), recalculates
-subtotal, best-price discount, shipping and total, and stores them. If the total the customer
-reviewed differs from the server's, nothing is created and the page shows the new total (`409 price_changed`).
+The browser sends product ids and quantities only. Prices come from the `product-data` block of the
+live site; the server recalculates subtotal, best-price discount, shipping and total. If the total the
+customer reviewed differs, nothing is created (`409 price_changed`) and the page shows the new total.
 
-Pricing rule (from `product-data`): cheapest combination of bundles (1 = 250, 2 = 450, 3 = 600);
-above the largest bundle every box costs `pricing.boxPriceAfterBundles` (200 → 4 boxes = 800).
-Limits: `orders.maxQtyPerLine` (10), `orders.maxBoxesPerOrder` (30). Shipping: `shipping.cost` / `shipping.freeFrom`.
-Payment methods: `paymentMethods` (only `cod` today; the API rejects anything else).
+**Order recovery** (no SMS provider, by decision): (1) the secure link shown after checkout,
+`https://vitamik.com/#/order/CG-…?k=<token>` — the token is after `#`, never sent to a server, and is removed
+from the address bar before any analytics script runs; it can be revoked per order; (2) orders saved on the
+same device are listed under «نسيت رقم الطلب؟»; (3) WhatsApp support with a generic message
+(«مرحباً، أحتاج المساعدة في استرجاع رقم طلبي.») — the agent verifies identity manually.
+An OTP flow can be added once an SMS provider is chosen (table and endpoints are not created yet).
+
+## Status lifecycle (`src/statuses.js`)
+
+| Enum | Customer label | Normal next |
+|---|---|---|
+| `RECEIVED` | تم استلام الطلب | CONFIRMED, CANCELLED, ON_HOLD |
+| `CONFIRMED` | تم تأكيد الطلب | PREPARING, CANCELLED, ON_HOLD |
+| `PREPARING` | جاري التجهيز | SHIPPED, CANCELLED, ON_HOLD |
+| `SHIPPED` | تم الشحن | OUT_FOR_DELIVERY, DELIVERED, FAILED, ON_HOLD |
+| `OUT_FOR_DELIVERY` | خرج للتوصيل | DELIVERED, FAILED, ON_HOLD |
+| `DELIVERED` | تم التوصيل | — (final) |
+| `CANCELLED` | ملغي | — (final) |
+| `FAILED` | تعذّر إكمال الطلب | — (final) |
+| `ON_HOLD` | معلّق — يوجد مشكلة | any open stage, CANCELLED, FAILED |
+
+Customer submission creates `RECEIVED`; only an admin confirms. Any other move (backwards, out of a final
+status) is an **override**: Super Admin only, with explicit confirmation, recorded as such. Items, quantities
+and prices are locked from `SHIPPED` on; changing them requires an explicit "force" confirmation and is audited.
+Exceptional statuses appear in the customer timeline only when they happen (e.g. received → confirmed → ملغي).
+Each status note is either **internal** or **customer-visible** (shown in tracking and added to the queued notification).
+
+## Admin access
+
+- **First run:** `/admin/setup` creates the first Super Admin (username + password chosen there), proven with the
+  `ADMIN_PASSWORD` secret. It works only while no admin exists.
+- **Login:** username + password → optional TOTP code (Google/Microsoft Authenticator) → session.
+- **Roles (RBAC, tables `roles`, `permissions`, `role_permissions`):**
+  - *مدير عام / Super Admin* — everything, incl. admins, prices, overrides, audit log, privacy erase, backup.
+  - *مدير الطلبات / Order Manager* — orders, customer and item edits, normal status changes, bulk updates, export, reports.
+  - *دعم العملاء / Support Agent* — search and view orders and customers, internal notes, confirm new orders or put them on hold.
+  The sidebar shows only permitted sections; every API call checks the permission on the server.
+- New admins get a temporary password and must change it at first login.
+
+### Security
+
+| Area | Implementation |
+|---|---|
+| Passwords | PBKDF2-SHA256, 100,000 iterations (Cloudflare's maximum), 16-byte salt, keyed with a secret pepper (`PASSWORD_PEPPER`) — a leaked database alone cannot be cracked. Free plan has no CPU budget for Argon2id/bcrypt. Policy: ≥ 12 chars, no username, no common words. |
+| Sessions | random 256-bit token in `__Host-cg_sess` (HttpOnly, Secure, SameSite=Strict); only its SHA-256 is stored (`sessions`); 30-min idle timeout, 12-h absolute; new token on every login; logout, password change, role change, disable and 2FA reset revoke sessions. |
+| Brute force | Cloudflare rate limit 5/min/IP on login + per-username lockout (5 failures → 15 min) for existing *and* unknown usernames; attempts during a lockout never reset it; one generic message «بيانات الدخول غير صحيحة.»; same work for unknown users (no timing leak). |
+| 2FA | TOTP (RFC 6238); secret encrypted with AES-GCM (key derived from the pepper); a code cannot be reused. |
+| CSRF | SameSite=Strict cookie + required `X-CG-Admin` header + same-origin check on every POST. |
+| Input / output | bound SQL parameters only; LIKE wildcards escaped; control/bidi characters stripped; admin UI renders with `textContent`; strict CSP (`script-src 'self'`, no inline script, no third-party resources), `frame-ancestors 'none'`, `noindex`. CSV export neutralises spreadsheet formulas. |
+| Customer access | tracking needs order number **and** the order's mobile; secure link uses an HMAC token (revocable via `token_version`); unknown order, wrong phone and wrong token give the same `404`; internal ids, internal notes and admin names never reach customers. |
+| Audit | `audit_logs` and `order_status_history` are append-only (database triggers block UPDATE/DELETE). Logged: logins (ok/failed/locked), logout, setup, password/2FA changes, admin create/update, customer field changes (before → after), item add/remove/quantity/price (with reason), totals recalculation, status changes (incl. overrides), bulk updates, cancellation, notes, archive, link revocation, privacy erase, export, backup — with IP and user agent. |
+| Deletion | orders are never deleted. Super Admin can archive finished orders or erase personal data for a privacy request (amounts and history stay). |
 
 ## API
 
+Public (CORS: vitamik.com only; 10 orders/min/IP, 30 lookups/min/IP):
+
 | Method | Path | Body | Result |
 |---|---|---|---|
-| POST | `/api/orders` | `{ idempotencyKey, items:[{id,qty}], customer:{name,phone,city,district,address,notes}, location?, paymentMethod:"cod", lang, expectedTotal }` | `201 { order, token }` (or `200` with `replay:true` for the same key) |
-| POST | `/api/orders/view` | `{ orderNumber, token }` | `{ order }` with full delivery details (confirmation page) |
-| POST | `/api/orders/track` | `{ orderNumber, phone }` | `{ order }` with status, timeline, items, total, city/district (no address or phone) |
-| GET | `/admin/api/orders?q=&status=&from=&to=&page=` | — | list, counts per status |
-| GET | `/admin/api/orders/{orderNumber}` | — | full details, history, notes, allowed next statuses |
-| POST | `/admin/api/orders/{orderNumber}/status` | `{ status, note, expectedStatus }` | updated details |
-| POST | `/admin/api/orders/{orderNumber}/notes` | `{ note }` | updated details |
-| POST | `/admin/api/login`, `/admin/api/logout` | `{ password }` | session cookie |
+| POST | `/api/orders` | `{ idempotencyKey, items:[{id,qty}], customer:{…}, location?, paymentMethod:"cod", lang, expectedTotal }` | `201 { order, token }` / `200` replay |
+| POST | `/api/orders/view` | `{ orderNumber, token }` | `{ order }` (secure link) |
+| POST | `/api/orders/track` | `{ orderNumber, phone }` | `{ order }` |
 
-Errors: `422 validation` (`fields.phone = "invalid_phone"`, `items = "empty_cart" | "qty_limit" | "max_boxes"`, …),
-`409 price_changed | idempotency_conflict | out_of_stock | status_changed`, `429 rate_limited`, `500 create_failed`, `503 catalog_unavailable`.
+Admin (`/admin/api/*`, session cookie; POST needs `X-CG-Admin: 1`):
+`GET /setup` · `POST /setup` · `POST /login` · `POST /login/2fa` · `POST /logout` · `GET /me` · `POST /me/password` ·
+`POST /me/2fa/start|enable|disable` · `GET /dashboard` · `GET /reports?days=7|30|90` ·
+`GET /orders?q=&status=&payment=&range=today|yesterday|7d|30d&from=&to=&archived=&phone=&page=&per=25|50|100` ·
+`GET /orders/matching?<same filters>` (select-all, max 500) · `GET /orders/export.csv?<same filters>` ·
+`POST /orders/bulk-status { numbers, status, note, visibility, override, expectedCount }` ·
+`GET /orders/{n}` · `POST /orders/{n}/status|customer|items|notes|archive|revoke-link|anonymize` ·
+`GET /customers` · `GET /products` · `GET /audit` · `GET /users` · `POST /users` · `POST /users/{id}` · `GET /backup`.
 
-## Database (`migrations/0001_init.sql`)
+## Database (migrations `0001`, `0002`)
 
-- `orders`: internal `id` (never shown to customers), unique `order_number`, unique `idempotency_key`,
-  customer and delivery fields, optional coordinates, `boxes`, `subtotal`, `discount_amount`,
-  `shipping_amount`, `total_amount` (CHECK total = subtotal − discount + shipping), `payment_method`
-  (CHECK `cod`), `status` (CHECK one of 8 values), `lang`, timestamps. Indexes on `created_at`, `(status, created_at)`, `customer_phone`.
-- `order_items`: `order_id` → orders (cascade), `product_id`, `product_name_snapshot`, `product_name_en_snapshot`,
-  `boxes_per_unit`, `unit_price`, `quantity` (1–99), `line_total` (CHECK = unit_price × quantity).
-- `order_status_history`: previous/new status, `changed_by` (`customer` at creation, `admin`), note, time.
-- `order_notes`: internal admin notes (never sent to customers).
-- `order_counters`: one row per year; incremented inside the creation transaction → sequential numbers.
-- `notification_outbox`: queued customer messages (created / confirmed / shipped / out for delivery / delivered / cancelled) in the order's language. No sender is connected yet; a future WhatsApp / SMS / email integration reads `pending` rows.
-- `catalog_cache`: last valid product data, used if the website is briefly unreachable.
+`orders` (unique `order_number`, unique `idempotency_key`, CHECKs on status/payment/totals, `token_version`,
+`archived_at`, `anonymized_at`; indexes on created/updated/status/phone) · `order_items` (name/price snapshots,
+`price_overridden`, CHECK line = price × qty) · `order_status_history` (previous/new, changed_by, user_id, note,
+visibility, bulk_id, IP, user agent; append-only) · `order_notes` (internal) · `notification_outbox` (queued
+customer messages; sender to be connected later) · `order_counters` (atomic yearly sequence) · `users`, `roles`,
+`permissions`, `role_permissions`, `sessions`, `login_throttle`, `audit_logs` (append-only) · `catalog_cache`.
+Migration 0002 rebuilt the order tables to the new status enum, keeping every existing row
+(`pending` → `RECEIVED`, `problem` → `ON_HOLD`), children-first so no cascade can delete data.
 
-Order creation runs as one D1 batch (transaction): counter, order, items and the first history row
-are written together or not at all.
+## Backup and recovery
 
-## Statuses
+- D1 **Time Travel**: restore the database to any minute of the last 7 days (free plan):
+  `npx wrangler d1 time-travel info calmgastro-orders` · `npx wrangler d1 time-travel restore calmgastro-orders --timestamp=<ISO time>`
+- Full export: Super Admin → «حسابي والإعدادات» → «تنزيل نسخة احتياطية» (JSON, no password hashes or 2FA secrets), or
+  `npx wrangler d1 export calmgastro-orders --remote --output backup.sql` (complete SQL). Recommended weekly, stored off-site.
+- Secrets live only in Cloudflare (`wrangler secret`); keep a copy of `PASSWORD_PEPPER` and `TOKEN_SECRET` in a password
+  manager — without the pepper, restored admin passwords must be reset.
 
-`pending` بانتظار التأكيد → `confirmed` تم تأكيد الطلب → `preparing` جاري تجهيز الطلب → `shipped` تم شحن الطلب →
-`out_for_delivery` خرج للتوصيل → `delivered` تم التوصيل; plus `cancelled` ملغي and `problem` يوجد مشكلة في الطلب.
-Allowed changes are fixed in `TRANSITIONS` (`src/orders.js`); `delivered` and `cancelled` are final.
-
-## Security
-
-- CORS: only `ALLOWED_ORIGINS` (vitamik.com) may call `/api/*`; 16 KB body limit; honeypot field.
-- Rate limits per IP (Cloudflare bindings): 10 orders/min, 30 lookups/min, 5 admin logins/min.
-- Duplicate protection: the page disables the button and reuses one `idempotencyKey` per attempt; the key is UNIQUE in the database, so double clicks, retries after a lost response and parallel requests all return the same order.
-- Customer access: confirmation uses an HMAC token derived from the order number (`TOKEN_SECRET`, never stored); tracking requires order number + the same mobile number. Unknown order and wrong phone return the same `404`.
-- Admin: password (`ADMIN_PASSWORD`) → signed `__Host-` cookie (HttpOnly, Secure, SameSite=Strict, 12 h); every change also needs the `X-CG-Admin` header from the same origin (CSRF). Changing the password signs everyone out. Admin page has a strict CSP, no framing, `noindex`.
-- All SQL uses bound parameters; `LIKE` wildcards are escaped; text is length-limited and stripped of control/bidi characters; the admin panel renders data with `textContent` only.
-
-## Deploy / operate
+## Deploy
 
 ```sh
+npx wrangler d1 export calmgastro-orders --remote --output before-migration.sql   # always back up first
 npx wrangler d1 migrations apply calmgastro-orders --remote
 npx wrangler deploy
-npx wrangler secret put ADMIN_PASSWORD     # change the admin password any time
-npx wrangler secret put SESSION_SECRET     # random, 32+ chars
-npx wrangler secret put TOKEN_SECRET       # random, 32+ chars (changing it invalidates old confirmation links; tracking still works)
-npx wrangler d1 export calmgastro-orders --remote --output backup.sql   # backup
+npx wrangler secret put PASSWORD_PEPPER    # random, 32+ chars (set once; changing it invalidates all admin passwords)
+npx wrangler secret put TOKEN_SECRET       # random, 32+ chars (changing it invalidates customers' secure links)
+npx wrangler secret put ADMIN_PASSWORD     # setup key for the first Super Admin only
 ```
 
-The page reaches the API through `CONFIG.ordersApi.endpoint` in `assets/app.js`; its origin is listed in the
-CSP `connect-src` of `index.html`.
+## Not included (needs a decision or a provider)
+
+SMS / WhatsApp / email sending (messages are queued in `notification_outbox`), OTP order recovery, online
+payments, customer accounts. The schema and APIs leave room for each.

@@ -1,18 +1,12 @@
-/* CalmGastro orders API + admin panel (Cloudflare Worker + D1).
-   Public (called from vitamik.com, CORS-restricted):
-     POST /api/orders          create an order (idempotent)          → { order, token }
-     POST /api/orders/view     { orderNumber, token }                 → { order }  (confirmation page)
-     POST /api/orders/track    { orderNumber, phone }                 → { order }  (tracking, no address)
-   Admin (same origin, session cookie):
-     GET  /admin                                    panel
-     POST /admin/api/login | /admin/api/logout     GET /admin/api/session
-     GET  /admin/api/orders?q=&status=&from=&to=&page=
-     GET  /admin/api/orders/{orderNumber}
-     POST /admin/api/orders/{orderNumber}/status   { status, note, expectedStatus }
-     POST /admin/api/orders/{orderNumber}/notes    { note } */
+/* CalmGastro orders API + admin (Cloudflare Worker + D1). Full reference: ../README.md
+   Public (vitamik.com only, CORS):
+     POST /api/orders          create an order (idempotent)             → { order, token }
+     POST /api/orders/view     { orderNumber, token }  secure link        → { order }
+     POST /api/orders/track    { orderNumber, phone }  number + mobile    → { order }
+   Admin (same origin, session cookie, permissions checked per action): /admin/* pages, /admin/api/* JSON */
 import { createOrder, loadOrder, customerView, orderToken, normalizeOrderNumber, normalizePhone, safeEqual, HttpError } from "./orders.js";
-import { isAdmin, login, logoutCookie, listOrders, orderDetail, changeStatus, addNote } from "./admin.js";
-import { ADMIN_HTML, ADMIN_CSS, ADMIN_JS } from "./admin-ui.js";
+import { login, completeMfa, loadSession, revokeCurrent, clearCookie, setup, setupNeeded, audit } from "./auth.js";
+import * as A from "./admin.js";
 
 const MAX_BODY = 16 * 1024;
 const BASE_HEADERS = { "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex, nofollow", "Cache-Control": "no-store" };
@@ -42,16 +36,18 @@ async function readJson(request) {
   if (Number(request.headers.get("Content-Length") || 0) > MAX_BODY) throw new HttpError(413, { error: "too_large" });
   const raw = await request.text();
   if (raw.length > MAX_BODY) throw new HttpError(413, { error: "too_large" });
+  if (!raw) return {};
   try { const v = JSON.parse(raw); if (v && typeof v === "object") return v; } catch (_) {}
   throw new HttpError(400, { error: "bad_json" });
 }
 
-async function viewResponse(env, number, withAddress, extra = {}) {
+async function viewResponse(env, number, extra = {}) {
   const full = await loadOrder(env.DB, number);
   if (!full) throw new HttpError(404, { error: "not_found" });
-  return { order: customerView(full, { withAddress }), ...extra };
+  return { order: customerView(full), ...extra };
 }
 
+/* ---------------------------------------------------------------- public API */
 async function publicApi(request, env, url, cors) {
   const ip = request.headers.get("CF-Connecting-IP") || "local";
   const body = await readJson(request);
@@ -60,53 +56,111 @@ async function publicApi(request, env, url, cors) {
     if (body.hp) throw new HttpError(422, { error: "validation", fields: {} });     // honeypot field filled by a bot
     if (!(await allowed(env, "ORDER_LIMITER", ip, 10, url))) throw new HttpError(429, { error: "rate_limited" });
     const { replay, number } = await createOrder(env, body);
-    return json(await viewResponse(env, number, true, { token: await orderToken(env, number), replay }), replay ? 200 : 201, cors);
+    return json(await viewResponse(env, number, { token: await orderToken(env, number), replay }), replay ? 200 : 201, cors);
   }
 
   if (!(await allowed(env, "LOOKUP_LIMITER", ip, 30, url))) throw new HttpError(429, { error: "rate_limited" });
   const number = normalizeOrderNumber(body.orderNumber);
+  // Same answer for "no such order", "wrong token" and "wrong phone", so order numbers cannot be probed.
+  const row = number && await env.DB.prepare("SELECT customer_phone, token_version, anonymized_at FROM orders WHERE order_number = ?1").bind(number).first();
 
   if (url.pathname === "/api/orders/view") {
-    // Same answer for "no such order" and "wrong token", so numbers cannot be probed.
-    if (!number || !safeEqual(String(body.token || ""), await orderToken(env, number))) throw new HttpError(404, { error: "not_found" });
-    return json(await viewResponse(env, number, true), 200, cors);
+    if (!row || !safeEqual(String(body.token || ""), await orderToken(env, number, row.token_version))) throw new HttpError(404, { error: "not_found" });
+    return json(await viewResponse(env, number), 200, cors);
   }
   if (url.pathname === "/api/orders/track") {
     const phone = normalizePhone(body.phone);
-    const row = number && phone && await env.DB.prepare("SELECT customer_phone FROM orders WHERE order_number = ?1").bind(number).first();
-    if (!row || !safeEqual(row.customer_phone, phone)) throw new HttpError(404, { error: "not_found" });
-    return json(await viewResponse(env, number, false), 200, cors);
+    if (!row || !phone || row.anonymized_at || !safeEqual(row.customer_phone, phone)) throw new HttpError(404, { error: "not_found" });
+    return json(await viewResponse(env, number), 200, cors);
   }
   throw new HttpError(404, { error: "not_found" });
 }
 
-const ADMIN_PAGE_HEADERS = {
+/* ---------------------------------------------------------------- admin pages + API */
+const ADMIN_HEADERS = {
   ...BASE_HEADERS,
-  "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
-  "X-Frame-Options": "DENY", "Cross-Origin-Opener-Policy": "same-origin"
+  "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+  "X-Frame-Options": "DENY", "Cross-Origin-Opener-Policy": "same-origin", "Strict-Transport-Security": "max-age=31536000"
 };
+async function asset(env, url, path) {
+  if (!env.ASSETS) return new Response("admin assets missing", { status: 500 });
+  const r = await env.ASSETS.fetch(new Request(new URL(path, url.origin)));
+  const h = new Headers(r.headers);
+  for (const [k, v] of Object.entries(ADMIN_HEADERS)) h.set(k, v);
+  return new Response(r.body, { status: r.status, headers: h });
+}
+
+// Allowed while a temporary password must be replaced.
+const PASSWORD_CHANGE_ONLY = new Set(["GET /me", "POST /me/password", "POST /logout"]);
 
 async function adminApi(request, env, url) {
-  const path = url.pathname.slice("/admin/api".length);
-  const ip = request.headers.get("CF-Connecting-IP") || "local";
-  if (request.method === "POST") {
-    // CSRF: state-changing calls must come from this page itself (custom header + same origin)
+  const path = url.pathname.slice("/admin/api".length), method = request.method, key = `${method} ${path}`;
+  const ctx = { ip: request.headers.get("CF-Connecting-IP") || "local", ua: request.headers.get("User-Agent") || "" };
+  if (method === "POST") {
+    // CSRF: state-changing calls must come from the admin page itself (custom header + same origin; cookie is SameSite=Strict)
     const origin = request.headers.get("Origin");
     if (request.headers.get("X-CG-Admin") !== "1" || (origin && origin !== url.origin)) throw new HttpError(403, { error: "forbidden" });
   }
-  if (path === "/login" && request.method === "POST") {
-    if (!(await allowed(env, "LOGIN_LIMITER", ip, 5, url))) throw new HttpError(429, { error: "rate_limited" });
-    const set = await login(env, await readJson(request));
-    return json({ ok: true }, 200, { "Set-Cookie": set });
+  if (key === "GET /setup") return json({ needed: await setupNeeded(env) });
+  if (key === "POST /setup") {
+    if (!(await allowed(env, "LOGIN_LIMITER", ctx.ip, 5, url))) throw new HttpError(429, { error: "rate_limited" });
+    await setup(env, ctx, await readJson(request));
+    return json({ ok: true });
   }
-  if (path === "/logout" && request.method === "POST") return json({ ok: true }, 200, { "Set-Cookie": logoutCookie() });
-  if (!(await isAdmin(request, env))) throw new HttpError(401, { error: "unauthorized" });
-  if (path === "/session" && request.method === "GET") return json({ ok: true });
-  if (path === "/orders" && request.method === "GET") return json(await listOrders(env, url.searchParams));
-  const m = path.match(/^\/orders\/([A-Za-z0-9-]{6,24})(\/status|\/notes)?$/);
-  if (m && request.method === "GET" && !m[2]) return json(await orderDetail(env, m[1]));
-  if (m && request.method === "POST" && m[2] === "/status") return json(await changeStatus(env, m[1], await readJson(request)));
-  if (m && request.method === "POST" && m[2] === "/notes") return json(await addNote(env, m[1], await readJson(request)));
+  if (key === "POST /login") {
+    if (!(await allowed(env, "LOGIN_LIMITER", ctx.ip, 5, url))) throw new HttpError(429, { error: "rate_limited" });
+    await revokeCurrent(request, env);                                    // a new session is issued on every login
+    const r = await login(env, ctx, await readJson(request));
+    return json({ ok: true, mfa: r.mfa }, 200, { "Set-Cookie": r.cookie });
+  }
+  if (key === "POST /login/2fa") {
+    if (!(await allowed(env, "LOGIN_LIMITER", ctx.ip, 5, url))) throw new HttpError(429, { error: "rate_limited" });
+    return json({ ok: true }, 200, { "Set-Cookie": await completeMfa(request, env, ctx, await readJson(request)) });
+  }
+  if (key === "POST /logout") {
+    const s = await loadSession(request, env, { allowMfaPending: true });
+    await revokeCurrent(request, env);
+    if (s) { Object.assign(ctx, s); await audit(env, ctx, "logout", "user", s.user.username); }
+    return json({ ok: true }, 200, { "Set-Cookie": clearCookie() });
+  }
+
+  const s = await loadSession(request, env);
+  if (!s) throw new HttpError(401, { error: "unauthorized" });
+  Object.assign(ctx, s);
+  if (s.user.mustChangePassword && !PASSWORD_CHANGE_ONLY.has(key)) throw new HttpError(403, { error: "password_change_required" });
+
+  const body = method === "POST" ? await readJson(request) : null, p = url.searchParams;
+  switch (key) {
+    case "GET /me": return json(A.me(ctx));
+    case "POST /me/password": return json(await A.changeOwnPassword(env, ctx, body));
+    case "POST /me/2fa/start": return json(await A.startTwoFactor(env, ctx));
+    case "POST /me/2fa/enable": return json(await A.enableTwoFactor(env, ctx, body));
+    case "POST /me/2fa/disable": return json(await A.disableTwoFactor(env, ctx, body));
+    case "GET /dashboard": return json(await A.dashboard(env, ctx));
+    case "GET /reports": return json(await A.reports(env, ctx, p));
+    case "GET /orders": return json(await A.listOrders(env, ctx, p));
+    case "GET /orders/matching": return json(await A.matchingNumbers(env, ctx, p));
+    case "GET /orders/export.csv":
+      return new Response(await A.exportCsv(env, ctx, p), { headers: { ...BASE_HEADERS, "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="orders-${new Date().toISOString().slice(0, 10)}.csv"` } });
+    case "POST /orders/bulk-status": return json(await A.bulkStatus(env, ctx, body));
+    case "GET /customers": return json(await A.customers(env, ctx, p));
+    case "GET /products": return json(await A.products(env, ctx));
+    case "GET /audit": return json(await A.auditLog(env, ctx, p));
+    case "GET /users": return json(await A.listUsers(env, ctx));
+    case "POST /users": return json(await A.createUser(env, ctx, body));
+    case "GET /backup":
+      return new Response(JSON.stringify(await A.backup(env, ctx)), { headers: { ...BASE_HEADERS, "Content-Type": "application/json; charset=utf-8",
+        "Content-Disposition": `attachment; filename="calmgastro-backup-${new Date().toISOString().slice(0, 10)}.json"` } });
+  }
+  let m = path.match(/^\/users\/(\d{1,9})$/);
+  if (m && method === "POST") return json(await A.updateUser(env, ctx, m[1], body));
+  m = path.match(/^\/orders\/([A-Za-z0-9-]{6,24})(?:\/(status|customer|items|notes|archive|revoke-link|anonymize))?$/);
+  if (m && method === "GET" && !m[2]) return json(await A.orderDetail(env, ctx, m[1]));
+  if (m && method === "POST") {
+    const h = { status: A.changeStatus, customer: A.editCustomer, items: A.editItems, notes: A.addNote, archive: A.setArchived, "revoke-link": A.revokeLink, anonymize: A.anonymize }[m[2]];
+    if (h) return json(await h(env, ctx, m[1], body));
+  }
   throw new HttpError(404, { error: "not_found" });
 }
 
@@ -116,12 +170,10 @@ export default {
     const cors = corsHeaders(env, request.headers.get("Origin"));
     try {
       if (url.pathname === "/health") return json({ ok: true, db: !!env.DB });
-
-      if (url.pathname === "/admin" || url.pathname === "/admin/")
-        return new Response(ADMIN_HTML, { headers: { "Content-Type": "text/html; charset=utf-8", ...ADMIN_PAGE_HEADERS } });
-      if (url.pathname === "/admin/app.js") return new Response(ADMIN_JS, { headers: { "Content-Type": "text/javascript; charset=utf-8", ...ADMIN_PAGE_HEADERS } });
-      if (url.pathname === "/admin/app.css") return new Response(ADMIN_CSS, { headers: { "Content-Type": "text/css; charset=utf-8", ...ADMIN_PAGE_HEADERS } });
       if (url.pathname.startsWith("/admin/api/")) return await adminApi(request, env, url);
+      if (url.pathname.startsWith("/admin/assets/") && request.method === "GET") return await asset(env, url, url.pathname);
+      // every admin page (/admin, /admin/login, /admin/orders/CG-…) is the same app shell; the data behind it needs a session
+      if ((url.pathname === "/admin" || url.pathname.startsWith("/admin/")) && request.method === "GET") return await asset(env, url, "/admin/index.html");
 
       if (url.pathname.startsWith("/api/orders")) {
         if (request.method === "OPTIONS") return new Response(null, { status: cors ? 204 : 403, headers: { ...BASE_HEADERS, ...(cors || {}) } });

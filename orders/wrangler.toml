@@ -2,12 +2,20 @@
 # Deploy:      npx wrangler deploy
 # Migrations:  npx wrangler d1 migrations apply calmgastro-orders --remote
 # Secrets (never written here):
-#   npx wrangler secret put ADMIN_PASSWORD   (admin panel password, 12+ characters)
-#   npx wrangler secret put SESSION_SECRET   (random, 32+ characters; signs admin sessions)
-#   npx wrangler secret put TOKEN_SECRET     (random, 32+ characters; customer order-page links)
+#   npx wrangler secret put PASSWORD_PEPPER  (random, 32+ characters; keys every admin password hash and encrypts 2FA secrets)
+#   npx wrangler secret put TOKEN_SECRET     (random, 32+ characters; customer secure order links)
+#   npx wrangler secret put ADMIN_PASSWORD   (only for the one-time setup page that creates the first Super Admin)
 name = "calmgastro-orders"
 main = "src/index.js"
 compatibility_date = "2026-09-01"
+
+# Admin interface files (public/admin/*), served through the Worker so every response gets the security headers
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = true
+html_handling = "none"
+not_found_handling = "none"
 
 [vars]
 SITE_URL = "https://vitamik.com/"

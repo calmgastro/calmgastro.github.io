@@ -1,30 +1,8 @@
 /* Orders: validation, creation (exactly once per checkout attempt), customer views and tracking. */
-import { getCatalog, quote, CatalogError } from "./catalog.js";
+import { getCatalog, quote } from "./catalog.js";
 
-export const STATUSES = ["pending", "confirmed", "preparing", "shipped", "out_for_delivery", "delivered", "cancelled", "problem"];
-
-// Allowed status changes. Delivered and cancelled are final; "problem" can return to any open stage.
-export const TRANSITIONS = {
-  pending:          ["confirmed", "cancelled", "problem"],
-  confirmed:        ["preparing", "cancelled", "problem"],
-  preparing:        ["shipped", "cancelled", "problem"],
-  shipped:          ["out_for_delivery", "delivered", "problem"],
-  out_for_delivery: ["delivered", "problem"],
-  problem:          ["pending", "confirmed", "preparing", "shipped", "out_for_delivery", "cancelled"],
-  delivered:        [],
-  cancelled:        []
-};
-
-/* Messages queued for future WhatsApp / SMS / email delivery (no sender connected yet). */
-const NOTIFY = {
-  created:          { ar: "تم استلام طلبك رقم {n} بنجاح.",          en: "We have received your order {n}." },
-  confirmed:        { ar: "تم تأكيد طلبك رقم {n}.",                 en: "Your order {n} has been confirmed." },
-  shipped:          { ar: "تم شحن طلبك رقم {n}.",                   en: "Your order {n} has been shipped." },
-  out_for_delivery: { ar: "طلبك رقم {n} خرج للتوصيل.",              en: "Your order {n} is out for delivery." },
-  delivered:        { ar: "تم تسليم طلبك رقم {n}.",                 en: "Your order {n} has been delivered." },
-  cancelled:        { ar: "تم إلغاء طلبك رقم {n}.",                 en: "Your order {n} has been cancelled." }
-};
-export const notifyMessage = (event, lang, number) => NOTIFY[event] ? NOTIFY[event][lang === "en" ? "en" : "ar"].replace("{n}", number) : null;
+import { notifyMessage } from "./statuses.js";
+export { notifyMessage };
 
 /* ---------- input cleaning ---------- */
 const DIGITS = { "٠": 0, "١": 1, "٢": 2, "٣": 3, "٤": 4, "٥": 5, "٦": 6, "٧": 7, "٨": 8, "٩": 9, "۰": 0, "۱": 1, "۲": 2, "۳": 3, "۴": 4, "۵": 5, "۶": 6, "۷": 7, "۸": 8, "۹": 9 };
@@ -109,9 +87,10 @@ async function hmac(secret, text) {
   return b64url(await crypto.subtle.sign("HMAC", key, enc.encode(text)));
 }
 // Customer access token for one order: derived, never stored, so a database leak does not leak it.
-export async function orderToken(env, number) {
+// Version 1 is the original formula (links already given to customers stay valid); revoking a link raises the version.
+export async function orderToken(env, number, version = 1) {
   if (!env.TOKEN_SECRET || env.TOKEN_SECRET.length < 32) throw new Error("TOKEN_SECRET missing");
-  return (await hmac(env.TOKEN_SECRET, "order-view:" + number)).slice(0, 32);
+  return (await hmac(env.TOKEN_SECRET, "order-view:" + number + (version > 1 ? ":v" + version : ""))).slice(0, 32);
 }
 export function safeEqual(a, b) {
   a = String(a); b = String(b);
@@ -154,15 +133,15 @@ export async function createOrder(env, body) {
         location_latitude, location_longitude, customer_notes, boxes, subtotal, discount_amount, shipping_amount, total_amount,
         currency, payment_method, status, lang, created_at, updated_at)
       VALUES (?1 || '-' || ?2 || '-' || printf('%06d', (SELECT last_value FROM order_counters WHERE year = ?2)),
-        ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, 'pending', ?20, ?21, ?21)`)
+        ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, 'RECEIVED', ?20, ?21, ?21)`)
       .bind(catalog.orderPrefix, year, o.key, requestHash, o.customer.name, o.customer.phone, o.customer.city, o.customer.district,
         o.customer.address, o.location ? o.location.lat : null, o.location ? o.location.lng : null, o.customer.notes,
         q.boxes, q.subtotal, q.discount, q.shipping, q.total, q.currency, o.payment, o.lang, now),
     ...q.lines.map(l => db.prepare(`INSERT INTO order_items (order_id, product_id, product_name_snapshot, product_name_en_snapshot,
-        boxes_per_unit, unit_price, quantity, line_total, created_at) VALUES (${orderId}, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`)
+        boxes_per_unit, unit_price, quantity, line_total, created_at, updated_at) VALUES (${orderId}, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)`)
       .bind(o.key, l.productId, l.name, l.nameEn, l.boxesPerUnit, l.unitPrice, l.quantity, l.lineTotal, now)),
-    db.prepare(`INSERT INTO order_status_history (order_id, previous_status, new_status, changed_by, note, created_at)
-      VALUES (${orderId}, NULL, 'pending', 'customer', '', ?2)`).bind(o.key, now)
+    db.prepare(`INSERT INTO order_status_history (order_id, previous_status, new_status, changed_by, note, visibility, created_at)
+      VALUES (${orderId}, NULL, 'RECEIVED', 'customer', '', 'internal', ?2)`).bind(o.key, now)
   ];
   // All statements run as one transaction: either the whole order exists or nothing does.
   try {
@@ -178,8 +157,8 @@ export async function createOrder(env, body) {
   const row = await db.prepare("SELECT id, order_number FROM orders WHERE idempotency_key = ?1").bind(o.key).first();
   if (!row) throw new HttpError(500, { error: "create_failed" });
   try {
-    await db.prepare("INSERT INTO notification_outbox (order_id, event, lang, message, created_at) VALUES (?1, 'created', ?2, ?3, ?4)")
-      .bind(row.id, o.lang, notifyMessage("created", o.lang, row.order_number), now).run();
+    await db.prepare("INSERT INTO notification_outbox (order_id, event, lang, message, created_at) VALUES (?1, 'RECEIVED', ?2, ?3, ?4)")
+      .bind(row.id, o.lang, notifyMessage("RECEIVED", o.lang, row.order_number), now).run();
   }
   catch (e) { console.log("outbox write failed:", e.message); }                          // never fails the order
   return { replay: false, number: row.order_number };
@@ -198,19 +177,21 @@ export async function loadOrder(db, number) {
   return { order, items: items.results, history: history.results };
 }
 
-/* What the customer may see. No internal id, no admin notes, no "changed by". */
-export function customerView(full, { withAddress }) {
+/* What the customer may see: no internal id, no internal notes, no admin names.
+   Tracking (number + phone) and the secure link both show delivery details; the phone is masked. */
+export function customerView(full) {
   const { order: o, items, history } = full;
   const mask = p => { const l = localPhone(p); return l.slice(0, 3) + "•••••" + l.slice(-2); };
+  const anonymized = !!o.anonymized_at;
   return {
     orderNumber: o.order_number, status: o.status, createdAt: o.created_at, updatedAt: o.updated_at,
     items: items.map(i => ({ productId: i.product_id, name: i.product_name_snapshot, nameEn: i.product_name_en_snapshot || i.product_name_snapshot,
       boxesPerUnit: i.boxes_per_unit, unitPrice: i.unit_price, quantity: i.quantity, lineTotal: i.line_total })),
     boxes: o.boxes, subtotal: o.subtotal, discount: o.discount_amount, shipping: o.shipping_amount, total: o.total_amount,
     currency: o.currency, paymentMethod: o.payment_method,
-    delivery: withAddress
-      ? { name: o.customer_name, phone: mask(o.customer_phone), city: o.city, district: o.district, address: o.address, notes: o.customer_notes, hasLocation: o.location_latitude != null }
-      : { name: o.customer_name, city: o.city, district: o.district },
-    history: history.map(h => ({ status: h.new_status, at: h.created_at }))
+    delivery: anonymized ? { name: "—", city: "—", district: "—", address: "—" }
+      : { name: o.customer_name, phone: mask(o.customer_phone), city: o.city, district: o.district, address: o.address, notes: o.customer_notes, hasLocation: o.location_latitude != null },
+    // status changes with time; a note is shown only when the admin marked it customer-visible
+    history: history.map(h => ({ status: h.new_status, at: h.created_at, note: h.visibility === "customer" ? h.note : "" }))
   };
 }
