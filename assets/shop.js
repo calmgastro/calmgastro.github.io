@@ -547,7 +547,9 @@
     if (res && res.status === 409 && data && data.error === "out_of_stock"){ showError(t("المنتج غير متوفر حالياً. لم يتم تسجيل الطلب.")); return; }
     if (res && res.status === 429){ showError(t("محاولات كثيرة خلال وقت قصير. انتظر دقيقة ثم اضغط «حاول مرة أخرى». لم يتم تسجيل الطلب.")); return; }
     // رمز قصير يوضح نوع المشكلة: NET = لم يصل الطلب للخادم (شبكة/حظر)، TIMEOUT = تأخر الرد، S500… = رد الخادم
-    showError(t("حدث خطأ أثناء إنشاء الطلب. لم يتم تسجيل الطلب."), res ? "S" + res.status + (data && data.error ? "-" + data.error : "") : failure);
+    // NET/TIMEOUT: لم يصل الطلب لخادمنا إطلاقاً، غالباً شبكة الواي فاي أو إعداد في الجهاز يحجب الاتصال؛ نرشد العميل لبديل فوري
+    if (!res){ showError(t("تعذّر الاتصال بخادم الطلبات من شبكتك الحالية، ولم يتم تسجيل الطلب. أوقف الواي فاي وجرّب ببيانات الجوال، أو أرسل طلبك عبر واتساب وسنكمله لك."), failure); return; }
+    showError(t("حدث خطأ أثناء إنشاء الطلب. لم يتم تسجيل الطلب."), "S" + res.status + (data && data.error ? "-" + data.error : ""));
   }
   function showError(msg, code){
     $("#orderErrorText").textContent = msg;

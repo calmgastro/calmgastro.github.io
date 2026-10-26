@@ -228,6 +228,7 @@ window.I18N_EN = {
   "بالضغط على «تأكيد الطلب» يتم تسجيل طلبك لدينا مباشرة وتحصل على رقم الطلب. لا تحتاج لإرسال أي رسالة.": "Pressing “Place order” records your order with us right away and gives you an order number. You don't need to send any message.",
   "حدث خطأ أثناء إنشاء الطلب. لم يتم تسجيل الطلب.": "Something went wrong while creating your order. Your order was not placed.",
   "رمز المشكلة: {c}": "Problem code: {c}",
+  "تعذّر الاتصال بخادم الطلبات من شبكتك الحالية، ولم يتم تسجيل الطلب. أوقف الواي فاي وجرّب ببيانات الجوال، أو أرسل طلبك عبر واتساب وسنكمله لك.": "We couldn't reach our order server from your current network, so your order was not placed. Turn off Wi-Fi and try on mobile data, or send your order on WhatsApp and we'll complete it for you.",
   "حاول مرة أخرى": "Try again",
   "تواصل معنا عبر واتساب": "Contact us on WhatsApp",
   "تأكيد الطلب": "Place order",
