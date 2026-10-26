@@ -343,7 +343,7 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
       let answer = "", actions = [];
       try {
         const r = await fetch(AI.endpoint, {
-          method: "POST", headers: { "Content-Type": "application/json" }, signal: ctrl.signal,
+          method: "POST", headers: { "Content-Type": "text/plain;charset=UTF-8" }, signal: ctrl.signal,   // بلا preflight (انظر shop.js)
           body: JSON.stringify({ message: q, history, lang: LANG })
         });
         const j = r.ok ? await r.json() : null;

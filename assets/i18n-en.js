@@ -227,6 +227,7 @@ window.I18N_EN = {
   "الإجمالي": "Total",
   "بالضغط على «تأكيد الطلب» يتم تسجيل طلبك لدينا مباشرة وتحصل على رقم الطلب. لا تحتاج لإرسال أي رسالة.": "Pressing “Place order” records your order with us right away and gives you an order number. You don't need to send any message.",
   "حدث خطأ أثناء إنشاء الطلب. لم يتم تسجيل الطلب.": "Something went wrong while creating your order. Your order was not placed.",
+  "رمز المشكلة: {c}": "Problem code: {c}",
   "حاول مرة أخرى": "Try again",
   "تواصل معنا عبر واتساب": "Contact us on WhatsApp",
   "تأكيد الطلب": "Place order",

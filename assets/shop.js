@@ -22,6 +22,9 @@
   const PAYMENTS = (CONFIG.paymentMethods || [{ id: "cod" }]).map(p => ({ id: p.id, label: EN ? p.label_en || p.label : p.label, note: EN ? p.note_en || p.note : p.note }));
   const bundleById = id => CONFIG.bundles.find(b => b.id === id);
   const waLink = msg => `https://wa.me/${CONFIG.whatsapp}?text=${encodeURIComponent(msg)}`;
+  // نرسل JSON كنص عادي حتى يكون الطلب «بسيطاً» بلا طلب تحقق مسبق (CORS preflight): خطوة إضافية كانت تفشل
+  // على بعض الجوالات والشبكات (آيفون خاصة) فيظهر «حدث خطأ أثناء إنشاء الطلب». الخادم يقرأ JSON من النص كما هو.
+  const JSON_AS_TEXT = { "Content-Type": "text/plain;charset=UTF-8" };
 
   // عنصر DOM آمن: النصوص دائماً textContent
   function h(tag, attrs, ...kids){
@@ -503,16 +506,16 @@
     placing = true; placeBtn.disabled = true; placeBtn.classList.add("loading");
     placeBtn.textContent = t("جاري تأكيد الطلب...");
     errBox.hidden = true; $("#priceNote").hidden = true;
-    let res = null, data = null;
+    let res = null, data = null, failure = "NET";
     try {
       if (!API) throw new Error("no endpoint");
       const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), 20000);
       try {
-        res = await fetch(API + "/api/orders", { method: "POST", headers: { "Content-Type": "application/json" }, signal: ctrl.signal,
+        res = await fetch(API + "/api/orders", { method: "POST", headers: JSON_AS_TEXT, signal: ctrl.signal,
           body: JSON.stringify({ ...payload, idempotencyKey: attempt.key, expectedTotal: attempt.expectedTotal, hp: $("#f-hp").value }) });
         data = await res.json().catch(() => null);
       } finally { clearTimeout(timer); }
-    } catch (_) { res = null; }
+    } catch (e) { res = null; failure = e && e.name === "AbortError" ? "TIMEOUT" : navigator.onLine === false ? "OFFLINE" : "NET"; }
     placing = false; placeBtn.disabled = false; placeBtn.classList.remove("loading");
 
     if (res && (res.status === 201 || res.status === 200) && data && data.order && data.order.orderNumber){
@@ -543,10 +546,13 @@
     }
     if (res && res.status === 409 && data && data.error === "out_of_stock"){ showError(t("المنتج غير متوفر حالياً. لم يتم تسجيل الطلب.")); return; }
     if (res && res.status === 429){ showError(t("محاولات كثيرة خلال وقت قصير. انتظر دقيقة ثم اضغط «حاول مرة أخرى». لم يتم تسجيل الطلب.")); return; }
-    showError(t("حدث خطأ أثناء إنشاء الطلب. لم يتم تسجيل الطلب."));
+    // رمز قصير يوضح نوع المشكلة: NET = لم يصل الطلب للخادم (شبكة/حظر)، TIMEOUT = تأخر الرد، S500… = رد الخادم
+    showError(t("حدث خطأ أثناء إنشاء الطلب. لم يتم تسجيل الطلب."), res ? "S" + res.status + (data && data.error ? "-" + data.error : "") : failure);
   }
-  function showError(msg){
+  function showError(msg, code){
     $("#orderErrorText").textContent = msg;
+    $("#orderErrorCode").textContent = code ? t("رمز المشكلة: {c}", { c: code }) : "";
+    if (code) track("order_failed", { code });
     const q = quote(cart);
     const lines = q.lines.map(l => `- ${l.b.title} (${l.b.program}) × ${l.qty}`).join("\n");
     $("#orderErrorWa").href = waLink(t("مرحباً، واجهت مشكلة في إتمام الطلب من الموقع وأرغب في طلب:\n{lines}\nالإجمالي: {total}", { lines, total: money(q.total) }));
@@ -675,7 +681,7 @@
   async function api(path, body){
     const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), 15000);
     try {
-      const r = await fetch(API + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: ctrl.signal });
+      const r = await fetch(API + path, { method: "POST", headers: JSON_AS_TEXT, body: JSON.stringify(body), signal: ctrl.signal });
       return { status: r.status, data: await r.json().catch(() => null) };
     } catch (_) { return { status: 0, data: null }; }
     finally { clearTimeout(timer); }

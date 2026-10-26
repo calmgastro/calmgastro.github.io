@@ -489,6 +489,8 @@
   .price-note{background:#FFF1D6; color:#7A4A00; border-radius:12px; padding:.8rem 1rem; font-size:.92rem; margin-bottom:.6rem; font-weight:600}
   .order-error{background:#F8E3DE; border:1px solid #E7B4A8; color:var(--danger); border-radius:14px; padding:1rem; margin-bottom:1rem}
   .order-error p{font-weight:700; margin-bottom:.7rem}
+  .order-error .oe-code{font-weight:400; font-size:.8rem; opacity:.8; margin:-.4rem 0 .7rem}
+  .order-error .oe-code:empty{display:none}
   .oe-actions{display:flex; flex-wrap:wrap; gap:10px}
   .order-form .oe-actions .btn{flex:1 1 180px; width:auto; font-size:1rem}
   #placeOrder.loading{opacity:.75; cursor:progress}
@@ -1203,7 +1205,7 @@
               <label for="f-notes">ملاحظات للتوصيل <span class="opt">(اختياري)</span></label>
               <textarea id="f-notes" name="notes" rows="2" maxlength="500" placeholder="مثلاً: وقت مناسب للتوصيل"></textarea>
             </div>
-            <div class="hp" aria-hidden="true"><label for="f-hp">اترك هذا الحقل فارغاً</label><input id="f-hp" name="website" tabindex="-1" autocomplete="off"></div>
+            <div class="hp" aria-hidden="true"><label for="f-hp">اترك هذا الحقل فارغاً</label><input id="f-hp" name="cg_hp_x7" tabindex="-1" autocomplete="off" data-1p-ignore data-lpignore="true" data-form-type="other"></div>
             <fieldset class="pay">
               <legend class="form-sub">طريقة الدفع</legend>
               <div id="payMethods"></div>
@@ -1223,6 +1225,7 @@
             <p class="rv-notice">بالضغط على «تأكيد الطلب» يتم تسجيل طلبك لدينا مباشرة وتحصل على رقم الطلب. لا تحتاج لإرسال أي رسالة.</p>
             <div class="order-error" id="orderError" role="alert" tabindex="-1" hidden>
               <p id="orderErrorText">حدث خطأ أثناء إنشاء الطلب. لم يتم تسجيل الطلب.</p>
+              <p class="oe-code num" id="orderErrorCode"></p>
               <div class="oe-actions">
                 <button type="button" class="btn btn-primary" id="retryOrder">حاول مرة أخرى</button>
                 <a class="btn btn-ghost" id="orderErrorWa" href="#" target="_blank" rel="noopener">تواصل معنا عبر واتساب</a>
@@ -1417,8 +1420,8 @@
 }
 </script>
 
-<script src="assets/i18n-en.js?v=20261027b"></script>
-<script src="assets/app.js?v=20261026b"></script>
-<script src="assets/shop.js?v=20261027a"></script>
+<script src="assets/i18n-en.js?v=20261027c"></script>
+<script src="assets/app.js?v=20261027c"></script>
+<script src="assets/shop.js?v=20261027c"></script>
 </body>
 </html>

@@ -9,6 +9,9 @@ import { login, completeMfa, loadSession, revokeCurrent, clearCookie, setup, set
 import * as A from "./admin.js";
 
 const MAX_BODY = 16 * 1024;
+// browser family only, for diagnosing "works on X, fails on Y" reports
+const uaFamily = ua => { ua = String(ua || ""); return /iPhone|iPad/.test(ua) ? (/CriOS/.test(ua) ? "iOS-Chrome" : /FxiOS/.test(ua) ? "iOS-Firefox" : /Instagram|FBAN|FBAV|Snapchat|TikTok/.test(ua) ? "iOS-InApp" : "iOS-Safari")
+  : /Android/.test(ua) ? (/SamsungBrowser/.test(ua) ? "Android-Samsung" : /Instagram|FBAN|FBAV|Snapchat|TikTok|; wv\)/.test(ua) ? "Android-InApp" : "Android-Chrome") : "Desktop"; };
 const BASE_HEADERS = { "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex, nofollow", "Cache-Control": "no-store" };
 const json = (obj, status = 200, extra = {}) =>
   new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json; charset=utf-8", ...BASE_HEADERS, ...extra } });
@@ -183,7 +186,11 @@ export default {
       }
       return json({ error: "not_found" }, 404);
     } catch (e) {
-      if (e instanceof HttpError) return json(e.body, e.status, url.pathname.startsWith("/api/") ? (cors || {}) : {});
+      if (e instanceof HttpError) {
+        if (url.pathname === "/api/orders") console.log(JSON.stringify({ ev: "order_rejected", status: e.status, error: e.body.error,
+          fields: e.body.fields ? Object.keys(e.body.fields) : undefined, ua: uaFamily(request.headers.get("User-Agent")) }));
+        return json(e.body, e.status, url.pathname.startsWith("/api/") ? (cors || {}) : {});
+      }
       console.log("unhandled:", e && e.stack || e);
       return json({ error: "server_error" }, 500, url.pathname.startsWith("/api/") ? (cors || {}) : {});
     }
