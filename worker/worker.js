@@ -151,11 +151,11 @@ function extractKnowledge(html) {
     "x.com": "إكس (X)", "twitter.com": "إكس (X)", "snapchat.com": "سناب شات (Snapchat)", "youtube.com": "يوتيوب (YouTube)" };
   const social = new Map();
   for (const [, host, handle] of html.matchAll(/href="https?:\/\/(?:www\.)?([a-z]+\.com)\/(?:add\/)?@?([A-Za-z0-9._-]+)/g)) {
-    if (PLATFORMS[host] && !social.has(host)) social.set(host, handle);
+    if (PLATFORMS[host] && !social.has(host)) social.set(host, handle === "profile.php" ? "" : handle);   // صفحة فيسبوك برقم وليس باسم
   }
   if (social.size) {
     out.push("", "# حسابات التواصل الاجتماعي");
-    for (const [host, handle] of social) out.push(`- ${PLATFORMS[host]}: @${handle}`);
+    for (const [host, handle] of social) out.push(handle ? `- ${PLATFORMS[host]}: @${handle}` : `- ${PLATFORMS[host]}: صفحة CalmGastro`);
     out.push("- روابط الحسابات موجودة أسفل الموقع تحت «تابعنا على».");
   }
 

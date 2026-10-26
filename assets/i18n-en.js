@@ -190,7 +190,7 @@ window.I18N_EN = {
   "CalmGastro على سناب شات (calmgastro1)": "CalmGastro on Snapchat (calmgastro1)",
   "CalmGastro على انستقرام (@calm.gastro)": "CalmGastro on Instagram (@calm.gastro)",
   "CalmGastro على تيك توك (@calm.gastro)": "CalmGastro on TikTok (@calm.gastro)",
-  "CalmGastro على فيسبوك (@calm.gastroo)": "CalmGastro on Facebook (@calm.gastroo)",
+  "CalmGastro على فيسبوك": "CalmGastro on Facebook",
   "<span class=\"tip-ico\" aria-hidden=\"true\">!</span><span><strong>تنبيه:</strong> اشرب كوب ماء إضافياً بعده. الألياف تحتاج سوائل كافية لتعمل بأمان، وهذا تحذير مطبوع على العلبة نفسها.</span>": "<span class=\"tip-ico\" aria-hidden=\"true\">!</span><span><strong>Warning:</strong> drink an extra glass of water afterwards. Fiber needs enough fluid to work safely, and this warning is printed on the box itself.</span>",
   "تعتمد غالباً على «حرق» أو تأثير سريع أو مواد كيميائية": "Often rely on “fat burning”, a quick effect or chemicals",
   "للطلب بالجملة تواصل عبر الإيميل: <a href=\"mailto:info@vitamik.com?subject=%D8%A7%D8%B3%D8%AA%D9%81%D8%B3%D8%A7%D8%B1%20%D8%B9%D9%86%20%D8%B7%D9%84%D8%A8%20%D8%A8%D8%A7%D9%84%D8%AC%D9%85%D9%84%D8%A9%20-%20CalmGastro\" dir=\"ltr\">info@vitamik.com</a>": "For wholesale orders, email us: <a href=\"mailto:info@vitamik.com?subject=Wholesale%20inquiry%20-%20CalmGastro\" dir=\"ltr\">info@vitamik.com</a>"
