@@ -34,7 +34,7 @@ window.I18N_EN = {
   "الأسئلة الشائعة": "FAQ",
   "اطلب الآن": "Order now",
   "رشاقتك تبدأ <em>من الداخل</em>": "A slimmer you starts <em>from within</em>",
-  "ظرف واحد في كوب ماء قبل وجبتك بنصف ساعة. <strong>ألياف الكونجاك تتمدد في معدتك فتشبع أسرع</strong>، والزنجبيل والإنولين يخففان الانتفاخ. وزن أخف بدون حرمان ولا أنظمة قاسية.": "One sachet in a glass of water half an hour before your meal. <strong>Konjac fiber expands in your stomach so you feel full sooner</strong>, while ginger and inulin ease bloating. A lighter body without deprivation or harsh diets.",
+  "تبدأ دايت… وبعد كم يوم يصعب عليك الاستمرار؟&nbsp;😩<br>يمكن مو محتاج دايت جديد… محتاج طريقة أسهل للالتزام.<br>مع CalmGastro، أضف خطوة بسيطة لروتينك وابدأ رحلتك نحو وزن أخف.&nbsp;🌿<br><strong>لا تبدأ من جديد… ابدأ بطريقة مختلفة.</strong><br>👉&nbsp;جرّب CalmGastro اليوم.": "Started a diet… and a few days in it's hard to keep going?&nbsp;😩<br>Maybe you don't need a new diet… you need an easier way to stick with it.<br>With CalmGastro, add one simple step to your routine and start your journey to a lighter weight.&nbsp;🌿<br><strong>Don't start over… start differently.</strong><br>👉&nbsp;Try CalmGastro today.",
   "<b class=\"num\">30</b><span>ظرف تكفي شهراً</span>": "<b class=\"num\">30</b><span>sachets last a month</span>",
   "<b><span class=\"num\">2000</span> ملغ</b><span>ألياف كونجاك بكل ظرف</span>": "<b><span class=\"num\">2000</span> mg</b><span>konjac fiber per sachet</span>",
   "<b>ليمون وفراولة</b><span>نكهة منعشة بلا مرارة</span>": "<b>Lemon &amp; strawberry</b><span>refreshing, never bitter</span>",
