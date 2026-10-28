@@ -34,7 +34,7 @@ window.I18N_EN = {
   "الأسئلة الشائعة": "FAQ",
   "اطلب الآن": "Order now",
   "طفشت <em>من الرجيم؟</em>": "Tired of <em>dieting?</em>",
-  "تبدأ دايت… وبعد كم يوم يصعب عليك الاستمرار؟&nbsp;😩<br>يمكن مو محتاج دايت جديد… محتاج طريقة أسهل للالتزام.<br>مع CalmGastro، أضف خطوة بسيطة لروتينك وابدأ رحلتك نحو وزن أخف.&nbsp;🌿<br><strong>لا تبدأ من جديد… ابدأ بطريقة مختلفة.</strong><br>👉&nbsp;جرّب CalmGastro اليوم.": "Started a diet… and a few days in it's hard to keep going?&nbsp;😩<br>Maybe you don't need a new diet… you need an easier way to stick with it.<br>With CalmGastro, add one simple step to your routine and start your journey to a lighter weight.&nbsp;🌿<br><strong>Don't start over… start differently.</strong><br>👉&nbsp;Try CalmGastro today.",
+  "تبدأ دايت… وبعد كم يوم يصعب عليك الاستمرار؟<br>يمكن مو محتاج دايت جديد… محتاج طريقة أسهل للالتزام.<br>مع CalmGastro، أضف خطوة بسيطة لروتينك وابدأ رحلتك نحو وزن أخف.<br><strong>لا تبدأ من جديد… ابدأ بطريقة مختلفة.</strong><br>جرّب CalmGastro اليوم.": "Started a diet… and a few days in it's hard to keep going?<br>Maybe you don't need a new diet… you need an easier way to stick with it.<br>With CalmGastro, add one simple step to your routine and start your journey to a lighter weight.<br><strong>Don't start over… start differently.</strong><br>Try CalmGastro today.",
   "<b class=\"num\">30</b><span>ظرف تكفي شهراً</span>": "<b class=\"num\">30</b><span>sachets last a month</span>",
   "<b><span class=\"num\">2000</span> ملغ</b><span>ألياف كونجاك بكل ظرف</span>": "<b><span class=\"num\">2000</span> mg</b><span>konjac fiber per sachet</span>",
   "<b>ليمون وفراولة</b><span>نكهة منعشة بلا مرارة</span>": "<b>Lemon &amp; strawberry</b><span>refreshing, never bitter</span>",
