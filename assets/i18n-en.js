@@ -33,7 +33,7 @@ window.I18N_EN = {
   "آراء العملاء": "Reviews",
   "الأسئلة الشائعة": "FAQ",
   "اطلب الآن": "Order now",
-  "رشاقتك تبدأ <em>من الداخل</em>": "A slimmer you starts <em>from within</em>",
+  "طفشت <em>من الرجيم؟</em>": "Tired of <em>dieting?</em>",
   "تبدأ دايت… وبعد كم يوم يصعب عليك الاستمرار؟&nbsp;😩<br>يمكن مو محتاج دايت جديد… محتاج طريقة أسهل للالتزام.<br>مع CalmGastro، أضف خطوة بسيطة لروتينك وابدأ رحلتك نحو وزن أخف.&nbsp;🌿<br><strong>لا تبدأ من جديد… ابدأ بطريقة مختلفة.</strong><br>👉&nbsp;جرّب CalmGastro اليوم.": "Started a diet… and a few days in it's hard to keep going?&nbsp;😩<br>Maybe you don't need a new diet… you need an easier way to stick with it.<br>With CalmGastro, add one simple step to your routine and start your journey to a lighter weight.&nbsp;🌿<br><strong>Don't start over… start differently.</strong><br>👉&nbsp;Try CalmGastro today.",
   "<b class=\"num\">30</b><span>ظرف تكفي شهراً</span>": "<b class=\"num\">30</b><span>sachets last a month</span>",
   "<b><span class=\"num\">2000</span> ملغ</b><span>ألياف كونجاك بكل ظرف</span>": "<b><span class=\"num\">2000</span> mg</b><span>konjac fiber per sachet</span>",
@@ -196,6 +196,9 @@ window.I18N_EN = {
   "للطلب بالجملة تواصل عبر الإيميل: <a href=\"mailto:info@vitamik.com?subject=%D8%A7%D8%B3%D8%AA%D9%81%D8%B3%D8%A7%D8%B1%20%D8%B9%D9%86%20%D8%B7%D9%84%D8%A8%20%D8%A8%D8%A7%D9%84%D8%AC%D9%85%D9%84%D8%A9%20-%20CalmGastro\" dir=\"ltr\">info@vitamik.com</a>": "For wholesale orders, email us: <a href=\"mailto:info@vitamik.com?subject=Wholesale%20inquiry%20-%20CalmGastro\" dir=\"ltr\">info@vitamik.com</a>"
  },
  "text": {
+  "توصيل سريع ومجاني": "Fast, free delivery",
+  "مكونات طبيعية": "Natural ingredients",
+  "الدفع عند الاستلام": "Cash on delivery",
   "اسألنا على واتساب": "Ask us on WhatsApp",
   "موافقة مكمل غذائي رقم": "Food supplement approval no.",
   "تركيبة مطوّرة في أمريكا": "Formulated in the USA",
@@ -247,6 +250,7 @@ window.I18N_EN = {
   "لم تجده؟ فريقنا يساعدك بعد التحقق من هويتك.": "Can't find it? Our team will help after verifying your identity."
  },
  "attr": {
+  "مميزات CalmGastro": "CalmGastro highlights",
   "CalmGastro الصفحة الرئيسية": "CalmGastro home",
   "أقسام الصفحة": "Page sections",
   "مكونات غذائية داعمة": "Supporting nutrients",

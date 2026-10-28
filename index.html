@@ -80,6 +80,26 @@
   .btn-ghost:hover{background:var(--teal-deep); color:var(--white)}
   .btn svg{width:1.2em; height:1.2em; flex:none}
 
+  /* ---------- شريط المميزات المتحرك ---------- */
+  .ticker{background:var(--white); border-bottom:1px solid var(--line); overflow:hidden; padding:.55rem 0}
+  .ticker-track{display:flex; width:max-content; animation:ticker-rtl 32s linear infinite}
+  html[dir="ltr"] .ticker-track{animation-name:ticker-ltr}
+  .ticker:hover .ticker-track{animation-play-state:paused}
+  .ticker-group{display:flex; align-items:center; gap:22px; padding-inline-end:22px; margin:0; padding-inline-start:0; list-style:none}
+  .ticker-group li{display:inline-flex; align-items:center; gap:6px; white-space:nowrap; font-size:.84rem; font-weight:700; color:var(--teal-deep)}
+  .ticker-group li::after{content:"✦"; color:var(--orange); font-size:.62rem; margin-inline-start:16px}
+  .ticker .ti{font-size:1rem; line-height:1}
+  @keyframes ticker-rtl{to{transform:translateX(calc(100% / 3))}}
+  @keyframes ticker-ltr{to{transform:translateX(calc(-100% / 3))}}
+  @media (prefers-reduced-motion:reduce){
+    .ticker{overflow-x:auto; scrollbar-width:none}           /* سطر واحد ثابت يُسحب باليد بدل الحركة */
+    .ticker::-webkit-scrollbar{display:none}
+    .ticker-track{animation:none}
+    .ticker-group{padding-inline:var(--gutter)}
+    .ticker-group[aria-hidden="true"]{display:none}
+    .ticker-group li:last-child::after{display:none}
+  }
+
   /* ---------- announcement + header ---------- */
   .announce{background:var(--teal-deep); color:var(--lime); font-size:.88rem; text-align:center; padding:.5em var(--gutter)}
   .announce strong{color:var(--butter)}
@@ -115,11 +135,6 @@
   .hero .lede{font-size:clamp(1.05rem,1.6vw,1.2rem); color:var(--muted); margin:1.25rem 0 1.75rem; max-width:34em}
   .hero .lede strong{color:var(--ink)}
   .cta-row{display:flex; flex-wrap:wrap; gap:.9rem; align-items:center}
-  .facts{display:grid; grid-template-columns:repeat(3,1fr); gap:0; margin-top:2.2rem; border-block:1px solid var(--line)}
-  .facts div{padding:1rem .25rem; text-align:center}
-  .facts div + div{border-inline-start:1px solid var(--line)}
-  .facts b{display:block; font-family:var(--f-display); font-size:1.35rem; color:var(--teal-deep); line-height:1.3}
-  .facts span{font-size:.85rem; color:var(--muted)}
   .hero-media{position:relative}
   .hero-card{
     background:var(--white); border-radius:var(--r-lg); padding:clamp(12px,2.5vw,28px);
@@ -134,12 +149,6 @@
     font-size:.92rem; line-height:1.3; transform:rotate(8deg); box-shadow:0 10px 24px -10px rgba(0,0,0,.35);
   }
   .sticker b{display:block; font-size:1.7rem; font-family:var(--f-mono)}
-  .trust{display:flex; flex-wrap:wrap; gap:.6rem; margin-top:1.6rem}
-  .chip{
-    display:inline-flex; align-items:center; gap:.45em; background:var(--lime); color:var(--teal-deep);
-    border-radius:999px; padding:.35em .9em; font-size:.85rem; font-weight:600;
-  }
-  .chip svg{width:1em; height:1em}
 
   /* ---------- sections ---------- */
   section.block{padding:clamp(56px,8vw,110px) 0}
@@ -732,8 +741,6 @@
     .hero-copy .eyebrow{align-self:flex-start}
     .hero-copy .cta-row{order:3; margin-top:1.1rem}
     .hero-copy .lede{order:4; margin:1.2rem 0 0}
-    .hero-copy .facts{order:5}
-    .hero-copy .trust{order:6}
     .glass-stage{position:static}
     .steps, .timeline, .plan, .idea{grid-template-columns:1fr; gap:16px}
     .tl{padding:0}
@@ -744,7 +751,6 @@
   @media (max-width:640px){
     body{font-size:16px}
     .problems, .reviews{grid-template-columns:1fr}
-    .facts b{font-size:1.1rem}
     .sticker{width:104px; height:104px; font-size:.8rem; right:-6px}
     .sticker b{font-size:1.35rem}
     .row2{grid-template-columns:1fr}
@@ -784,8 +790,6 @@
     .b-title{font-size:1.05rem}
     .assure{gap:8px}
     .assure div{padding:.6rem .35rem}
-    .facts b{font-size:1rem}
-    .facts span{font-size:.78rem}
     header.top .wrap{gap:10px}
     .logo{font-size:1.25rem; min-width:0}
     .lang-btn{padding:.4em .8em; font-size:.85rem; flex:none}
@@ -826,6 +830,37 @@
   </div>
 </header>
 
+<!-- شريط المميزات المتحرك: ثلاث نسخ متطابقة (تُخفى الإضافيتان عن قارئ الشاشة) ليتحرك بلا فجوة؛ يتوقف عند المرور بالمؤشر،
+     ويظهر ثابتاً لمن فعّل «تقليل الحركة» -->
+<div class="ticker" role="region" aria-label="مميزات CalmGastro">
+  <div class="ticker-track">
+    <ul class="ticker-group">
+      <li><span class="ti" aria-hidden="true">✅</span>موافقة مكمل غذائي رقم <span class="num">023487</span></li>
+      <li><span class="ti" aria-hidden="true">🔬</span>تركيبة مطوّرة في أمريكا</li>
+      <li><span class="ti" aria-hidden="true">🛡️</span>ادعاءات صحية معتمدة من EFSA</li>
+      <li><span class="ti" aria-hidden="true">🚚</span>توصيل سريع ومجاني</li>
+      <li><span class="ti" aria-hidden="true">🌿</span>مكونات طبيعية</li>
+      <li><span class="ti" aria-hidden="true">💵</span>الدفع عند الاستلام</li>
+    </ul>
+    <ul class="ticker-group" aria-hidden="true">
+      <li><span class="ti" aria-hidden="true">✅</span>موافقة مكمل غذائي رقم <span class="num">023487</span></li>
+      <li><span class="ti" aria-hidden="true">🔬</span>تركيبة مطوّرة في أمريكا</li>
+      <li><span class="ti" aria-hidden="true">🛡️</span>ادعاءات صحية معتمدة من EFSA</li>
+      <li><span class="ti" aria-hidden="true">🚚</span>توصيل سريع ومجاني</li>
+      <li><span class="ti" aria-hidden="true">🌿</span>مكونات طبيعية</li>
+      <li><span class="ti" aria-hidden="true">💵</span>الدفع عند الاستلام</li>
+    </ul>
+    <ul class="ticker-group" aria-hidden="true">
+      <li><span class="ti" aria-hidden="true">✅</span>موافقة مكمل غذائي رقم <span class="num">023487</span></li>
+      <li><span class="ti" aria-hidden="true">🔬</span>تركيبة مطوّرة في أمريكا</li>
+      <li><span class="ti" aria-hidden="true">🛡️</span>ادعاءات صحية معتمدة من EFSA</li>
+      <li><span class="ti" aria-hidden="true">🚚</span>توصيل سريع ومجاني</li>
+      <li><span class="ti" aria-hidden="true">🌿</span>مكونات طبيعية</li>
+      <li><span class="ti" aria-hidden="true">💵</span>الدفع عند الاستلام</li>
+    </ul>
+  </div>
+</div>
+
 <main id="top">
 
 <!-- ================= HERO ================= -->
@@ -833,7 +868,7 @@
   <div class="wrap">
     <div class="hero-copy">
       <span class="eyebrow">Slim from inside</span>
-      <h1>رشاقتك تبدأ <em>من الداخل</em></h1>
+      <h1>طفشت <em>من الرجيم؟</em></h1>
       <p class="lede">تبدأ دايت… وبعد كم يوم يصعب عليك الاستمرار؟&nbsp;😩<br>يمكن مو محتاج دايت جديد… محتاج طريقة أسهل للالتزام.<br>مع CalmGastro، أضف خطوة بسيطة لروتينك وابدأ رحلتك نحو وزن أخف.&nbsp;🌿<br><strong>لا تبدأ من جديد… ابدأ بطريقة مختلفة.</strong><br>👉&nbsp;جرّب CalmGastro اليوم.</p>
       <div class="cta-row">
         <a href="#order" class="btn btn-primary">اطلب CalmGastro الآن</a>
@@ -841,16 +876,6 @@
           <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.04 2a9.9 9.9 0 0 0-8.5 15l-1.4 5.1 5.2-1.4A9.9 9.9 0 1 0 12.04 2Zm0 18.1a8.2 8.2 0 0 1-4.2-1.15l-.3-.18-3.1.8.83-3-.2-.31a8.2 8.2 0 1 1 6.97 3.84Zm4.5-6.1c-.25-.12-1.46-.72-1.69-.8-.23-.08-.39-.12-.55.12-.16.25-.63.8-.78.96-.14.17-.29.19-.53.07a6.7 6.7 0 0 1-3.32-2.9c-.25-.43.25-.4.72-1.33.08-.16.04-.3-.02-.42-.06-.12-.55-1.33-.76-1.82-.2-.48-.4-.41-.55-.42h-.47a.9.9 0 0 0-.65.3 2.7 2.7 0 0 0-.85 2.02 4.7 4.7 0 0 0 1 2.5 10.8 10.8 0 0 0 4.13 3.65c1.54.66 2.14.72 2.91.6.47-.07 1.46-.6 1.66-1.17.2-.58.2-1.07.15-1.17-.06-.1-.22-.17-.46-.29Z"/></svg>
           اسألنا على واتساب
         </a>
-      </div>
-      <div class="facts">
-        <div><b class="num">30</b><span>ظرف تكفي شهراً</span></div>
-        <div><b><span class="num">2000</span> ملغ</b><span>ألياف كونجاك بكل ظرف</span></div>
-        <div><b>ليمون وفراولة</b><span>نكهة منعشة بلا مرارة</span></div>
-      </div>
-      <div class="trust">
-        <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>موافقة مكمل غذائي رقم <span class="num">023487</span></span>
-        <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>تركيبة مطوّرة في أمريكا</span>
-        <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>ادعاءات صحية معتمدة من EFSA</span>
       </div>
     </div>
     <div class="hero-media">
@@ -1422,8 +1447,8 @@
 }
 </script>
 
-<script src="assets/i18n-en.js?v=20261028a"></script>
-<script src="assets/app.js?v=20261028a"></script>
-<script src="assets/shop.js?v=20261028a"></script>
+<script src="assets/i18n-en.js?v=20261028b"></script>
+<script src="assets/app.js?v=20261028b"></script>
+<script src="assets/shop.js?v=20261028b"></script>
 </body>
 </html>
