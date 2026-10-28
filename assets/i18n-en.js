@@ -202,6 +202,8 @@ window.I18N_EN = {
   "للطلب بالجملة تواصل عبر الإيميل: <a href=\"mailto:info@vitamik.com?subject=%D8%A7%D8%B3%D8%AA%D9%81%D8%B3%D8%A7%D8%B1%20%D8%B9%D9%86%20%D8%B7%D9%84%D8%A8%20%D8%A8%D8%A7%D9%84%D8%AC%D9%85%D9%84%D8%A9%20-%20CalmGastro\" dir=\"ltr\">info@vitamik.com</a>": "For wholesale orders, email us: <a href=\"mailto:info@vitamik.com?subject=Wholesale%20inquiry%20-%20CalmGastro\" dir=\"ltr\">info@vitamik.com</a>"
  },
  "text": {
+  "موثق": "Verified",
+  "قبل الاستخدام: ظرف واحد يومياً في كوب ماء (250 مل) قبل الوجبة بنصف ساعة، مع كوب ماء إضافي بعده. لا يُستخدم للحامل والمرضع ومن هم دون 18 سنة، ويُستشار الطبيب لمن يتناول أدوية الاكتئاب أو القلق أو أدوية السكري، أو لديه حساسية من الكافيين.": "Before use: one sachet a day in a glass of water (250 ml) half an hour before a meal, followed by an extra glass of water. Not for pregnant or breastfeeding women or anyone under 18; ask a doctor first if you take antidepressants, anti-anxiety or diabetes medication, or are sensitive to caffeine.",
   "تعرف هالشعور؟": "Know this feeling?",
   "ادعم شعورك بالشبع وخَلّ الالتزام بنظامك الغذائي أسهل، بدون حرمان قاسي.": "Support your feeling of fullness and make sticking to your diet easier, without harsh deprivation.",
   "تعرف على كالم كاسترو الآن": "Discover CalmGastro now",
@@ -259,6 +261,7 @@ window.I18N_EN = {
   "لم تجده؟ فريقنا يساعدك بعد التحقق من هويتك.": "Can't find it? Our team will help after verifying your identity."
  },
  "attr": {
+  "آراء العملاء": "Customer reviews",
   "فيديو تعريفي عن CalmGastro": "CalmGastro intro video",
   "إغلاق الفيديو": "Close video",
   "مميزات CalmGastro": "CalmGastro highlights",

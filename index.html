@@ -405,6 +405,21 @@
   .review .who{margin-top:auto; font-size:.88rem; color:var(--muted); display:flex; align-items:center; gap:.6rem}
   .review .av{width:36px; height:36px; border-radius:50%; background:var(--butter); display:grid; place-items:center; font-family:var(--f-display); font-weight:700; color:var(--teal-deep)}
   .stars{color:var(--orange); letter-spacing:2px; font-size:.95rem}
+  /* ---------- آراء العملاء: شريط يتقدم بهدوء (رأي كل 4 ثوانٍ): 1 في الجوال، 2 في التابلت، 4 في الكمبيوتر ---------- */
+  .rvc{--per:4; --gap:16px; position:relative}
+  .rvc-viewport{overflow:hidden; padding:6px 2px 10px; margin:-6px -2px -10px}
+  .rvc-track{display:flex; gap:var(--gap); will-change:transform; touch-action:pan-y}
+  .rvc-track .review{flex:0 0 calc((100% - (var(--per) - 1) * var(--gap)) / var(--per)); min-width:0}
+  .rv-top{display:flex; align-items:center; justify-content:space-between; gap:.6rem}
+  .verified{display:inline-flex; align-items:center; gap:.32em; padding:.2em .7em .2em .55em; border-radius:999px; white-space:nowrap;
+    background:#E5F6EC; border:1px solid #BDE5CB; color:#137A43; font-size:.78rem; font-weight:700; font-family:var(--f-display)}
+  .verified svg{width:1.1em; height:1.1em; color:#1E9E5A}
+  .rvc-dots{display:none; justify-content:center; gap:7px; margin-top:16px}
+  .rvc-dots i{width:7px; height:7px; border-radius:999px; background:var(--line); transition:width .4s ease, background .4s ease}
+  .rvc-dots i.on{width:22px; background:var(--teal)}
+  .foot-warn{font-size:.82rem; opacity:.85}
+  @media (max-width:999px){ .rvc{--per:2} }
+  @media (max-width:640px){ .rvc{--per:1} .rvc-dots{display:flex} }
 
   /* ---------- order ---------- */
   .order{display:grid; grid-template-columns:1fr 1fr; gap:clamp(20px,4vw,48px); align-items:start}
@@ -457,7 +472,6 @@
   .loc-status.ok .t{font-weight:700}
   .loc-status.soft{background:var(--paper); color:var(--muted); border:1px solid var(--line)}
   .loc-status .clear{background:none; border:0; padding:0; font:inherit; font-size:.82rem; color:var(--teal); text-decoration:underline; cursor:pointer}
-
 
   .link-btn{background:none; border:0; font:inherit; font-size:.95rem; color:var(--teal); text-decoration:underline; cursor:pointer; margin-top:.9rem}
 
@@ -940,9 +954,7 @@
     <a href="#top" class="logo" aria-label="CalmGastro الصفحة الرئيسية"><span class="br-o">)</span><span class="br-t">(</span><span><b>Calm</b><span class="g">Gastro</span></span></a>
     <nav aria-label="أقسام الصفحة">
       <a href="#inside">المكونات</a>
-      <a href="#how">طريقة الاستخدام</a>
       <a href="#reviews">آراء العملاء</a>
-      <a href="#faq">الأسئلة الشائعة</a>
       <a href="#/track">تتبع الطلب</a>
     </nav>
     <div class="top-actions">
@@ -1085,101 +1097,6 @@
   </div>
 </section>
 
-<!-- ================= HOW TO USE ================= -->
-<section class="block dark" id="how" data-kb="usage">
-  <div class="wrap">
-    <div class="sec-head rv">
-      <span class="eyebrow">طريقة الاستخدام</span>
-      <h2>دقيقة واحدة في اليوم</h2>
-      <p>لا كبسولات تبلعها ولا طعم أعشاب مرّ. مشروب بنكهة الليمون والفراولة تشربه قبل وجبتك.</p>
-    </div>
-    <div class="steps">
-      <div class="step rv">
-        <h3>افتح ظرفاً واحداً</h3>
-        <p>ظرف واحد يومياً، والعلبة فيها 30 ظرفاً. إذا كان وزنك زائداً بشكل كبير، راجع قسم «قبل الاستخدام» لاستخدام ظرفين يومياً.</p>
-      </div>
-      <div class="step rv">
-        <h3>اخلطه في كوب ماء</h3>
-        <p>أذِب الظرف في كوب ماء (250 مل)، حرّكه جيداً، واشربه مباشرة قبل أن يتماسك.</p>
-      </div>
-      <div class="step rv">
-        <h3>قبل وجبتك بنصف ساعة</h3>
-        <p>يفضَّل قبل الوجبة الرئيسية، حتى تكون الألياف قد تمددت وأنت تبدأ الأكل.</p>
-      </div>
-    </div>
-    <p class="tip rv"><span class="tip-ico" aria-hidden="true">!</span><span><strong>تنبيه:</strong> اشرب كوب ماء إضافياً بعده. الألياف تحتاج سوائل كافية لتعمل بأمان، وهذا تحذير مطبوع على العلبة نفسها.</span></p>
-  </div>
-</section>
-
-<!-- ================= RESULTS TIMELINE ================= -->
-<section class="block" id="results" data-kb="results">
-  <div class="wrap">
-    <div class="sec-head rv">
-      <span class="eyebrow">ماذا تتوقع</span>
-      <h2>نتائج تحسّها قبل أن تراها على الميزان</h2>
-      <p>لن نعدك بعشرة كيلو في الشهر. CalmGastro مكمل غذائي يعمل مع جسمك تدريجياً، وهذا ما يلاحظه أغلب المستخدمين مع الالتزام ونظام أكل متوازن:</p>
-    </div>
-    <div class="timeline">
-      <div class="tl rv">
-        <div class="when">الشهر الأول</div>
-        <h3>الجسم يتأقلم</h3>
-        <p>شبع أطول وانتفاخ أقل. الاستجابة هنا قد تكون أبطأ، وهذا طبيعي مع المكملات الغذائية.</p>
-      </div>
-      <div class="tl rv">
-        <div class="when">الشهر الثاني</div>
-        <h3>النتيجة تبدأ تتضح</h3>
-        <p>هضم أكثر انتظاماً، ورغبة أقل في الحلويات والوجبات الخفيفة، وعادات أكل أهدأ.</p>
-      </div>
-      <div class="tl rv">
-        <div class="when">الشهر الثالث</div>
-        <h3>وقت تقييم التجربة</h3>
-        <p>مع الاستمرار تصبح الاستجابة أوضح والعادات الجديدة أثبت، وهذا ما يجعل النتيجة تدوم.</p>
-      </div>
-    </div>
-    <p class="disclaim">* النتائج تختلف من شخص لآخر حسب نمط الحياة والنظام الغذائي والنشاط البدني والالتزام بالاستخدام.</p>
-  </div>
-</section>
-
-<!-- ================= COMPARISON ================= -->
-<section class="block tint" id="compare" data-kb="comparison">
-  <div class="wrap">
-    <div class="sec-head rv">
-      <span class="eyebrow">المكمل الغذائي مقابل منتجات التنحيف الأخرى</span>
-      <h2>ليش CalmGastro مختلف؟</h2>
-      <p>CalmGastro مكمل غذائي بتركيبة معلنة ومقادير واضحة. يحتوي على عناصر غذائية ومكونات داعمة يحتاجها الجسم، والهدف منه دعم نمط الحياة وخطة خسارة الوزن بدل الاعتماد على تأثير سريع ومؤقت.</p>
-    </div>
-    <div class="idea">
-      <article class="rv">
-        <h3>الفكرة الأساسية</h3>
-        <p>أحياناً تكون هناك عوامل تعيق خسارة الوزن، مثل ضعف جودة النظام الغذائي أو نقص بعض العناصر أو عدم انتظام العادات اليومية. عندما تُعالَج هذه العوامل ويصبح نمط الحياة أفضل، تصبح المحافظة على النتيجة أسهل حتى بعد انتهاء استخدام المكمل.</p>
-        <div class="nutri" aria-label="مكونات غذائية داعمة"><span>ألياف غذائية</span><span>فيتامين B12</span><span>كروميوم</span><span>مستخلصات نباتية</span><span>إنزيم هضمي</span></div>
-      </article>
-      <article class="rv">
-        <h3>الفرق عن بعض منتجات التنحيف السريعة</h3>
-        <p>بعض المنتجات الموجودة في السوق قد تعتمد على تأثيرات سريعة، مثل تقليل الشهية بشدة أو التأثير في سوائل الجسم. الانخفاض السريع على الميزان لا يعني دائماً خسارة دهون، وقد يعود الوزن بعد إيقاف المنتج إذا لم تتغيّر العادات التي سببت زيادته.</p>
-      </article>
-    </div>
-    <div class="table-scroll rv">
-      <table class="compare">
-        <thead>
-          <tr><th scope="col"><span class="sr-only">المعيار</span></th><th scope="col" class="us">CalmGastro</th><th scope="col">منتجات التنحيف السريعة</th></tr>
-        </thead>
-        <tbody>
-          <tr><th scope="row">التركيبة</th><td class="us"><span class="mark y">✓</span>ألياف وفيتامين B12 وكروميوم ومكونات غذائية داعمة</td><td class="them">تعتمد غالباً على «حرق» أو تأثير سريع أو مواد كيميائية</td></tr>
-          <tr><th scope="row">طريقة التأثير</th><td class="us"><span class="mark y">✓</span>يدعم الشبع والهضم والعادات اليومية</td><td class="them">تقليل الشهية بشدة أو التأثير في سوائل الجسم</td></tr>
-          <tr><th scope="row">بعد التوقف</th><td class="us"><span class="mark y">✓</span>عادات أثبت تسهّل المحافظة على النتيجة</td><td class="them"><span class="mark n">✕</span>قد يعود الوزن إذا لم تتغير العادات</td></tr>
-          <tr><th scope="row">الشكل</th><td class="us"><span class="mark y">✓</span>مشروب بنكهة ليمون وفراولة</td><td class="them">كبسولات تُبلع</td></tr>
-          <tr><th scope="row">الجرعات</th><td class="us"><span class="mark y">✓</span>كل مكوّن بالملّيغرام على العلبة</td><td class="them"><span class="mark n">✕</span>«خلطة عشبية» بلا أرقام</td></tr>
-          <tr><th scope="row">الادعاءات الصحية</th><td class="us"><span class="mark y">✓</span>معتمدة من EFSA ومطبوعة</td><td class="them"><span class="mark n">✕</span>وعود مثل «10 كيلو بالشهر»</td></tr>
-          <tr><th scope="row">الموافقة</th><td class="us"><span class="mark y">✓</span>رقم موافقة مكمل غذائي 023487</td><td class="them">غالباً غير مذكور</td></tr>
-          <tr><th scope="row">السعر والطلب</th><td class="us"><span class="mark y">✓</span>سعر واضح، طلب مباشر، دفع عند الاستلام</td><td class="them">«راسلنا لمعرفة السعر»</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <p class="keep rv">المحافظة على النتيجة ترتبط باستمرار العادات الغذائية والنشاط ونمط الحياة. لذلك نركّز على برنامج مستمر وعادات قابلة للاستمرار، وليس على نتيجة مؤقتة مرتبطة فقط بفترة استخدام المنتج.</p>
-  </div>
-</section>
-
 <!-- ================= REVIEWS ================= -->
 <!-- تنبيه: استخدم آراء عملاء حقيقية فقط، ويفضل إرفاق صورة محادثة أو تقييم موثّق. -->
 <section class="block" id="reviews">
@@ -1188,76 +1105,16 @@
       <span class="eyebrow">آراء العملاء</span>
       <h2>من جرّبوه قبلك</h2>
     </div>
-    <div class="reviews">
-      <figure class="review rv"><div class="stars" aria-label="5 من 5">★★★★★</div><blockquote>«من أول أسبوع لاحظت فرق في الشهية والانتفاخ.»</blockquote><figcaption class="who"><span class="av">س</span>سارة، 23 سنة</figcaption></figure>
-      <figure class="review rv"><div class="stars" aria-label="5 من 5">★★★★★</div><blockquote>«طعمه حلو وسهل الاستخدام.»</blockquote><figcaption class="who"><span class="av">أ</span>أحمد</figcaption></figure>
-      <figure class="review rv"><div class="stars" aria-label="5 من 5">★★★★★</div><blockquote>«أعاني من قولون عصبي، وما ارتحت إلا عليه.»</blockquote><figcaption class="who"><span class="av">ل</span>ليلى، 27 سنة</figcaption></figure>
-      <figure class="review rv"><div class="stars" aria-label="5 من 5">★★★★★</div><blockquote>«منتج فعّال من جد.»</blockquote><figcaption class="who"><span class="av">ع</span>عميلة، 40 سنة</figcaption></figure>
-    </div>
-  </div>
-</section>
-
-<!-- ================= SAFETY ================= -->
-<section class="block" id="safety" data-kb="safety">
-  <div class="wrap">
-    <div class="sec-head rv">
-      <span class="eyebrow">قبل الاستخدام</span>
-      <h2>الالتزام وطريقة الاستخدام</h2>
-      <p>النتيجة تعتمد على الانتظام. اقرأ هذا القسم قبل أن تبدأ برنامجك.</p>
-    </div>
-    <div class="plan">
-      <article class="rv">
-        <h3>الالتزام اليومي</h3>
-        <p>لأفضل استفادة من البرنامج، التزم باستخدام المنتج يومياً وبانتظام. إذا كان الاستخدام متقطعاً أو لم تلتزم به يومياً، فلن يكون من المنطقي تقييم التجربة وكأن الاستخدام كان منتظماً.</p>
-      </article>
-      <article class="rv accent">
-        <h3>إذا كان وزنك زائداً بشكل كبير</h3>
-        <p>لا مانع من استخدام المنتج مرتين يومياً:</p>
-        <div class="dose"><span>ظرف صباحاً على الريق</span><span>ظرف قبل وجبة العشاء</span></div>
-        <p class="after">مع كوب ماء كامل لكل ظرف، وبدون تجاوز ظرفين في اليوم.</p>
-      </article>
-      <article class="rv">
-        <h3>مدة البرنامج: 3 أشهر</h3>
-        <p>لأن CalmGastro مكمل غذائي وليس منتجاً كيميائياً سريع المفعول، قد تكون استجابة الجسم في الشهر الأول أبطأ، ثم تصبح أوضح مع الاستمرار خلال الشهرين الثاني والثالث. لذلك يفضَّل تقييم التجربة على برنامج متكامل لا يقل عن 3 أشهر بدل الحكم من فترة قصيرة.</p>
-      </article>
-    </div>
-    <h3 class="sub-h rv">صراحةً: لمن لا يناسب CalmGastro</h3>
-    <div class="safety">
-      <ul class="warn-list">
-        <li><span class="wi" aria-hidden="true">!</span><div><b>الحامل والمرضع ومن هم دون 18 سنة:</b> لا يُستخدم.</div></li>
-        <li><span class="wi" aria-hidden="true">!</span><div><b>من يتناول أدوية الاكتئاب أو القلق:</b> يحتوي على <bdi dir="ltr">5-HTP</bdi>، فاستشر طبيبك أولاً.</div></li>
-        <li><span class="wi" aria-hidden="true">!</span><div><b>مرضى السكري:</b> يحتوي المنتج على الكروميوم، وهو عنصر قد يؤثر في مستويات سكر الدم. إذا كنت تستخدم أدوية لخفض السكر أو تنظيمه، يفضَّل استشارة طبيبك ومراقبة السكر، ولا توقف دواءك أو تغيّره من نفسك.</div></li>
-        <li><span class="wi" aria-hidden="true">!</span><div><b>الحساسية من الكافيين:</b> فيه كمية بسيطة من مستخلص الشاي الأخضر والقهوة، فتجنّبه في المساء.</div></li>
-        <li><span class="wi" aria-hidden="true">!</span><div><b>صعوبة البلع أو قلة شرب الماء:</b> الألياف قد تسبب خطر الاختناق، فاشربه مذاباً بالكامل مع كمية وافرة من الماء.</div></li>
-        <li><span class="wi" aria-hidden="true">!</span><div><b>إذا كنت تتناول أدوية أخرى:</b> خذها قبل الظرف بساعة أو بعده بساعتين، لأن الألياف قد تؤثر على امتصاصها.</div></li>
-        <li><span class="wi" aria-hidden="true">!</span><div><b>لا تتجاوز الجرعة الموصى بها.</b> المنتج مكمل غذائي، وليس مخصصاً لتشخيص أي مرض أو علاجه أو الوقاية منه.</div></li>
-      </ul>
-      <figure class="label-fig rv">
-        <a href="assets/label-back.jpg" target="_blank" rel="noopener"><img src="assets/label-back.jpg" alt="صورة الملصق الخلفي لعلبة CalmGastro يظهر فيها جدول المكونات والجرعات والتحذيرات ورقم الموافقة 023487" loading="lazy" width="1224" height="1024"></a>
-        <figcaption>الملصق الخلفي للعلبة: جدول المكونات والجرعات والتحذيرات ورقم الموافقة. اضغط لتكبير الصورة.</figcaption>
-      </figure>
-    </div>
-  </div>
-</section>
-
-<!-- ================= FAQ ================= -->
-<section class="block tint" id="faq" data-kb="faq">
-  <div class="wrap">
-    <div class="sec-head rv">
-      <span class="eyebrow">الأسئلة الشائعة</span>
-      <h2>أسئلة تصلنا كثيراً</h2>
-    </div>
-    <div class="faq">
-      <details><summary>هل المنتج طبيعي؟</summary><p>المكونات الأساسية ألياف ومستخلصات نباتية: الكونجاك والإنولين والشاي الأخضر والقهوة والغارسينيا والزنجبيل والبروميلين، ومعها الكروميوم وفيتامين B12. ويحتوي على مُحلٍّ لتحسين الطعم.</p></details>
-      <details><summary>كم ظرف آخذ في اليوم؟</summary><p>ظرف واحد يومياً قبل الوجبة الرئيسية بنصف ساعة، مذاباً في كوب ماء (250 مل). إذا كان وزنك زائداً بشكل كبير فلا مانع من ظرفين يومياً: ظرف صباحاً على الريق وظرف قبل وجبة العشاء، ولا تتجاوز ظرفين في اليوم.</p></details>
-      <details><summary>متى تظهر النتائج؟</summary><p>الاستجابة تختلف من جسم لآخر. وبما أن CalmGastro مكمل غذائي وليس منتجاً كيميائياً سريع المفعول، فقد تكون استجابة الجسم في الشهر الأول أبطأ، بينما تصبح الاستجابة أوضح مع الاستمرار والالتزام خلال الشهرين الثاني والثالث.</p></details>
-      <details><summary>لماذا ننصح ببرنامج 3 أشهر؟</summary><p>لأن الاستمرارية تعطي الجسم وقتاً كافياً للاستفادة من مكونات المكمل، وتمنحك فترة أكثر واقعية لتقييم النتيجة. لا تحكم على المنتج من أيام أو أسابيع قليلة؛ قيّم تجربتك بعد الالتزام بالبرنامج كاملاً مع نظام غذائي ونمط حياة مناسبين.</p></details>
-      <details><summary>هل لازم أتبع نظام غذائي معه؟</summary><p>لا تحتاج حمية قاسية، لكن لأفضل نتيجة ننصح بأكل متوازن ونشاط بدني بسيط مثل المشي. CalmGastro يسهّل عليك الالتزام لأنك تشبع أسرع.</p></details>
-      <details><summary>هل يساعد في القولون والانتفاخ؟</summary><p>نعم، الإنولين يغذي البكتيريا النافعة في الأمعاء، والزنجبيل والبروميلين يدعمان الهضم ويقللان الغازات والانتفاخ.</p></details>
-      <details><summary>هل يناسب الرجال والنساء؟</summary><p>يناسب البالغين من الجنسين. لا يُستخدم أثناء الحمل أو الرضاعة أو لمن هم دون 18 سنة، ويُفضَّل استشارة الطبيب إذا كانت لديك حالة صحية أو تتناول أدوية.</p></details>
-      <details><summary>هل فيه كافيين؟</summary><p>فيه كمية بسيطة من مستخلص الشاي الأخضر (120 ملغ) ومستخلص القهوة (120 ملغ) لكل ظرف. إذا كنت حساساً للكافيين فتناوله قبل الغداء وليس قبل العشاء.</p></details>
-      <details><summary>كيف أطلب وكيف أدفع؟</summary><p>اختر العرض وأضفه للسلة، ثم اكتب بيانات التوصيل وأكّد الطلب من الموقع. يُسجَّل طلبك فوراً وتحصل على رقم طلب تتابع به حالته من «تتبع الطلب». الدفع عند الاستلام.</p></details>
-      <details><summary>كم يستغرق التوصيل؟</summary><p data-cfg="deliveryLong">من 2 إلى 5 أيام عمل لجميع مدن المملكة، ونتواصل معك قبل التوصيل لتأكيد الموعد.</p></details>
+    <div class="rvc rv" id="reviewsCarousel" role="region" aria-roledescription="carousel" aria-label="آراء العملاء">
+      <div class="rvc-viewport">
+      <div class="rvc-track">
+        <figure class="review"><div class="rv-top"><div class="stars" aria-label="5 من 5">★★★★★</div><span class="verified"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="currentColor"/><path d="m7.5 12.3 3 3 6-6.2" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span>موثق</span></span></div><blockquote>«من أول أسبوع لاحظت فرق في الشهية والانتفاخ.»</blockquote><figcaption class="who"><span class="av">س</span>سارة، 23 سنة</figcaption></figure>
+        <figure class="review"><div class="rv-top"><div class="stars" aria-label="5 من 5">★★★★★</div><span class="verified"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="currentColor"/><path d="m7.5 12.3 3 3 6-6.2" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span>موثق</span></span></div><blockquote>«طعمه حلو وسهل الاستخدام.»</blockquote><figcaption class="who"><span class="av">أ</span>أحمد</figcaption></figure>
+        <figure class="review"><div class="rv-top"><div class="stars" aria-label="5 من 5">★★★★★</div><span class="verified"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="currentColor"/><path d="m7.5 12.3 3 3 6-6.2" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span>موثق</span></span></div><blockquote>«أعاني من قولون عصبي، وما ارتحت إلا عليه.»</blockquote><figcaption class="who"><span class="av">ل</span>ليلى، 27 سنة</figcaption></figure>
+        <figure class="review"><div class="rv-top"><div class="stars" aria-label="5 من 5">★★★★★</div><span class="verified"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="currentColor"/><path d="m7.5 12.3 3 3 6-6.2" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span>موثق</span></span></div><blockquote>«منتج فعّال من جد.»</blockquote><figcaption class="who"><span class="av">ع</span>عميلة، 40 سنة</figcaption></figure>
+      </div>
+      </div>
+      <div class="rvc-dots" aria-hidden="true"></div>
     </div>
   </div>
 </section>
@@ -1435,6 +1292,161 @@
   </div>
 </div>
 
+<!-- نصوص الأقسام المحذوفة من الصفحة (الاستخدام، النتائج، المقارنة، قبل الاستخدام، الأسئلة الشائعة): لا تظهر للزائر
+     (template لا يُعرض)، ويقرؤها المساعد الذكي فقط حتى يبقى يجيب عن الاستخدام والتحذيرات والأسئلة. -->
+<template id="kbExtra">
+<section class="block dark" id="how" data-kb="usage">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <span class="eyebrow">طريقة الاستخدام</span>
+      <h2>دقيقة واحدة في اليوم</h2>
+      <p>لا كبسولات تبلعها ولا طعم أعشاب مرّ. مشروب بنكهة الليمون والفراولة تشربه قبل وجبتك.</p>
+    </div>
+    <div class="steps">
+      <div class="step rv">
+        <h3>افتح ظرفاً واحداً</h3>
+        <p>ظرف واحد يومياً، والعلبة فيها 30 ظرفاً. إذا كان وزنك زائداً بشكل كبير، راجع قسم «قبل الاستخدام» لاستخدام ظرفين يومياً.</p>
+      </div>
+      <div class="step rv">
+        <h3>اخلطه في كوب ماء</h3>
+        <p>أذِب الظرف في كوب ماء (250 مل)، حرّكه جيداً، واشربه مباشرة قبل أن يتماسك.</p>
+      </div>
+      <div class="step rv">
+        <h3>قبل وجبتك بنصف ساعة</h3>
+        <p>يفضَّل قبل الوجبة الرئيسية، حتى تكون الألياف قد تمددت وأنت تبدأ الأكل.</p>
+      </div>
+    </div>
+    <p class="tip rv"><span class="tip-ico" aria-hidden="true">!</span><span><strong>تنبيه:</strong> اشرب كوب ماء إضافياً بعده. الألياف تحتاج سوائل كافية لتعمل بأمان، وهذا تحذير مطبوع على العلبة نفسها.</span></p>
+  </div>
+</section>
+<section class="block" id="results" data-kb="results">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <span class="eyebrow">ماذا تتوقع</span>
+      <h2>نتائج تحسّها قبل أن تراها على الميزان</h2>
+      <p>لن نعدك بعشرة كيلو في الشهر. CalmGastro مكمل غذائي يعمل مع جسمك تدريجياً، وهذا ما يلاحظه أغلب المستخدمين مع الالتزام ونظام أكل متوازن:</p>
+    </div>
+    <div class="timeline">
+      <div class="tl rv">
+        <div class="when">الشهر الأول</div>
+        <h3>الجسم يتأقلم</h3>
+        <p>شبع أطول وانتفاخ أقل. الاستجابة هنا قد تكون أبطأ، وهذا طبيعي مع المكملات الغذائية.</p>
+      </div>
+      <div class="tl rv">
+        <div class="when">الشهر الثاني</div>
+        <h3>النتيجة تبدأ تتضح</h3>
+        <p>هضم أكثر انتظاماً، ورغبة أقل في الحلويات والوجبات الخفيفة، وعادات أكل أهدأ.</p>
+      </div>
+      <div class="tl rv">
+        <div class="when">الشهر الثالث</div>
+        <h3>وقت تقييم التجربة</h3>
+        <p>مع الاستمرار تصبح الاستجابة أوضح والعادات الجديدة أثبت، وهذا ما يجعل النتيجة تدوم.</p>
+      </div>
+    </div>
+    <p class="disclaim">* النتائج تختلف من شخص لآخر حسب نمط الحياة والنظام الغذائي والنشاط البدني والالتزام بالاستخدام.</p>
+  </div>
+</section>
+<section class="block tint" id="compare" data-kb="comparison">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <span class="eyebrow">المكمل الغذائي مقابل منتجات التنحيف الأخرى</span>
+      <h2>ليش CalmGastro مختلف؟</h2>
+      <p>CalmGastro مكمل غذائي بتركيبة معلنة ومقادير واضحة. يحتوي على عناصر غذائية ومكونات داعمة يحتاجها الجسم، والهدف منه دعم نمط الحياة وخطة خسارة الوزن بدل الاعتماد على تأثير سريع ومؤقت.</p>
+    </div>
+    <div class="idea">
+      <article class="rv">
+        <h3>الفكرة الأساسية</h3>
+        <p>أحياناً تكون هناك عوامل تعيق خسارة الوزن، مثل ضعف جودة النظام الغذائي أو نقص بعض العناصر أو عدم انتظام العادات اليومية. عندما تُعالَج هذه العوامل ويصبح نمط الحياة أفضل، تصبح المحافظة على النتيجة أسهل حتى بعد انتهاء استخدام المكمل.</p>
+        <div class="nutri" aria-label="مكونات غذائية داعمة"><span>ألياف غذائية</span><span>فيتامين B12</span><span>كروميوم</span><span>مستخلصات نباتية</span><span>إنزيم هضمي</span></div>
+      </article>
+      <article class="rv">
+        <h3>الفرق عن بعض منتجات التنحيف السريعة</h3>
+        <p>بعض المنتجات الموجودة في السوق قد تعتمد على تأثيرات سريعة، مثل تقليل الشهية بشدة أو التأثير في سوائل الجسم. الانخفاض السريع على الميزان لا يعني دائماً خسارة دهون، وقد يعود الوزن بعد إيقاف المنتج إذا لم تتغيّر العادات التي سببت زيادته.</p>
+      </article>
+    </div>
+    <div class="table-scroll rv">
+      <table class="compare">
+        <thead>
+          <tr><th scope="col"><span class="sr-only">المعيار</span></th><th scope="col" class="us">CalmGastro</th><th scope="col">منتجات التنحيف السريعة</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">التركيبة</th><td class="us"><span class="mark y">✓</span>ألياف وفيتامين B12 وكروميوم ومكونات غذائية داعمة</td><td class="them">تعتمد غالباً على «حرق» أو تأثير سريع أو مواد كيميائية</td></tr>
+          <tr><th scope="row">طريقة التأثير</th><td class="us"><span class="mark y">✓</span>يدعم الشبع والهضم والعادات اليومية</td><td class="them">تقليل الشهية بشدة أو التأثير في سوائل الجسم</td></tr>
+          <tr><th scope="row">بعد التوقف</th><td class="us"><span class="mark y">✓</span>عادات أثبت تسهّل المحافظة على النتيجة</td><td class="them"><span class="mark n">✕</span>قد يعود الوزن إذا لم تتغير العادات</td></tr>
+          <tr><th scope="row">الشكل</th><td class="us"><span class="mark y">✓</span>مشروب بنكهة ليمون وفراولة</td><td class="them">كبسولات تُبلع</td></tr>
+          <tr><th scope="row">الجرعات</th><td class="us"><span class="mark y">✓</span>كل مكوّن بالملّيغرام على العلبة</td><td class="them"><span class="mark n">✕</span>«خلطة عشبية» بلا أرقام</td></tr>
+          <tr><th scope="row">الادعاءات الصحية</th><td class="us"><span class="mark y">✓</span>معتمدة من EFSA ومطبوعة</td><td class="them"><span class="mark n">✕</span>وعود مثل «10 كيلو بالشهر»</td></tr>
+          <tr><th scope="row">الموافقة</th><td class="us"><span class="mark y">✓</span>رقم موافقة مكمل غذائي 023487</td><td class="them">غالباً غير مذكور</td></tr>
+          <tr><th scope="row">السعر والطلب</th><td class="us"><span class="mark y">✓</span>سعر واضح، طلب مباشر، دفع عند الاستلام</td><td class="them">«راسلنا لمعرفة السعر»</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="keep rv">المحافظة على النتيجة ترتبط باستمرار العادات الغذائية والنشاط ونمط الحياة. لذلك نركّز على برنامج مستمر وعادات قابلة للاستمرار، وليس على نتيجة مؤقتة مرتبطة فقط بفترة استخدام المنتج.</p>
+  </div>
+</section>
+<section class="block" id="safety" data-kb="safety">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <span class="eyebrow">قبل الاستخدام</span>
+      <h2>الالتزام وطريقة الاستخدام</h2>
+      <p>النتيجة تعتمد على الانتظام. اقرأ هذا القسم قبل أن تبدأ برنامجك.</p>
+    </div>
+    <div class="plan">
+      <article class="rv">
+        <h3>الالتزام اليومي</h3>
+        <p>لأفضل استفادة من البرنامج، التزم باستخدام المنتج يومياً وبانتظام. إذا كان الاستخدام متقطعاً أو لم تلتزم به يومياً، فلن يكون من المنطقي تقييم التجربة وكأن الاستخدام كان منتظماً.</p>
+      </article>
+      <article class="rv accent">
+        <h3>إذا كان وزنك زائداً بشكل كبير</h3>
+        <p>لا مانع من استخدام المنتج مرتين يومياً:</p>
+        <div class="dose"><span>ظرف صباحاً على الريق</span><span>ظرف قبل وجبة العشاء</span></div>
+        <p class="after">مع كوب ماء كامل لكل ظرف، وبدون تجاوز ظرفين في اليوم.</p>
+      </article>
+      <article class="rv">
+        <h3>مدة البرنامج: 3 أشهر</h3>
+        <p>لأن CalmGastro مكمل غذائي وليس منتجاً كيميائياً سريع المفعول، قد تكون استجابة الجسم في الشهر الأول أبطأ، ثم تصبح أوضح مع الاستمرار خلال الشهرين الثاني والثالث. لذلك يفضَّل تقييم التجربة على برنامج متكامل لا يقل عن 3 أشهر بدل الحكم من فترة قصيرة.</p>
+      </article>
+    </div>
+    <h3 class="sub-h rv">صراحةً: لمن لا يناسب CalmGastro</h3>
+    <div class="safety">
+      <ul class="warn-list">
+        <li><span class="wi" aria-hidden="true">!</span><div><b>الحامل والمرضع ومن هم دون 18 سنة:</b> لا يُستخدم.</div></li>
+        <li><span class="wi" aria-hidden="true">!</span><div><b>من يتناول أدوية الاكتئاب أو القلق:</b> يحتوي على <bdi dir="ltr">5-HTP</bdi>، فاستشر طبيبك أولاً.</div></li>
+        <li><span class="wi" aria-hidden="true">!</span><div><b>مرضى السكري:</b> يحتوي المنتج على الكروميوم، وهو عنصر قد يؤثر في مستويات سكر الدم. إذا كنت تستخدم أدوية لخفض السكر أو تنظيمه، يفضَّل استشارة طبيبك ومراقبة السكر، ولا توقف دواءك أو تغيّره من نفسك.</div></li>
+        <li><span class="wi" aria-hidden="true">!</span><div><b>الحساسية من الكافيين:</b> فيه كمية بسيطة من مستخلص الشاي الأخضر والقهوة، فتجنّبه في المساء.</div></li>
+        <li><span class="wi" aria-hidden="true">!</span><div><b>صعوبة البلع أو قلة شرب الماء:</b> الألياف قد تسبب خطر الاختناق، فاشربه مذاباً بالكامل مع كمية وافرة من الماء.</div></li>
+        <li><span class="wi" aria-hidden="true">!</span><div><b>إذا كنت تتناول أدوية أخرى:</b> خذها قبل الظرف بساعة أو بعده بساعتين، لأن الألياف قد تؤثر على امتصاصها.</div></li>
+        <li><span class="wi" aria-hidden="true">!</span><div><b>لا تتجاوز الجرعة الموصى بها.</b> المنتج مكمل غذائي، وليس مخصصاً لتشخيص أي مرض أو علاجه أو الوقاية منه.</div></li>
+      </ul>
+      <figure class="label-fig rv">
+        <a href="assets/label-back.jpg" target="_blank" rel="noopener"><img src="assets/label-back.jpg" alt="صورة الملصق الخلفي لعلبة CalmGastro يظهر فيها جدول المكونات والجرعات والتحذيرات ورقم الموافقة 023487" loading="lazy" width="1224" height="1024"></a>
+        <figcaption>الملصق الخلفي للعلبة: جدول المكونات والجرعات والتحذيرات ورقم الموافقة. اضغط لتكبير الصورة.</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+<section class="block tint" id="faq" data-kb="faq">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <span class="eyebrow">الأسئلة الشائعة</span>
+      <h2>أسئلة تصلنا كثيراً</h2>
+    </div>
+    <div class="faq">
+      <details><summary>هل المنتج طبيعي؟</summary><p>المكونات الأساسية ألياف ومستخلصات نباتية: الكونجاك والإنولين والشاي الأخضر والقهوة والغارسينيا والزنجبيل والبروميلين، ومعها الكروميوم وفيتامين B12. ويحتوي على مُحلٍّ لتحسين الطعم.</p></details>
+      <details><summary>كم ظرف آخذ في اليوم؟</summary><p>ظرف واحد يومياً قبل الوجبة الرئيسية بنصف ساعة، مذاباً في كوب ماء (250 مل). إذا كان وزنك زائداً بشكل كبير فلا مانع من ظرفين يومياً: ظرف صباحاً على الريق وظرف قبل وجبة العشاء، ولا تتجاوز ظرفين في اليوم.</p></details>
+      <details><summary>متى تظهر النتائج؟</summary><p>الاستجابة تختلف من جسم لآخر. وبما أن CalmGastro مكمل غذائي وليس منتجاً كيميائياً سريع المفعول، فقد تكون استجابة الجسم في الشهر الأول أبطأ، بينما تصبح الاستجابة أوضح مع الاستمرار والالتزام خلال الشهرين الثاني والثالث.</p></details>
+      <details><summary>لماذا ننصح ببرنامج 3 أشهر؟</summary><p>لأن الاستمرارية تعطي الجسم وقتاً كافياً للاستفادة من مكونات المكمل، وتمنحك فترة أكثر واقعية لتقييم النتيجة. لا تحكم على المنتج من أيام أو أسابيع قليلة؛ قيّم تجربتك بعد الالتزام بالبرنامج كاملاً مع نظام غذائي ونمط حياة مناسبين.</p></details>
+      <details><summary>هل لازم أتبع نظام غذائي معه؟</summary><p>لا تحتاج حمية قاسية، لكن لأفضل نتيجة ننصح بأكل متوازن ونشاط بدني بسيط مثل المشي. CalmGastro يسهّل عليك الالتزام لأنك تشبع أسرع.</p></details>
+      <details><summary>هل يساعد في القولون والانتفاخ؟</summary><p>نعم، الإنولين يغذي البكتيريا النافعة في الأمعاء، والزنجبيل والبروميلين يدعمان الهضم ويقللان الغازات والانتفاخ.</p></details>
+      <details><summary>هل يناسب الرجال والنساء؟</summary><p>يناسب البالغين من الجنسين. لا يُستخدم أثناء الحمل أو الرضاعة أو لمن هم دون 18 سنة، ويُفضَّل استشارة الطبيب إذا كانت لديك حالة صحية أو تتناول أدوية.</p></details>
+      <details><summary>هل فيه كافيين؟</summary><p>فيه كمية بسيطة من مستخلص الشاي الأخضر (120 ملغ) ومستخلص القهوة (120 ملغ) لكل ظرف. إذا كنت حساساً للكافيين فتناوله قبل الغداء وليس قبل العشاء.</p></details>
+      <details><summary>كيف أطلب وكيف أدفع؟</summary><p>اختر العرض وأضفه للسلة، ثم اكتب بيانات التوصيل وأكّد الطلب من الموقع. يُسجَّل طلبك فوراً وتحصل على رقم طلب تتابع به حالته من «تتبع الطلب». الدفع عند الاستلام.</p></details>
+      <details><summary>كم يستغرق التوصيل؟</summary><p data-cfg="deliveryLong">من 2 إلى 5 أيام عمل لجميع مدن المملكة، ونتواصل معك قبل التوصيل لتأكيد الموعد.</p></details>
+    </div>
+  </div>
+</section>
+</template>
+
 <footer data-kb="legal">
   <div class="wrap">
     <div class="foot-top">
@@ -1461,6 +1473,7 @@
     </div>
     <p>CalmGastro مكمل غذائي يحتوي على الغلوكومانان للمساعدة في إدارة الوزن بشكل صحي. رقم موافقة المكمل الغذائي: <span class="num">023487-10.04.2025</span>.</p>
     <p>هذا المنتج ليس مخصصاً لتشخيص أي مرض أو علاجه أو الشفاء منه أو الوقاية منه. لا تتجاوز الجرعة الموصى بها. المكملات الغذائية لا تغني عن نظام غذائي متوازن ونمط حياة صحي. النتائج تختلف من شخص لآخر.</p>
+    <p class="foot-warn">قبل الاستخدام: ظرف واحد يومياً في كوب ماء (250 مل) قبل الوجبة بنصف ساعة، مع كوب ماء إضافي بعده. لا يُستخدم للحامل والمرضع ومن هم دون 18 سنة، ويُستشار الطبيب لمن يتناول أدوية الاكتئاب أو القلق أو أدوية السكري، أو لديه حساسية من الكافيين.</p>
     <p class="foot-links"><a href="#/track">تتبع طلبك</a> · <a href="#" class="js-wa">خدمة العملاء عبر واتساب</a></p>
     <p>© <span id="yr"></span> CalmGastro. جميع الحقوق محفوظة.</p>
   </div>
@@ -1559,8 +1572,8 @@
 }
 </script>
 
-<script src="assets/i18n-en.js?v=20261029a"></script>
-<script src="assets/app.js?v=20261029a"></script>
-<script src="assets/shop.js?v=20261029a"></script>
+<script src="assets/i18n-en.js?v=20261029b"></script>
+<script src="assets/app.js?v=20261029b"></script>
+<script src="assets/shop.js?v=20261029b"></script>
 </body>
 </html>

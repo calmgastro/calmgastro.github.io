@@ -53,18 +53,22 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
     const norm = s => s.replace(/\s+/g, " ").trim();
     const AR = /[\u0600-\u06FF]/;
     const SKIP = "script,style,svg,datalist,#bundles,#ingExplorer,#aiLog,[data-no-i18n]";
-    for (const el of document.body.querySelectorAll("*")){
-      if (!el.isConnected || !AR.test(el.textContent) || el.closest(SKIP)) continue;
+    const kbExtra = document.getElementById("kbExtra");
+    const roots = [document.body].concat(kbExtra ? [kbExtra.content] : []);   // نصوص المساعد المخفية تُترجم أيضاً
+    for (const el of roots.flatMap(r => [...r.querySelectorAll("*")])){
+      if (!(el.isConnected || (kbExtra && kbExtra.content.contains(el))) || !AR.test(el.textContent) || el.closest(SKIP)) continue;
       const en = EN.html[norm(el.innerHTML)];
       if (en != null) el.innerHTML = en;
     }
     const missing = [];
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-    for (let n; (n = walker.nextNode());){
-      if (!AR.test(n.nodeValue) || n.parentElement.closest(SKIP)) continue;
-      const en = EN.text[norm(n.nodeValue)];
-      if (en != null) n.nodeValue = n.nodeValue.match(/^\s*/)[0] + en + n.nodeValue.match(/\s*$/)[0];
-      else missing.push(norm(n.nodeValue));
+    for (const r of roots){
+      const walker = document.createTreeWalker(r, NodeFilter.SHOW_TEXT);
+      for (let n; (n = walker.nextNode());){
+        if (!AR.test(n.nodeValue) || (n.parentElement && n.parentElement.closest(SKIP))) continue;
+        const en = EN.text[norm(n.nodeValue)];
+        if (en != null) n.nodeValue = n.nodeValue.match(/^\s*/)[0] + en + n.nodeValue.match(/\s*$/)[0];
+        else if (r === document.body) missing.push(norm(n.nodeValue));
+      }
     }
     for (const el of document.querySelectorAll("[placeholder],[aria-label],[alt],[title]"))
       for (const a of ["placeholder", "aria-label", "alt", "title"]){
@@ -290,6 +294,55 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
     io.observe(glassBox);
   })();
 
+  /* ---------- آراء العملاء: شريط يتقدم رأياً واحداً كل 4 ثوانٍ بحركة هادئة ----------
+     يتوقف عند المرور بالمؤشر أو التركيز أو اللمس، وخارج الشاشة، ولمن فعّل «تقليل الحركة». السحب باليد للتالي/السابق */
+  (function reviewsCarousel(){
+    const root = $("#reviewsCarousel"); if (!root) return;
+    const track = $(".rvc-track", root), viewport = $(".rvc-viewport", root), dotsBox = $(".rvc-dots", root);
+    const items = $$(".review", track), N = items.length; if (N < 2) return;
+    const rtl = document.documentElement.dir === "rtl", MOVE = "transform .95s cubic-bezier(.45,.05,.25,1)";
+    // نسخ أول 4 آراء في النهاية حتى يستمر الدوران بلا قفزة (مخفية عن قارئ الشاشة)
+    items.slice(0, Math.min(4, N)).forEach(it => { const c = it.cloneNode(true); c.setAttribute("aria-hidden", "true"); c.classList.add("clone"); track.appendChild(c); });
+    dotsBox.innerHTML = items.map(() => "<i></i>").join("");
+    const dots = $$("i", dotsBox);
+    let idx = 0, timer = 0, hold = false, inView = false;
+    const step = () => items[0].getBoundingClientRect().width + (parseFloat(getComputedStyle(track).columnGap) || 0);
+    function go(i, animate = true){
+      idx = i;
+      track.style.transition = animate && !reduce ? MOVE : "none";
+      track.style.transform = `translateX(${(rtl ? 1 : -1) * idx * step()}px)`;
+      dots.forEach((d, k) => d.classList.toggle("on", k === ((idx % N) + N) % N));
+    }
+    track.addEventListener("transitionend", e => {
+      if (e.target !== track) return;
+      if (idx >= N) go(idx - N, false);
+    });
+    function next(){ go(idx + 1); }
+    function prev(){
+      if (idx > 0) return go(idx - 1);
+      go(N, false); void track.offsetWidth; go(N - 1);                      // من الأول للأخير عبر النسخة
+    }
+    function schedule(){
+      clearTimeout(timer);
+      if (reduce) return;
+      timer = setTimeout(() => { if (!hold && inView && !document.hidden) next(); schedule(); }, 4000);
+    }
+    root.addEventListener("mouseenter", () => { hold = true; });
+    root.addEventListener("mouseleave", () => { hold = false; });
+    root.addEventListener("focusin", () => { hold = true; });
+    root.addEventListener("focusout", () => { hold = false; });
+    let x0 = null;
+    viewport.addEventListener("pointerdown", e => { x0 = e.clientX; hold = true; });
+    addEventListener("pointerup", e => {
+      if (x0 == null) return;
+      const dx = e.clientX - x0; x0 = null; hold = false;
+      if (Math.abs(dx) > 40) { ((dx > 0) === rtl ? next : prev)(); schedule(); }
+    });
+    addEventListener("resize", () => go(idx, false));
+    new IntersectionObserver(([en]) => { inView = en.isIntersecting; }, { threshold: .3 }).observe(root);
+    go(0, false); schedule();
+  })();
+
   /* ---------- scroll reveal ---------- */
   /* ---------- فيديو «تعرف على كالم كاسترو»: نافذة تظهر من موضع الزر، والفيديو يُحمَّل عند أول فتح.
      أول زيارة: عند وصول الزائر للزر يظهر مؤشر يضغطه تلقائياً ويُفتح الفيديو بدون صوت (المتصفحات تمنع الصوت بلا لمسة)،
@@ -447,6 +500,7 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
     const plain = html => html.replace(/<[^>]+>/g, "");
     const lines = (sel, root = document) => $$(sel, root).map(el => el.textContent.replace(/\s+/g, " ").trim()).filter(Boolean);
     let history = [], busy = false, started = false, lastQuestion = "";
+    const KB = (document.getElementById("kbExtra") || {}).content || document;   // الأقسام المحذوفة من العرض (template)
 
     /* ---------- إجابات الأسئلة السريعة (من نفس مصدر بيانات الصفحة) ---------- */
     const bundleLine = b => {
@@ -459,15 +513,15 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
                  "", t("الجرعات مطابقة للملصق الخلفي للعلبة، ويحتوي المنتج على مُحلٍّ.")].join("\n"),
           actions: ["order"] }) },
       { q: t("كيف أستخدم المنتج؟"), answer: () => {
-          const steps = $$("#how .step").map((st, i) => `${i + 1}. ${lines("h3", st)[0]}: ${lines("p", st)[0]}`);
-          const heavy = $("#safety .plan .accent");
-          return { text: [...steps, "", lines("#how .tip")[0] || "",
+          const steps = $$("#how .step", KB).map((st, i) => `${i + 1}. ${lines("h3", st)[0]}: ${lines("p", st)[0]}`);
+          const heavy = $("#safety .plan .accent", KB);
+          return { text: [...steps, "", lines("#how .tip", KB)[0] || "",
                           heavy ? `\n${lines("h3", heavy)[0]}: ${lines(".dose span", heavy).map((x, i) => EN && i ? x.charAt(0).toLowerCase() + x.slice(1) : x).join(t("، ثم "))}. ${lines("p.after", heavy)[0] || ""}` : ""]
                           .filter(Boolean).join("\n"), actions: ["order"] };
         } },
       { q: t("ما فوائد المنتج؟"), answer: () => ({
           text: [...INGREDIENTS.filter(i => /^(Konjac|Inulin|Ginger|Chromium|5-H)/.test(i.en)).map(i => `- **${EN ? i.name_en : i.ar}**: ${i.role}`),
-                 "", lines("#results .disclaim")[0] || ""].filter(Boolean).join("\n"),
+                 "", lines("#results .disclaim", KB)[0] || ""].filter(Boolean).join("\n"),
           actions: ["order"] }) },
       { q: t("كم السعر؟"), answer: () => ({
           text: [t("أسعار العروض الحالية:"), ...CONFIG.bundles.map(bundleLine),
