@@ -738,6 +738,8 @@
     .steps, .timeline, .plan, .idea{grid-template-columns:1fr; gap:16px}
     .tl{padding:0}
     .order .bundles-col{order:0}
+    /* عمود واحد: السلة تحت العروض تأخذ مساحة بلا فائدة؛ السلة متاحة من أيقونة الرأس وشريط «إتمام الطلب»، وتُفتح تلقائياً عند الإضافة */
+    .order .cart-panel{display:none}
   }
   @media (max-width:640px){
     body{font-size:16px}
