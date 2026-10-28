@@ -308,6 +308,7 @@ window.I18N_EN = {
   "أهلاً بك 👋 أنا مساعد CalmGastro. اختر سؤالاً سريعاً أو اكتب سؤالك.": "Hi 👋 I’m the CalmGastro assistant. Pick a quick question or type your own.",
   "أو راسلنا على الإيميل: {email}": "Or email us: {email}",
   "الحد الأقصى للطلب الواحد {n} علبة. للكميات الأكبر تواصل معنا لطلب الجملة.": "The maximum per order is {n} boxes. For larger quantities, contact us about a wholesale order.",
+  "يمكنك إضافة {n} من هذا العرض كحد أقصى. للكميات الأكبر تواصل معنا لطلب الجملة.": "You can add up to {n} of this offer. For larger quantities, contact us about a wholesale order.",
   "إنقاص الكمية": "Decrease quantity",
   "زيادة الكمية": "Increase quantity",
   "غير متوفر حالياً": "Currently unavailable",

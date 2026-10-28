@@ -146,47 +146,40 @@
   CONFIG.bundles.forEach(b => {
     const save = b.was ? Math.round((1 - b.price / b.was) * 100) : 0;
     const per = Math.round(b.price / (b.boxes * 30) * 10) / 10;
-    let qty = 1;
-    const qtyOut = h("output", { class: "qty-val num", "aria-live": "polite", text: "1" });
-    const minus = h("button", { type: "button", class: "qty-btn", "aria-label": t("إنقاص الكمية"), html: ICON.minus });
-    const plus = h("button", { type: "button", class: "qty-btn", "aria-label": t("زيادة الكمية"), html: ICON.plus });
-    const setLocal = v => { qty = Math.max(1, Math.min(RULES.maxQty, v)); qtyOut.textContent = qty; minus.disabled = qty <= 1; plus.disabled = qty >= RULES.maxQty; };
-    minus.addEventListener("click", () => setLocal(qty - 1));
-    plus.addEventListener("click", () => setLocal(qty + 1));
-    setLocal(1);
+    // الكمية تُعدّل في السلة؛ كل ضغطة «إضافة للسلة» تضيف عرضاً واحداً
     const addBtn = h("button", { type: "button", class: "btn btn-primary add-btn", "data-id": b.id, disabled: CONFIG.inStock === false },
       h("span", { html: ICON.cart }), h("span", { class: "add-lbl", text: CONFIG.inStock === false ? t("غير متوفر حالياً") : t("إضافة للسلة") }));
     addBtn.addEventListener("click", () => {
       const have = (cart.find(i => i.id === b.id) || {}).qty || 0;
-      const err = setQty(b.id, have + qty, { silent: true });
+      const err = have >= RULES.maxQty ? t("يمكنك إضافة {n} من هذا العرض كحد أقصى. للكميات الأكبر تواصل معنا لطلب الجملة.", { n: RULES.maxQty })
+        : setQty(b.id, have + 1, { silent: true });
       offerMsg.textContent = err || "";
       if (err) return;
-      track("add_to_cart", { items: [b.id], boxes: b.boxes * qty, value: b.price * qty });
+      track("add_to_cart", { items: [b.id], boxes: b.boxes, value: b.price });
       const lbl = $(".add-lbl", addBtn);
       lbl.textContent = t("✓ أُضيف للسلة"); addBtn.classList.add("added");
       setTimeout(() => { lbl.textContent = t("إضافة للسلة"); addBtn.classList.remove("added"); }, 1600);
-      setLocal(1);
       // إذا كانت السلة الجانبية ظاهرة نبرزها، وإلا نفتح نافذة السلة
       const panel = $("#cartPanel"), r = panel.getBoundingClientRect();
       if (r.top < innerHeight - 80 && r.bottom > 80 && getComputedStyle(panel).display !== "none"){ panel.classList.remove("flash"); void panel.offsetWidth; panel.classList.add("flash"); }
       else openDrawer(addBtn);
     });
-    bundlesBox.appendChild(h("article", { class: "bundle", "data-id": b.id, "aria-labelledby": "bt-" + b.id },
+    // صورة بعدد العلب في العرض (1 / 2 / 3)
+    const img = "assets/bundle-" + Math.min(3, Math.max(1, b.boxes)) + ".jpg";
+    bundlesBox.appendChild(h("article", { class: "bundle" + (b.id === CONFIG.defaultBundle ? " featured" : ""), "data-id": b.id, "aria-labelledby": "bt-" + b.id },
       b.tag ? h("span", { class: "tag", text: b.tag }) : null,
       h("div", { class: "card" },
-        h("img", { class: "b-thumb", src: "assets/box-thumb.jpg", alt: "", width: "64", height: "65", loading: "lazy" }),
+        h("img", { class: "b-img", src: img, alt: "", width: "480", height: "360", loading: "lazy", decoding: "async" }),
         h("div", { class: "b-info" },
           h("h3", { class: "b-title", id: "bt-" + b.id, text: b.title }),
           h("p", { class: "b-prog", text: b.program }),
-          h("p", { class: "b-sub", text: t("{n} ظرفاً · ≈ {per} {cur} لليوم", { n: b.boxes * 30, per, cur: CONFIG.currency }) }),
-          h("p", { class: "b-stock" + (CONFIG.inStock === false ? " out" : ""), text: CONFIG.inStock === false ? t("غير متوفر حالياً") : t("متوفر") })),
+          h("p", { class: "b-sub", text: t("{n} ظرفاً · ≈ {per} {cur} لليوم", { n: b.boxes * 30, per, cur: CONFIG.currency }) })),
         h("div", { class: "b-price" },
           h("span", { class: "now", text: money(b.price) }),
-          b.was ? h("span", { class: "was", text: money(b.was) }) : null,
-          save ? h("span", { class: "b-save", text: t("وفّر {save}%", { save }) }) : null),
-        h("div", { class: "b-actions" },
-          h("div", { class: "qty", role: "group", "aria-label": t("الكمية") }, minus, qtyOut, plus),
-          addBtn))));
+          h("span", { class: "meta" },
+            b.was ? h("span", { class: "was", text: money(b.was) }) : null,
+            save ? h("span", { class: "b-save", text: t("وفّر {save}%", { save }) }) : null)),
+        addBtn)));
   });
   if (RULES.after){
     $("#priceRule").textContent = t("أكثر من {max} علب؟ سعر العلبة {p} فقط. يُطبَّق أفضل سعر تلقائياً في السلة.", {
