@@ -256,7 +256,7 @@ window.I18N_EN = {
   "إغلاق المساعد": "Close assistant",
   "اكتب سؤالك هنا…": "Type your question here…",
   "إرسال": "Send",
-  "علبة CalmGastro Slim from Inside بنكهة الليمون والفراولة بجانب ليمون وفراولة وكوب عصير ليمون وفراولة بارد": "CalmGastro Slim from Inside box, lemon-strawberry flavor, next to lemons, strawberries and a glass of iced strawberry lemonade",
+  "علبة CalmGastro Slim from Inside بنكهة الليمون والفراولة بجانب كوب عصير ليمون وفراولة بارد، مع عبارة «التنحيف بأسلوب ذكي»": "CalmGastro Slim from Inside box, lemon-strawberry flavor, next to a glass of iced lemon-strawberry drink, with the words “Slimming the smart way”",
   "السلة فارغة": "Cart is empty",
   "العروض المتاحة": "Available offers",
   "مراحل الطلب": "Checkout steps",
