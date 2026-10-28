@@ -27,6 +27,12 @@ window.I18N_EN = {
   "Al Ahsa"
  ],
  "html": {
+  "تبدأ بحماس… وبعد كم يوم يصعب عليك الاستمرار؟<br>أحياناً المشكلة مو في إرادتك، بل في الطريقة.": "You start full of motivation… and a few days later it's hard to keep going?<br>Sometimes the problem isn't your willpower, it's the method.",
+  "جوع<br>متكرر": "Constant<br>hunger",
+  "رغبة متكررة<br>بالحلويات": "Frequent<br>sugar cravings",
+  "خمول بعد<br>الوجبات": "Sluggish<br>after meals",
+  "صعوبة في<br>نزول الوزن": "Struggling to<br>lose weight",
+  "الحل مع <em>كالم كاسترو</em>": "The solution: <em>CalmGastro</em>",
   "🚚 <strong data-cfg=\"shippingNote\">شحن مجاني لجميع مدن المملكة</strong> · والدفع عند الاستلام": "🚚 <strong data-cfg=\"shippingNote\">Free shipping across Saudi Arabia</strong> · Cash on delivery",
   "المكونات": "Ingredients",
   "طريقة الاستخدام": "How to use",
@@ -196,6 +202,9 @@ window.I18N_EN = {
   "للطلب بالجملة تواصل عبر الإيميل: <a href=\"mailto:info@vitamik.com?subject=%D8%A7%D8%B3%D8%AA%D9%81%D8%B3%D8%A7%D8%B1%20%D8%B9%D9%86%20%D8%B7%D9%84%D8%A8%20%D8%A8%D8%A7%D9%84%D8%AC%D9%85%D9%84%D8%A9%20-%20CalmGastro\" dir=\"ltr\">info@vitamik.com</a>": "For wholesale orders, email us: <a href=\"mailto:info@vitamik.com?subject=Wholesale%20inquiry%20-%20CalmGastro\" dir=\"ltr\">info@vitamik.com</a>"
  },
  "text": {
+  "تعرف هالشعور؟": "Know this feeling?",
+  "ادعم شعورك بالشبع وخَلّ الالتزام بنظامك الغذائي أسهل، بدون حرمان قاسي.": "Support your feeling of fullness and make sticking to your diet easier, without harsh deprivation.",
+  "تعرف على كالم كاسترو الآن": "Discover CalmGastro now",
   "توصيل سريع ومجاني": "Fast, free delivery",
   "مكونات طبيعية": "Natural ingredients",
   "الدفع عند الاستلام": "Cash on delivery",
@@ -250,6 +259,8 @@ window.I18N_EN = {
   "لم تجده؟ فريقنا يساعدك بعد التحقق من هويتك.": "Can't find it? Our team will help after verifying your identity."
  },
  "attr": {
+  "فيديو تعريفي عن CalmGastro": "CalmGastro intro video",
+  "إغلاق الفيديو": "Close video",
   "مميزات CalmGastro": "CalmGastro highlights",
   "CalmGastro الصفحة الرئيسية": "CalmGastro home",
   "أقسام الصفحة": "Page sections",

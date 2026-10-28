@@ -143,6 +143,36 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
 
   /* ---------- scroll reveal + glass fill ---------- */
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  /* ---------- فيديو «تعرف على كالم كاسترو»: نافذة تظهر من موضع الزر، والفيديو يُحمَّل عند أول فتح ---------- */
+  (function introVideo(){
+    const openBtn = document.getElementById("introOpen"), dlg = document.getElementById("introDialog");
+    if (!openBtn || !dlg || typeof dlg.showModal !== "function") return;
+    const video = document.getElementById("introVideo"), closeBtn = document.getElementById("introClose");
+    function open(){
+      const r = openBtn.getBoundingClientRect();
+      dlg.style.setProperty("--fx", Math.round(r.left + r.width / 2 - innerWidth / 2) + "px");
+      dlg.style.setProperty("--fy", Math.round(r.top + r.height / 2 - innerHeight / 2) + "px");
+      if (!video.src) video.src = video.dataset.src;
+      dlg.classList.remove("closing");
+      dlg.showModal(); document.documentElement.classList.add("vm-open");
+      video.currentTime = 0;
+      const p = video.play(); if (p && p.catch) p.catch(() => {});      // بدون صوت تلقائي إن منعه المتصفح: يبقى زر التشغيل
+      closeBtn.focus({ preventScroll: true });
+    }
+    function close(){
+      if (!dlg.open || dlg.classList.contains("closing")) return;
+      video.pause();
+      if (reduce){ dlg.close(); return; }
+      dlg.classList.add("closing");
+      setTimeout(() => { dlg.close(); dlg.classList.remove("closing"); }, 270);
+    }
+    openBtn.addEventListener("click", open);
+    closeBtn.addEventListener("click", close);
+    dlg.addEventListener("cancel", e => { e.preventDefault(); close(); });                 // Esc
+    dlg.addEventListener("click", e => { if (e.target === dlg) close(); });               // الضغط خارج الفيديو
+    dlg.addEventListener("close", () => { video.pause(); document.documentElement.classList.remove("vm-open"); openBtn.focus({ preventScroll: true }); });
+  })();
+
   if ("IntersectionObserver" in window && !reduce){
     const io = new IntersectionObserver(entries => {
       entries.forEach(en => {
@@ -212,7 +242,7 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
                           .filter(Boolean).join("\n"), actions: ["order"] };
         } },
       { q: t("ما فوائد المنتج؟"), answer: () => ({
-          text: [...$$("#why .problem").map(c => `- **${lines(".q", c)[0]}**: ${lines("p", c)[0]}`),
+          text: [...INGREDIENTS.filter(i => /^(Konjac|Inulin|Ginger|Chromium|5-H)/.test(i.en)).map(i => `- **${EN ? i.name_en : i.ar}**: ${i.role}`),
                  "", lines("#results .disclaim")[0] || ""].filter(Boolean).join("\n"),
           actions: ["order"] }) },
       { q: t("كم السعر؟"), answer: () => ({
