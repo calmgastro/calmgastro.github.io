@@ -280,6 +280,8 @@ window.I18N_EN = {
   "إغلاق السلة": "Close cart"
  },
  "ui": {
+  "اضغط لتشغيل الصوت": "Tap to turn on the sound",
+  "اضغط لتشغيل الفيديو": "Tap to play the video",
   "السلام عليكم، عندي استفسار عن CalmGastro": "Hello, I have a question about CalmGastro",
   "اختر العرض": "Choose an offer",
   "{n} ظرفاً": "{n} sachets",

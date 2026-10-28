@@ -198,9 +198,9 @@
   /* وميض: شريط ضوء يعبر الزر عند المرور بالمؤشر، مع توهج أقوى */
   .glow-btn::before{content:""; position:absolute; z-index:-1; inset-block:-30%; inset-inline-start:-60%; width:45%;
     background:linear-gradient(90deg,transparent,rgba(255,255,255,.85),transparent); transform:skewX(-22deg); opacity:0}
-  .glow-btn:hover, .glow-btn:focus-visible{transform:translateY(-3px) scale(1.03); filter:saturate(1.1) brightness(1.05);
+  .glow-btn:hover, .glow-btn:focus-visible, .glow-btn.hover-sim{transform:translateY(-3px) scale(1.03); filter:saturate(1.1) brightness(1.05);
     box-shadow:0 0 0 9px rgba(242,148,27,.2), 0 0 0 20px rgba(242,148,27,.1), 0 0 46px 8px rgba(255,170,60,.55), 0 20px 40px -10px rgba(226,83,26,.7), inset 0 1px 0 rgba(255,255,255,.45)}
-  .glow-btn:hover::before, .glow-btn:focus-visible::before{animation:btnShine 1.1s ease-out}
+  .glow-btn:hover::before, .glow-btn:focus-visible::before, .glow-btn.hover-sim::before{animation:btnShine 1.1s ease-out}
   .glow-btn:hover .gb-ico{animation:icoPop .6s ease}
   .glow-btn:active{transform:translateY(0) scale(.98)}
   @keyframes btnShine{0%{inset-inline-start:-60%; opacity:0} 15%{opacity:1} 100%{inset-inline-start:130%; opacity:0}}
@@ -228,6 +228,22 @@
   @keyframes vmPop{0%{opacity:0; transform:translate(var(--fx,0px),var(--fy,60px)) scale(.18) rotate(-6deg)} 60%{opacity:1} 100%{opacity:1; transform:none}}
   @keyframes vmOut{to{opacity:0; transform:translateY(30px) scale(.86)}}
   html.vm-open{overflow:hidden}
+  /* الضغطة التلقائية في أول زيارة: مؤشر يتحرك إلى الزر، يتحول ليد، ثم ضغطة بموجة */
+  .auto-cursor{position:fixed; z-index:2147483000; left:0; top:0; width:40px; height:40px; pointer-events:none; opacity:0; will-change:transform, opacity;
+    filter:drop-shadow(0 6px 10px rgba(0,0,0,.35))}
+  .auto-cursor svg{position:absolute; inset:0; width:100%; height:100%; transition:opacity .12s ease}
+  .auto-cursor .hand{opacity:0}
+  .auto-cursor.on-btn .arrow{opacity:0}
+  .auto-cursor.on-btn .hand{opacity:1}
+  .click-ripple{position:fixed; z-index:2147482999; width:18px; height:18px; margin:-9px 0 0 -9px; border-radius:50%; pointer-events:none;
+    border:3px solid #fff; box-shadow:0 0 0 3px rgba(242,148,27,.65); animation:clickRipple .65s ease-out forwards}
+  @keyframes clickRipple{to{transform:scale(5.5); opacity:0}}
+  .glow-btn.pressed{transform:translateY(0) scale(.95) !important; transition-duration:.12s}
+  .vm-sound{position:absolute; z-index:3; left:50%; inset-block-end:76px; transform:translateX(-50%); display:inline-flex; align-items:center; gap:.5em; white-space:nowrap;
+    padding:.75em 1.35em; border:0; border-radius:999px; cursor:pointer; background:rgba(255,255,255,.96); color:var(--teal-deep);
+    font-family:var(--f-display); font-weight:800; font-size:1rem; animation:soundPulse 1.6s ease-in-out infinite}
+  .vm-sound svg{width:1.35em; height:1.35em}
+  @keyframes soundPulse{0%,100%{box-shadow:0 0 0 0 rgba(242,148,27,.65), 0 10px 24px -8px rgba(0,0,0,.5)} 50%{box-shadow:0 0 0 14px rgba(242,148,27,0), 0 10px 24px -8px rgba(0,0,0,.5)}}
   @media (max-width:640px){
     .vm-card{height:auto; width:min(92vw, calc(86svh * 478 / 850))}
     .vm-close{inset-block-start:-12px; inset-inline-end:-6px}
@@ -1371,6 +1387,7 @@
 <dialog class="vmodal" id="introDialog" aria-label="فيديو تعريفي عن CalmGastro">
   <div class="vm-card">
     <button type="button" class="vm-close" id="introClose" aria-label="إغلاق الفيديو"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    <button type="button" class="vm-sound" id="introSound" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg><span></span></button>
     <video id="introVideo" data-src="assets/calmgastro-intro.mp4" poster="assets/calmgastro-intro.jpg" width="478" height="850" controls playsinline preload="none"></video>
   </div>
 </dialog>
@@ -1510,8 +1527,8 @@
 }
 </script>
 
-<script src="assets/i18n-en.js?v=20261028e"></script>
-<script src="assets/app.js?v=20261028e"></script>
-<script src="assets/shop.js?v=20261028e"></script>
+<script src="assets/i18n-en.js?v=20261028f"></script>
+<script src="assets/app.js?v=20261028f"></script>
+<script src="assets/shop.js?v=20261028f"></script>
 </body>
 </html>

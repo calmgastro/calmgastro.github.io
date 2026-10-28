@@ -143,20 +143,37 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
 
   /* ---------- scroll reveal + glass fill ---------- */
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  /* ---------- فيديو «تعرف على كالم كاسترو»: نافذة تظهر من موضع الزر، والفيديو يُحمَّل عند أول فتح ---------- */
+  /* ---------- فيديو «تعرف على كالم كاسترو»: نافذة تظهر من موضع الزر، والفيديو يُحمَّل عند أول فتح.
+     أول زيارة: عند وصول الزائر للزر يظهر مؤشر يضغطه تلقائياً ويُفتح الفيديو بدون صوت (المتصفحات تمنع الصوت بلا لمسة)،
+     مع زر «اضغط لتشغيل الصوت». مرة واحدة لكل زائر، ولا يحدث إن كان مشغولاً بالسلة أو المساعد أو الطلب ---------- */
   (function introVideo(){
     const openBtn = document.getElementById("introOpen"), dlg = document.getElementById("introDialog");
     if (!openBtn || !dlg || typeof dlg.showModal !== "function") return;
-    const video = document.getElementById("introVideo"), closeBtn = document.getElementById("introClose");
-    function open(){
+    const video = document.getElementById("introVideo"), closeBtn = document.getElementById("introClose"), soundBtn = document.getElementById("introSound");
+    const SEEN = "cg-intro-seen";
+    const seen = () => { try { return localStorage.getItem(SEEN) === "1"; } catch (_) { return true; } };
+    const markSeen = () => { try { localStorage.setItem(SEEN, "1"); } catch (_) {} };
+    let autoOpened = false;
+
+    function showSound(){
+      const muted = video.muted || video.paused;
+      soundBtn.hidden = !muted;
+      if (muted) soundBtn.querySelector("span").textContent = video.paused ? t("اضغط لتشغيل الفيديو") : t("اضغط لتشغيل الصوت");
+    }
+    function open(auto){
+      markSeen(); autoOpened = !!auto;
       const r = openBtn.getBoundingClientRect();
       dlg.style.setProperty("--fx", Math.round(r.left + r.width / 2 - innerWidth / 2) + "px");
       dlg.style.setProperty("--fy", Math.round(r.top + r.height / 2 - innerHeight / 2) + "px");
       if (!video.src) video.src = video.dataset.src;
       dlg.classList.remove("closing");
       dlg.showModal(); document.documentElement.classList.add("vm-open");
+      video.muted = !!auto;                 // ضغطة حقيقية: بالصوت. ضغطة تلقائية: بدون صوت حتى يلمس الزائر
       video.currentTime = 0;
-      const p = video.play(); if (p && p.catch) p.catch(() => {});      // بدون صوت تلقائي إن منعه المتصفح: يبقى زر التشغيل
+      soundBtn.hidden = !auto;                                            // يظهر فوراً مع الفتح التلقائي (قبل اكتمال التحميل)
+      if (auto) soundBtn.querySelector("span").textContent = t("اضغط لتشغيل الصوت");
+      const p = video.play();
+      if (p && p.then) p.then(showSound, showSound); else showSound();   // وضع توفير الطاقة قد يمنع التشغيل: يظهر «اضغط لتشغيل الفيديو»
       closeBtn.focus({ preventScroll: true });
     }
     function close(){
@@ -166,11 +183,72 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
       dlg.classList.add("closing");
       setTimeout(() => { dlg.close(); dlg.classList.remove("closing"); }, 270);
     }
-    openBtn.addEventListener("click", open);
+    openBtn.addEventListener("click", e => { if (e.isTrusted) open(false); });
     closeBtn.addEventListener("click", close);
+    soundBtn.addEventListener("click", () => { video.muted = false; const p = video.play(); if (p && p.catch) p.catch(() => {}); soundBtn.hidden = true; });
+    video.addEventListener("volumechange", () => { if (!video.muted) soundBtn.hidden = true; });
+    video.addEventListener("play", () => { if (!video.muted) soundBtn.hidden = true; });
+    video.addEventListener("ended", () => { if (autoOpened) setTimeout(close, 600); });
     dlg.addEventListener("cancel", e => { e.preventDefault(); close(); });                 // Esc
     dlg.addEventListener("click", e => { if (e.target === dlg) close(); });               // الضغط خارج الفيديو
-    dlg.addEventListener("close", () => { video.pause(); document.documentElement.classList.remove("vm-open"); openBtn.focus({ preventScroll: true }); });
+    dlg.addEventListener("close", () => { video.pause(); soundBtn.hidden = true; document.documentElement.classList.remove("vm-open"); openBtn.focus({ preventScroll: true }); });
+
+    /* ---- الضغطة التلقائية ---- */
+    const saveData = navigator.connection && navigator.connection.saveData;
+    if (seen() || reduce || saveData || !("IntersectionObserver" in window) || !Element.prototype.animate) return;
+    const busy = () => document.visibilityState !== "visible" || dlg.open || document.body.classList.contains("view-active")
+      || !(document.getElementById("cartDrawer") || {}).hidden || !(document.getElementById("aiPanel") || {}).hidden
+      || /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || "");
+    const fine = matchMedia("(pointer: fine)").matches;
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    let visible = false, timer = null, running = false;
+    const stillThere = () => { const r = openBtn.getBoundingClientRect(); return visible && !busy() && r.top >= 0 && r.bottom <= innerHeight; };
+
+    async function demo(){
+      if (running || seen()) return;
+      running = true;
+      const ARROW = '<svg class="arrow" viewBox="0 0 32 32" aria-hidden="true"><path d="M6 3.5 25 16.4l-8.3 1.3 4.8 9.6-3.8 1.9-4.8-9.7L6 25.2Z" fill="#fff" stroke="#12302E" stroke-width="1.9" stroke-linejoin="round"/></svg>';
+      const HAND = '<svg class="hand" viewBox="0 0 32 32" aria-hidden="true"><path d="M11.6 2.6c1.3 0 2.3 1 2.3 2.3v8l.9-.1c.3-1 1.2-1.7 2.2-1.7s1.9.6 2.2 1.5c.4-.6 1.1-1 1.9-1 1.1 0 2 .7 2.2 1.7.4-.4 1-.6 1.6-.6 1.3 0 2.3 1 2.3 2.3v6.4c0 4.7-3.8 8.5-8.5 8.5h-1.8c-2.6 0-5-1.2-6.6-3.2L5 20.1c-.8-1-.6-2.4.4-3.2 1-.8 2.4-.7 3.2.2l.6.7V4.9c0-1.3 1-2.3 2.4-2.3Z" fill="#fff" stroke="#12302E" stroke-width="1.8" stroke-linejoin="round"/></svg>';
+      const cur = document.createElement("div");
+      cur.className = "auto-cursor"; cur.setAttribute("aria-hidden", "true"); cur.innerHTML = fine ? ARROW + HAND : HAND;
+      if (!fine) cur.classList.add("on-btn");
+      document.body.appendChild(cur);
+      const tip = fine ? [7, 4] : [14, 3];                                     // رأس المؤشر داخل الأيقونة (40×40)
+      const r = openBtn.getBoundingClientRect();
+      const tx = r.left + r.width * .5, ty = r.top + r.height * .55;
+      const sx = Math.min(innerWidth - 48, tx + Math.min(170, innerWidth * .32)), sy = Math.min(innerHeight - 48, ty + 120);
+      const at = (x, y, sc = 1) => `translate(${x - tip[0]}px, ${y - tip[1]}px) scale(${sc})`;
+      const step = (kf, ms, easing = "ease") => cur.animate(kf, { duration: ms, easing, fill: "forwards" }).finished;
+      const abort = () => { cur.remove(); openBtn.classList.remove("hover-sim", "pressed"); running = false; };
+      try {
+        await step([{ opacity: 0, transform: at(sx, sy, .6) }, { opacity: 1, transform: at(sx, sy) }], 280, "ease-out");
+        await step([{ transform: at(sx, sy) }, { transform: at((sx + tx) / 2 + 24, (sy + ty) / 2 + 30), offset: .55 }, { transform: at(tx, ty) }], 1050, "cubic-bezier(.45,.05,.3,1)");
+        if (!stillThere()) return abort();
+        cur.classList.add("on-btn"); openBtn.classList.add("hover-sim");
+        await sleep(380);
+        if (!stillThere()) return abort();
+        const rip = document.createElement("span"); rip.className = "click-ripple"; rip.style.left = tx + "px"; rip.style.top = ty + "px";
+        document.body.appendChild(rip); setTimeout(() => rip.remove(), 700);
+        openBtn.classList.add("pressed");
+        await step([{ transform: at(tx, ty) }, { transform: at(tx, ty, .82) }, { transform: at(tx, ty) }], 220);
+        openBtn.classList.remove("pressed");
+        await sleep(160);
+        if (busy()) return abort();
+        open(true);
+        io.disconnect();
+        step([{ opacity: 1, transform: at(tx, ty) }, { opacity: 0, transform: at(tx + 10, ty + 14, .9) }], 300).then(() => cur.remove());
+        setTimeout(() => openBtn.classList.remove("hover-sim"), 400);
+        running = false;
+      } catch (_) { abort(); }
+    }
+    // يبدأ عندما يظهر الزر كاملاً ويبقى ظاهراً قليلاً (ليس أثناء مرور سريع)
+    const io = new IntersectionObserver(([en]) => {
+      visible = en.intersectionRatio >= .95;
+      clearTimeout(timer);
+      if (visible) timer = setTimeout(() => { if (stillThere()) demo(); }, 900);
+    }, { threshold: [0, .95, 1] });
+    io.observe(openBtn);
+    openBtn.addEventListener("click", e => { if (e.isTrusted) io.disconnect(); });
   })();
 
   if ("IntersectionObserver" in window && !reduce){
