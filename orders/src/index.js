@@ -139,7 +139,8 @@ async function adminApi(request, env, url) {
     case "POST /me/2fa/start": return json(await A.startTwoFactor(env, ctx));
     case "POST /me/2fa/enable": return json(await A.enableTwoFactor(env, ctx, body));
     case "POST /me/2fa/disable": return json(await A.disableTwoFactor(env, ctx, body));
-    case "GET /dashboard": return json(await A.dashboard(env, ctx));
+    case "GET /dashboard": return json(await A.dashboard(env, ctx, p));
+    case "GET /cities": return json(await A.cityList(env, ctx));
     case "GET /reports": return json(await A.reports(env, ctx, p));
     case "GET /orders": return json(await A.listOrders(env, ctx, p));
     case "GET /orders/matching": return json(await A.matchingNumbers(env, ctx, p));

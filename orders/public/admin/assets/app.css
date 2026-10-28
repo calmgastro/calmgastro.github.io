@@ -166,3 +166,6 @@ details.data summary{cursor:pointer; color:var(--teal); font-size:.88rem; margin
   .tile .v{font-size:1.4rem}
 }
 @media (prefers-reduced-motion:reduce){ *{transition:none !important} }
+/* فلتر المدينة + جدول المدن في التقارير */
+.city-filter{max-width:240px}
+.city-table tr[aria-current="true"] td{background:var(--lime); font-weight:600}

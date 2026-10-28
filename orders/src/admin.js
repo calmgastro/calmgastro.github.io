@@ -3,6 +3,7 @@
 import { STATUSES, FLOW, LABELS, LOCKED, allowedTransition, nextOptions, notifyMessage } from "./statuses.js";
 import { loadOrder, localPhone, normalizeOrderNumber, normalizePhone, latinDigits, HttpError } from "./orders.js";
 import { getCatalog, priceForBoxes } from "./catalog.js";
+import { groupCities, citySpellings } from "./cities.js";
 import { audit, auditStmt, hashPassword, verifyPassword, passwordProblem, validUsername, revokeAllStmt,
          encryptSecret, decryptSecret, verifyTotp, base32 } from "./auth.js";
 
@@ -26,7 +27,14 @@ export function me(ctx) {
 const riyadhMidnight = (offsetDays = 0) => { const r = new Date(Date.now() + 3 * 3600e3); r.setUTCHours(0, 0, 0, 0); return new Date(r.getTime() - 3 * 3600e3 + offsetDays * DAY); };
 const dayStart = d => new Date(Date.parse(d + "T00:00:00+03:00"));
 
-function orderFilter(params) {
+// ?city=<key from /cities>: every spelling customers used for that city (see cities.js)
+const cityKeyParam = params => { const c = String(params.get("city") || "").slice(0, 200); return c || null; };
+async function filterFor(env, params) {
+  const key = cityKeyParam(params);
+  return orderFilter(params, key ? await citySpellings(env, key) : null);
+}
+
+function orderFilter(params, spellings = null) {
   const where = [], binds = [];
   const add = (sql, ...v) => where.push(sql.replace(/\?/g, () => `?${binds.push(v.shift())}`));
   const q = String(params.get("q") || "").trim().slice(0, 60);
@@ -45,6 +53,10 @@ function orderFilter(params) {
   else if (status === "OPEN") where.push("o.status IN ('RECEIVED','CONFIRMED','PREPARING','SHIPPED','OUT_FOR_DELIVERY','ON_HOLD')");
   const payment = params.get("payment");
   if (payment === "cod") add("o.payment_method = ?", payment);
+  if (spellings) {
+    if (spellings.length) add("o.city IN (" + spellings.map(() => "?").join(",") + ")", ...spellings);
+    else where.push("0");                                   // a city with no orders (or an unknown key) matches nothing
+  }
   const range = params.get("range");
   let from = null, to = null;
   if (range === "today") from = riyadhMidnight(0);
@@ -65,7 +77,7 @@ function orderFilter(params) {
 
 export async function listOrders(env, ctx, params) {
   need(ctx, "orders.view");
-  const f = orderFilter(params);
+  const f = await filterFor(env, params);
   const per = [25, 50, 100].includes(Number(params.get("per"))) ? Number(params.get("per")) : 25;
   const page = Math.max(1, Math.min(100000, parseInt(params.get("page"), 10) || 1));
   const sort = params.get("sort") === "updated" ? "o.updated_at DESC" : "o.id DESC";
@@ -88,7 +100,7 @@ export async function listOrders(env, ctx, params) {
 export const BULK_MAX = 500;
 export async function matchingNumbers(env, ctx, params) {
   need(ctx, "orders.view");
-  const f = orderFilter(params);
+  const f = await filterFor(env, params);
   const [rows, count] = await Promise.all([
     env.DB.prepare(`SELECT o.order_number FROM orders o ${f.sql} ORDER BY o.id DESC LIMIT ${BULK_MAX}`).bind(...f.binds).all(),
     env.DB.prepare(`SELECT COUNT(*) AS n FROM orders o ${f.sql}`).bind(...f.binds).first()
@@ -99,7 +111,7 @@ export async function matchingNumbers(env, ctx, params) {
 /* ---------- CSV export (respects the filters; formulas neutralised for Excel) ---------- */
 export async function exportCsv(env, ctx, params) {
   need(ctx, "orders.export");
-  const f = orderFilter(params);
+  const f = await filterFor(env, params);
   const rows = (await env.DB.prepare(`SELECT o.*, (SELECT group_concat(i.product_name_snapshot || ' × ' || i.quantity, ' | ') FROM order_items i WHERE i.order_id = o.id) products,
       (SELECT SUM(i.quantity) FROM order_items i WHERE i.order_id = o.id) qty
     FROM orders o ${f.sql} ORDER BY o.id DESC LIMIT 10000`).bind(...f.binds).all()).results;
@@ -356,33 +368,54 @@ export async function anonymize(env, ctx, number, body) {
   return orderDetail(env, ctx, o.order_number);
 }
 
-/* ---------- dashboard and reports ---------- */
-export async function dashboard(env, ctx) {
+/* ---------- dashboard and reports (optional ?city=<key>) ---------- */
+// " AND city IN (?n, …)" numbered after the query's own parameters; " AND 0" for a city without orders; "" without a filter
+function cityClause(spellings, col, first) {
+  if (!spellings) return "";
+  if (!spellings.length) return " AND 0";
+  return ` AND ${col} IN (${spellings.map((_, i) => "?" + (first + i)).join(",")})`;
+}
+const cityFilterFor = async (env, params) => { const key = cityKeyParam(params); return key ? await citySpellings(env, key) : null; };
+
+export async function cityList(env, ctx) {
+  if (!["dashboard.view", "orders.view", "reports.view"].some(p => ctx.perms.has(p))) throw new HttpError(403, { error: "forbidden" });
+  const rows = (await env.DB.prepare("SELECT city, COUNT(*) n FROM orders WHERE anonymized_at IS NULL GROUP BY city").all()).results;
+  return { cities: groupCities(rows).map(c => ({ key: c.key, name: c.name, orders: c.n })) };
+}
+
+export async function dashboard(env, ctx, params = new URLSearchParams()) {
   need(ctx, "dashboard.view");
+  const sp = await cityFilterFor(env, params), cb = sp || [];
   const today = riyadhMidnight(0).toISOString();
   const [byStatus, todayRow, latest] = await Promise.all([
-    env.DB.prepare("SELECT status, COUNT(*) n FROM orders WHERE archived_at IS NULL GROUP BY status").all(),
-    env.DB.prepare("SELECT COUNT(*) n FROM orders WHERE created_at >= ?1").bind(today).first(),
-    env.DB.prepare("SELECT order_number, customer_name, total_amount, currency, status, created_at FROM orders ORDER BY id DESC LIMIT 8").all()
+    env.DB.prepare(`SELECT status, COUNT(*) n FROM orders WHERE archived_at IS NULL${cityClause(sp, "city", 1)} GROUP BY status`).bind(...cb).all(),
+    env.DB.prepare(`SELECT COUNT(*) n FROM orders WHERE created_at >= ?1${cityClause(sp, "city", 2)}`).bind(today, ...cb).first(),
+    env.DB.prepare(`SELECT order_number, customer_name, customer_phone, city, total_amount, currency, payment_method, status, created_at, updated_at, archived_at
+      FROM orders WHERE 1${cityClause(sp, "city", 1)} ORDER BY id DESC LIMIT 8`).bind(...cb).all()
   ]);
   return { today: todayRow.n, byStatus: Object.fromEntries(byStatus.results.map(r => [r.status, r.n])),
-    latest: latest.results.map(r => ({ orderNumber: r.order_number, customerName: r.customer_name, total: r.total_amount, currency: r.currency, status: r.status, createdAt: r.created_at })) };
+    latest: latest.results.map(r => ({ orderNumber: r.order_number, customerName: r.customer_name, phone: localPhone(r.customer_phone), city: r.city, total: r.total_amount,
+      currency: r.currency, paymentMethod: r.payment_method, status: r.status, createdAt: r.created_at, updatedAt: r.updated_at, archived: !!r.archived_at })) };
 }
 
 export async function reports(env, ctx, params) {
   need(ctx, "reports.view");
   const days = [7, 30, 90].includes(Number(params.get("days"))) ? Number(params.get("days")) : 30;
   const since = riyadhMidnight(-(days - 1)).toISOString();
+  const sp = await cityFilterFor(env, params), cb = sp || [], C1 = cityClause(sp, "city", 1), C2 = cityClause(sp, "city", 2);
   const REV = "status NOT IN ('CANCELLED','FAILED')";
-  const period = from => env.DB.prepare(`SELECT COUNT(*) n, COALESCE(SUM(CASE WHEN ${REV} THEN total_amount END), 0) revenue FROM orders WHERE created_at >= ?1`).bind(from).first();
-  const [all, today, week, month, daily, status, products] = await Promise.all([
-    env.DB.prepare(`SELECT COUNT(*) n, COALESCE(SUM(CASE WHEN ${REV} THEN total_amount END), 0) revenue FROM orders`).first(),
+  const period = from => env.DB.prepare(`SELECT COUNT(*) n, COALESCE(SUM(CASE WHEN ${REV} THEN total_amount END), 0) revenue FROM orders WHERE created_at >= ?1${C2}`).bind(from, ...cb).first();
+  const [all, today, week, month, daily, status, products, cities] = await Promise.all([
+    env.DB.prepare(`SELECT COUNT(*) n, COALESCE(SUM(CASE WHEN ${REV} THEN total_amount END), 0) revenue FROM orders WHERE 1${C1}`).bind(...cb).first(),
     period(riyadhMidnight(0).toISOString()), period(riyadhMidnight(-6).toISOString()), period(riyadhMidnight(-29).toISOString()),
     env.DB.prepare(`SELECT substr(datetime(created_at, '+3 hours'), 1, 10) d, COUNT(*) n, COALESCE(SUM(CASE WHEN ${REV} THEN total_amount END), 0) revenue
-      FROM orders WHERE created_at >= ?1 GROUP BY d ORDER BY d`).bind(since).all(),
-    env.DB.prepare("SELECT status, COUNT(*) n FROM orders WHERE created_at >= ?1 GROUP BY status").bind(since).all(),
+      FROM orders WHERE created_at >= ?1${C2} GROUP BY d ORDER BY d`).bind(since, ...cb).all(),
+    env.DB.prepare(`SELECT status, COUNT(*) n FROM orders WHERE created_at >= ?1${C2} GROUP BY status`).bind(since, ...cb).all(),
     env.DB.prepare(`SELECT i.product_id, MAX(i.product_name_snapshot) name, SUM(i.quantity) qty, SUM(i.boxes_per_unit * i.quantity) boxes, SUM(i.line_total) revenue
-      FROM order_items i JOIN orders o ON o.id = i.order_id WHERE o.created_at >= ?1 AND o.${REV} GROUP BY i.product_id ORDER BY boxes DESC`).bind(since).all()
+      FROM order_items i JOIN orders o ON o.id = i.order_id WHERE o.created_at >= ?1 AND o.${REV}${cityClause(sp, "o.city", 2)} GROUP BY i.product_id ORDER BY boxes DESC`).bind(since, ...cb).all(),
+    // every city in the period (not narrowed by the city filter), so the cities can be compared and one picked
+    env.DB.prepare(`SELECT city, COUNT(*) n, COALESCE(SUM(CASE WHEN ${REV} THEN total_amount END), 0) revenue, COALESCE(SUM(CASE WHEN ${REV} THEN boxes END), 0) boxes
+      FROM orders WHERE created_at >= ?1 AND anonymized_at IS NULL GROUP BY city`).bind(since).all()
   ]);
   // fill missing days with zeros so the charts have a continuous axis
   const map = new Map(daily.results.map(r => [r.d, r])), series = [];
@@ -391,7 +424,8 @@ export async function reports(env, ctx, params) {
     series.push({ date: d, orders: map.get(d) ? map.get(d).n : 0, revenue: map.get(d) ? map.get(d).revenue : 0 });
   }
   return { days, totals: { all, today, week, month }, series, byStatus: Object.fromEntries(status.results.map(r => [r.status, r.n])),
-    products: products.results.map(p => ({ productId: p.product_id, name: p.name, quantity: p.qty, boxes: p.boxes, revenue: p.revenue })) };
+    products: products.results.map(p => ({ productId: p.product_id, name: p.name, quantity: p.qty, boxes: p.boxes, revenue: p.revenue })),
+    cities: groupCities(cities.results).map(c => ({ key: c.key, name: c.name, orders: c.n, revenue: c.revenue, boxes: c.boxes })) };
 }
 
 /* ---------- customers (from orders, grouped by mobile number) ---------- */

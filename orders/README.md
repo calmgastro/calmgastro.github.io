@@ -10,7 +10,7 @@ number like `CG-2026-000123`, and is managed from the admin panel. WhatsApp is o
   workers.dev with the same idempotency key (one order, never two). Custom domain declared in `wrangler.toml`; DNS zone on Cloudflare.
 - Database: D1 `calmgastro-orders` (free plan); schema in `migrations/`
 - Code: `src/index.js` routes · `src/orders.js` order creation + customer views · `src/catalog.js` trusted prices ·
-  `src/statuses.js` lifecycle · `src/auth.js` login, sessions, 2FA · `src/admin.js` admin API · `public/admin/` admin UI
+  `src/statuses.js` lifecycle · `src/auth.js` login, sessions, 2FA · `src/admin.js` admin API · `src/cities.js` city grouping for filters/reports · `public/admin/` admin UI
 
 ## Customer flow
 
@@ -47,6 +47,15 @@ status) is an **override**: Super Admin only, with explicit confirmation, record
 and prices are locked from `SHIPPED` on; changing them requires an explicit "force" confirmation and is audited.
 Exceptional statuses appear in the customer timeline only when they happen (e.g. received → confirmed → ملغي).
 Each status note is either **internal** or **customer-visible** (shown in tracking and added to the queued notification).
+
+## City filter
+
+Customers type the city freely, so one city arrives as «الرياض», «رياض», «Riyadh», «الرياض - حي العليا»…
+`src/cities.js` folds the spellings (alef forms, ة/ه, ى/ي, tashkeel, leading «ال»/"al", first word(s) of the field) and
+maps ~40 Saudi cities (Arabic + English names) to one key and display name; other cities keep the customer's spelling.
+Orders keep the city exactly as typed: `?city=<key>` is resolved to the spellings in the database and filtered with
+`city IN (…)` (most common 80 spellings per city — D1's bound-value limit). Used by the dashboard, the orders list
+(and select-all, bulk, CSV export) and the reports, which also show orders / boxes / revenue per city for the period.
 
 ## Admin access
 
@@ -86,8 +95,8 @@ Public (CORS: vitamik.com only; 10 orders/min/IP, 30 lookups/min/IP):
 
 Admin (`/admin/api/*`, session cookie; POST needs `X-CG-Admin: 1`):
 `GET /setup` · `POST /setup` · `POST /login` · `POST /login/2fa` · `POST /logout` · `GET /me` · `POST /me/password` ·
-`POST /me/2fa/start|enable|disable` · `GET /dashboard` · `GET /reports?days=7|30|90` ·
-`GET /orders?q=&status=&payment=&range=today|yesterday|7d|30d&from=&to=&archived=&phone=&page=&per=25|50|100` ·
+`POST /me/2fa/start|enable|disable` · `GET /cities` · `GET /dashboard?city=` · `GET /reports?days=7|30|90&city=` ·
+`GET /orders?q=&status=&payment=&city=&range=today|yesterday|7d|30d&from=&to=&archived=&phone=&page=&per=25|50|100` ·
 `GET /orders/matching?<same filters>` (select-all, max 500) · `GET /orders/export.csv?<same filters>` ·
 `POST /orders/bulk-status { numbers, status, note, visibility, override, expectedCount }` ·
 `GET /orders/{n}` · `POST /orders/{n}/status|customer|items|notes|archive|revoke-link|anonymize` ·

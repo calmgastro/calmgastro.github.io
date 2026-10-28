@@ -226,13 +226,40 @@ function pageForcedPassword() {
   ERR.mismatch_pw = "كلمتا المرور غير متطابقتين.";
 }
 
+/* ============================================================ فلتر المدينة (مشترك) */
+// المدينة يكتبها العميل بحرية؛ الخادم يجمع طرق الكتابة المختلفة (الرياض / رياض / Riyadh) تحت مفتاح واحد
+let citiesCache = null;            // { at, list } — refreshed every minute so cities from new orders appear without reloading
+async function cityOptions() {
+  if (!citiesCache || Date.now() - citiesCache.at > 60000) {
+    try { citiesCache = { at: Date.now(), list: (await api("/cities")).cities }; } catch (e) { if (e.message === "unauthorized") throw e; return citiesCache ? citiesCache.list : []; }
+  }
+  return citiesCache.list;
+}
+function citySelect(current, onChange) {
+  const sel = h("select", { "aria-label": "المدينة", class: "city-filter" }, h("option", { value: "", text: "كل المدن" }));
+  if (current) sel.append(h("option", { value: current, text: "…", selected: true }));
+  cityOptions().then(list => {
+    sel.textContent = "";
+    put(sel, h("option", { value: "", text: "كل المدن" }), list.map(c => h("option", { value: c.key, text: `${c.name} (${fmtN(c.orders)})`, selected: c.key === current })));
+    if (current && !list.some(c => c.key === current)) sel.append(h("option", { value: current, text: "مدينة بدون طلبات", selected: true }));
+  }).catch(() => {});
+  sel.addEventListener("change", () => onChange(sel.value));
+  return sel;
+}
+const cityName = async key => { const c = (await cityOptions()).find(x => x.key === key); return c ? c.name : ""; };
+const withCity = (path, city) => city ? path + (path.includes("?") ? "&" : "?") + "city=" + encodeURIComponent(city) : path;
+
 /* ============================================================ لوحة المعلومات */
 async function pageDashboard() {
-  const main = shell("dashboard", h("h1", { text: "لوحة المعلومات" }), h("p", { class: "muted", text: "جارٍ التحميل…" }));
-  let d; try { d = await api("/dashboard"); } catch (e) { if (e.message !== "unauthorized") main.lastChild.textContent = errText(e); return; }
-  const s = d.byStatus, tile = (k, v, link, hint) => h("a", { class: "tile", href: link, "data-link": true }, h("span", { class: "k", text: k }), h("div", { class: "v num", text: fmtN(v) }), hint ? h("span", { class: "s", text: hint }) : null);
+  const city = new URLSearchParams(location.search).get("city") || "";
+  const head = h("div", { class: "page-head" }, h("h1", { text: "لوحة المعلومات" }), citySelect(city, v => go(withCity("/admin/dashboard", v))));
+  const main = shell("dashboard", head, h("p", { class: "muted", text: "جارٍ التحميل…" }));
+  let d; try { d = await api(withCity("/dashboard", city)); } catch (e) { if (e.message !== "unauthorized") main.lastChild.textContent = errText(e); return; }
+  const s = d.byStatus, tile = (k, v, link, hint) => h("a", { class: "tile", href: withCity(link, city), "data-link": true }, h("span", { class: "k", text: k }), h("div", { class: "v num", text: fmtN(v) }), hint ? h("span", { class: "s", text: hint }) : null);
   main.textContent = "";
-  put(main, h("h1", { text: "لوحة المعلومات" }),
+  const note = city ? h("p", { class: "note-box" }, "معروض لمدينة: ", h("b", { class: "js-city-name", text: "…" }), " · ", h("a", { href: "/admin/dashboard", "data-link": true, text: "عرض كل المدن" })) : null;
+  if (note) cityName(city).then(n => { note.querySelector(".js-city-name").textContent = n || "مدينة بدون طلبات"; });
+  put(main, head, note,
     h("div", { class: "tiles" },
       tile("طلبات اليوم", d.today, "/admin/orders?range=today"),
       tile("طلبات جديدة", s.RECEIVED || 0, "/admin/orders?status=RECEIVED", "بانتظار التأكيد"),
@@ -244,7 +271,7 @@ async function pageDashboard() {
       tile("ملغي", s.CANCELLED || 0, "/admin/orders?status=CANCELLED"),
       tile("معلّق / متعذّر", (s.ON_HOLD || 0) + (s.FAILED || 0), "/admin/orders?status=ON_HOLD")),
     h("section", { class: "card" }, h("h2", { text: "أحدث الطلبات" }), orderTable(d.latest, { selectable: false })));
-  document.title = (s.RECEIVED ? `(${s.RECEIVED}) ` : "") + "إدارة CalmGastro";
+  if (!city) document.title = (s.RECEIVED ? `(${s.RECEIVED}) ` : "") + "إدارة CalmGastro";
 }
 
 /* ============================================================ الطلبات */
@@ -255,13 +282,13 @@ function orderTable(orders, { selectable, onToggle } = {}) {
   if (all) all.addEventListener("change", () => { orders.forEach(o => all.checked ? selected.add(o.orderNumber) : selected.delete(o.orderNumber)); onToggle && onToggle(); });
   return h("div", { class: "table-wrap" }, h("table", null,
     h("thead", null, h("tr", null, selectable ? h("th", { class: "sel" }, all) : null,
-      ["رقم الطلب", "العميل", "الجوال", "التاريخ", "الإجمالي", "الدفع", "الحالة", "آخر تحديث", ""].map(t => h("th", { text: t })))),
+      ["رقم الطلب", "العميل", "الجوال", "المدينة", "التاريخ", "الإجمالي", "الدفع", "الحالة", "آخر تحديث", ""].map(t => h("th", { text: t })))),
     h("tbody", null, orders.map(o => {
       const cb = selectable ? h("input", { type: "checkbox", "aria-label": "تحديد " + o.orderNumber, checked: selected.has(o.orderNumber) }) : null;
       if (cb) cb.addEventListener("change", () => { cb.checked ? selected.add(o.orderNumber) : selected.delete(o.orderNumber); onToggle && onToggle(); });
       return h("tr", null, selectable ? h("td", { class: "sel" }, cb) : null,
         h("td", null, h("a", { href: "/admin/orders/" + o.orderNumber, "data-link": true, class: "num", text: o.orderNumber })),
-        h("td", { text: o.customerName }), h("td", { class: "num", text: o.phone || "" }), h("td", { text: when(o.createdAt) }),
+        h("td", { text: o.customerName }), h("td", { class: "num", text: o.phone || "" }), h("td", { text: o.city || "" }), h("td", { text: when(o.createdAt) }),
         h("td", { text: money(o.total) }), h("td", { text: o.paymentMethod === "cod" || !o.paymentMethod ? "عند الاستلام" : o.paymentMethod }),
         h("td", null, badge(o.status), o.archived ? h("span", { class: "tag", text: " مؤرشف" }) : null),
         h("td", { text: o.updatedAt ? when(o.updatedAt) : "" }),
@@ -273,7 +300,7 @@ async function pageOrders() {
   const P = new URLSearchParams(location.search);
   const main = shell("orders");
   const state = { q: P.get("q") || "", status: P.get("status") || "", payment: P.get("payment") || "", range: P.get("range") || "", from: P.get("from") || "", to: P.get("to") || "",
-                  archived: P.get("archived") || "", phone: P.get("phone") || "", per: P.get("per") || "25", page: P.get("page") || "1" };
+                  archived: P.get("archived") || "", phone: P.get("phone") || "", city: P.get("city") || "", per: P.get("per") || "25", page: P.get("page") || "1" };
   const qs = (extra = {}) => { const u = new URLSearchParams(); Object.entries({ ...state, ...extra }).forEach(([k, v]) => { if (v && !(k === "per" && v === "25") && !(k === "page" && v === "1")) u.set(k, v); }); return u.toString(); };
   const reload = (extra = {}) => { Object.assign(state, extra); history.replaceState(null, "", "/admin/orders" + (qs() ? "?" + qs() : "")); load(); };
 
@@ -282,6 +309,7 @@ async function pageOrders() {
     ORDER.map(s => h("option", { value: s, text: STATUS[s], selected: state.status === s })));
   if (state.status === "OPEN") st.value = "OPEN";
   const pay = h("select", { "aria-label": "طريقة الدفع" }, h("option", { value: "", text: "كل طرق الدفع" }), h("option", { value: "cod", text: "الدفع عند الاستلام", selected: state.payment === "cod" }));
+  const city = citySelect(state.city, () => apply());
   const range = h("select", { "aria-label": "الفترة" }, [["", "كل التواريخ"], ["today", "اليوم"], ["yesterday", "أمس"], ["7d", "آخر 7 أيام"], ["30d", "آخر 30 يوماً"], ["custom", "فترة مخصصة"]]
     .map(([v, t]) => h("option", { value: v, text: t, selected: (state.range || (state.from || state.to ? "custom" : "")) === v })));
   const from = h("input", { type: "date", "aria-label": "من تاريخ", value: state.from }), to = h("input", { type: "date", "aria-label": "إلى تاريخ", value: state.to });
@@ -290,9 +318,9 @@ async function pageOrders() {
   const per = h("select", { "aria-label": "عدد الطلبات في الصفحة" }, ["25", "50", "100"].map(v => h("option", { value: v, text: v + " في الصفحة", selected: state.per === v })));
   const showCustom = () => { custom.hidden = range.value !== "custom"; };
   showCustom();
-  const apply = () => reload({ q: q.value.trim(), status: st.value, payment: pay.value, range: range.value === "custom" ? "" : range.value,
+  const apply = () => reload({ q: q.value.trim(), status: st.value, payment: pay.value, city: city.value, range: range.value === "custom" ? "" : range.value,
     from: range.value === "custom" ? from.value : "", to: range.value === "custom" ? to.value : "", archived: arch.value, per: per.value, page: "1" });
-  const form = h("form", { class: "filters", onsubmit: e => { e.preventDefault(); apply(); } }, q, st, pay, range, custom, arch, per,
+  const form = h("form", { class: "filters", onsubmit: e => { e.preventDefault(); apply(); } }, q, st, pay, city, range, custom, arch, per,
     h("button", { type: "submit", class: "btn primary", text: "بحث" }),
     h("button", { type: "button", class: "btn ghost", text: "مسح", onclick: () => { selected.clear(); history.replaceState(null, "", "/admin/orders"); pageOrders(); } }));
   [st, pay, arch, per].forEach(x => x.addEventListener("change", apply));
@@ -715,12 +743,19 @@ function dataTable(head, rows) {
 }
 async function pageReports() {
   const main = shell("reports");
-  const P = new URLSearchParams(location.search), days = P.get("days") || "30";
+  const P = new URLSearchParams(location.search), days = P.get("days") || "30", city = P.get("city") || "";
+  const link = (dd, c) => withCity("/admin/reports?days=" + dd, c);
   const sel = h("select", { "aria-label": "الفترة" }, [["7", "آخر 7 أيام"], ["30", "آخر 30 يوماً"], ["90", "آخر 90 يوماً"]].map(([v, t]) => h("option", { value: v, text: t, selected: v === days })));
-  sel.addEventListener("change", () => go("/admin/reports?days=" + sel.value));
-  put(main, h("div", { class: "page-head" }, h("h1", { text: "التقارير" }), sel), h("p", { class: "muted", text: "جارٍ التحميل…" }));
-  let d; try { d = await api("/reports?days=" + days); } catch (e) { if (e.message !== "unauthorized") main.lastChild.textContent = errText(e); return; }
+  sel.addEventListener("change", () => go(link(sel.value, city)));
+  put(main, h("div", { class: "page-head" }, h("h1", { text: "التقارير" }), h("div", { class: "row" }, citySelect(city, v => go(link(days, v))), sel)),
+    h("p", { class: "muted", text: "جارٍ التحميل…" }));
+  let d; try { d = await api(withCity("/reports?days=" + days, city)); } catch (e) { if (e.message !== "unauthorized") main.lastChild.textContent = errText(e); return; }
   main.lastChild.remove();
+  if (city) {
+    const sc = d.cities.find(c => c.key === city);
+    put(main, h("p", { class: "note-box" }, "التقارير معروضة لمدينة: ", h("b", { text: sc ? sc.name : (await cityName(city)) || "مدينة بدون طلبات" }), " · ",
+      h("a", { href: link(days, ""), "data-link": true, text: "عرض كل المدن" })));
+  }
   const T = d.totals, tile = (k, n, rev) => h("div", { class: "tile" }, h("span", { class: "k", text: k }), h("div", { class: "v num", text: fmtN(n) }), h("span", { class: "s", text: "الإيرادات: " + money(rev) }));
   put(main, h("div", { class: "tiles" }, tile("كل الطلبات", T.all.n, T.all.revenue), tile("اليوم", T.today.n, T.today.revenue), tile("آخر 7 أيام", T.week.n, T.week.revenue), tile("آخر 30 يوماً", T.month.n, T.month.revenue)),
     h("p", { class: "muted small", text: "الإيرادات لا تشمل الطلبات الملغاة أو المتعذّرة. المبالغ عند الاستلام (قبل التحصيل الفعلي)." }));
@@ -733,6 +768,20 @@ async function pageReports() {
     h("section", { class: "card" }, h("h2", { text: "الطلبات حسب الحالة" }), st.length ? hbars(st, { label: r => STATUS[r.s], value: r => r.n }) : h("p", { class: "muted", text: "لا توجد طلبات في الفترة." })),
     h("section", { class: "card" }, h("h2", { text: "الأكثر مبيعاً (بعدد العلب)" }), prods.length ? hbars(prods, { label: r => r.name, value: r => r.boxes }) : h("p", { class: "muted", text: "لا توجد مبيعات في الفترة." }),
       prods.length ? dataTable(["المنتج", "الكمية", "العلب", "الإيرادات"], prods.map(p => [p.name, p.quantity, p.boxes, money(p.revenue)])) : null)));
+  // كل المدن في الفترة (لا يضيّقها فلتر المدينة) للمقارنة؛ الضغط على مدينة يعرض تقاريرها
+  const cities = d.cities, totalN = cities.reduce((a, x) => a + x.orders, 0), PERIOD = { 7: "آخر 7 أيام", 30: "آخر 30 يوماً", 90: "آخر 90 يوماً" }[days] || "";
+  put(main, h("section", { class: "card" }, h("h2", { text: `الطلبات حسب المدينة (${PERIOD})` }),
+    cities.length ? [
+      hbars(cities.slice(0, 12), { label: r => r.name, value: r => r.orders }),
+      cities.length > 12 ? h("p", { class: "muted small", text: `أعلى 12 مدينة من ${fmtN(cities.length)}. الجدول أدناه فيه كل المدن.` }) : null,
+      h("div", { class: "table-wrap" }, h("table", { class: "city-table" },
+        h("thead", null, h("tr", null, ["المدينة", "الطلبات", "العلب", "الإيرادات", "النسبة من الطلبات"].map(t => h("th", { text: t })))),
+        h("tbody", null, cities.map(c => {
+          return h("tr", { "aria-current": c.key === city ? "true" : null },
+            h("td", null, h("a", { href: link(days, c.key), "data-link": true, text: c.name })), h("td", { class: "num", text: fmtN(c.orders) }),
+            h("td", { class: "num", text: fmtN(c.boxes) }), h("td", { text: money(c.revenue) }), h("td", { class: "num", text: Math.round(c.orders / Math.max(1, totalN) * 100) + "%" }));
+        }))))
+    ] : h("p", { class: "muted", text: "لا توجد طلبات في الفترة." })));
   // عرض الأعمدة الأفقية بعد الإدراج (بدون أنماط مضمّنة في HTML)
   main.querySelectorAll(".fill[data-w]").forEach(f => { f.style.width = (Number(f.dataset.w) * 100) + "%"; });
 }
