@@ -254,55 +254,83 @@
     .vm-card{animation:vmFade .2s ease both}
   }
 
-  /* ---------- مكونات الظرف: الكوب المستكشف ---------- */
-  .ix{display:grid; grid-template-columns:minmax(230px,300px) minmax(280px,380px); justify-content:center; align-items:stretch; gap:clamp(28px,5vw,72px)}
-  .ix-glass{position:relative; width:100%; aspect-ratio:300/500}
-  .ix-svg{position:absolute; inset:0; width:100%; height:100%; overflow:hidden}
-  /* قبل الصب: كوب فارغ */
-  .ix-stream{transform-box:fill-box; transform-origin:50% 0; transform:scaleY(0); opacity:0}
-  .ix-pink{transform:translateY(380px)}
-  .lyr, .ix-sep, .ix-meniscus, .ix-shade{opacity:0}
-  .ix-wave{animation:ixWave 1.1s linear infinite}
-  @keyframes ixWave{to{transform:translateX(150px)}}
-  /* الصب (≈2.6 ث): تيار وردي ← يرتفع السائل ← تتكوّن الطبقات من الأسفل للأعلى */
-  .ix.pour .ix-stream{animation:ixStream 1.95s cubic-bezier(.4,.1,.3,1) forwards}
-  @keyframes ixStream{0%{opacity:1; transform:scaleY(0)} 16%{opacity:1; transform:scaleY(1)} 70%{opacity:1; transform:scaleY(1) scaleX(1)} 100%{opacity:0; transform:scaleY(1) scaleX(.15)}}
-  .ix.pour .ix-pink{animation:ixRise 1.45s .22s cubic-bezier(.33,.08,.25,1) forwards, ixOut .6s 2s ease forwards}
-  @keyframes ixRise{to{transform:translateY(0)}}
-  @keyframes ixOut{to{opacity:0}}
-  .ix.pour .lyr, .ix.pour .ix-sep{animation:ixIn .55s ease forwards; animation-delay:calc(1.4s + var(--k) * 65ms)}
-  .ix.pour .ix-shade, .ix.pour .ix-meniscus{animation:ixIn .7s 1.5s ease forwards}
-  @keyframes ixIn{to{opacity:1}}
-  /* بعد الصب، أو مباشرة لمن فعّل «تقليل الحركة» */
-  .ix.ready .ix-stream, .ix.ready .ix-pink{animation:none; opacity:0}
-  .ix.ready .lyr, .ix.ready .ix-sep, .ix.ready .ix-shade, .ix.ready .ix-meniscus{animation:none; opacity:1}
-  .ix.static .ix-liquid{animation:vmFade .5s ease both}
-  .lyr{transition:opacity .3s ease}
-  .ix.has-sel .lyr{opacity:.74}
-  .ix.has-sel .lyr.on{opacity:1}
-  .ix-ring{opacity:0; transition:opacity .3s ease}
-  .ix.has-sel .ix-ring{opacity:1}
-  /* الطبقات: أزرار شفافة فوق الكوب (لمس/مرور/لوحة مفاتيح) */
-  .ix-hot{position:absolute; left:10%; right:10%; padding:0; border:0; margin:0; background:transparent; cursor:pointer; border-radius:6px; -webkit-tap-highlight-color:transparent}
-  .ix:not(.ready) .ix-hot{pointer-events:none}
-  .ix-hot:focus-visible{outline:3px solid var(--orange); outline-offset:-3px}
-  .ix-dot{position:absolute; width:14px; height:14px; margin:-7px 0 0 -7px; border-radius:50%; background:#fff; border:3px solid var(--teal-deep);
-    box-shadow:0 0 0 4px rgba(255,255,255,.45); pointer-events:none; opacity:0; transition:top .35s cubic-bezier(.2,.8,.2,1), left .35s ease, opacity .25s ease}
-  .ix.has-sel .ix-dot{opacity:1}
-  .ix-invite{position:absolute; left:50%; width:16px; height:16px; margin:-8px 0 0 -8px; border-radius:50%; background:#fff; pointer-events:none; opacity:0;
-    box-shadow:0 0 0 0 rgba(255,255,255,.7); transition:opacity .3s ease}
-  .ix.ready:not(.touched) .ix-invite{opacity:.95; animation:ixInvite 2.2s ease-out infinite}
-  @keyframes ixInvite{0%{box-shadow:0 0 0 0 rgba(255,255,255,.75)} 70%,100%{box-shadow:0 0 0 16px rgba(255,255,255,0)}}
-  /* البطاقة بجانب الكوب عند ارتفاع الطبقة */
-  .ix-side{position:relative}
-  .ix-card{position:absolute; inset-inline:0; top:0; background:var(--white); border:1px solid var(--line); border-radius:var(--r-md);
-    padding:1.15rem 1.25rem 1rem; box-shadow:0 26px 54px -30px rgba(15,92,87,.55); transition:top .38s cubic-bezier(.2,.8,.2,1)}
-  .ix-card::before{content:""; position:absolute; top:var(--ny,50%); inset-inline-start:-8px; width:14px; height:14px; background:var(--white);
-    border:solid var(--line); transform:translateY(-50%) rotate(45deg); transition:top .38s cubic-bezier(.2,.8,.2,1)}
-  [dir="rtl"] .ix-card::before{border-width:1px 1px 0 0}
-  [dir="ltr"] .ix-card::before{border-width:0 0 1px 1px}
-  .ix-card.is-hint{top:50%; transform:translateY(-50%); background:rgba(255,255,255,.6); box-shadow:none; border-style:dashed}
-  .ix-card.is-hint::before{display:none}
+  /* ---------- مكونات الظرف: طريقة التحضير ثم المكونات ---------- */
+  .ux{display:grid; grid-template-columns:repeat(2, 96px) minmax(260px, 360px) repeat(2, 96px); justify-content:center; align-items:center; gap:14px 16px}
+  .ux-stage{grid-column:3; grid-row:1 / 4; position:relative; width:100%; aspect-ratio:916/1224; margin-top:40%; isolation:isolate}
+  .ux-glass{position:absolute; inset:0; width:100%; height:100%; display:block; user-select:none; -webkit-user-drag:none;
+}   /* الصورة نفسها تذوب في لون الصفحة (#FBFCF6) من الأطراف */
+  .ux-pink{opacity:0}
+  .ux.play .ux-pink{animation:uxMix 2.4s 3s cubic-bezier(.45,0,.25,1) forwards}   /* يتحول المشروب للوردي تدريجياً مع التحريك */
+  @keyframes uxMix{to{opacity:1}}
+  .ux.static .ux-pink{opacity:1; animation:none}
+  .ux-liquid{position:absolute; left:23.5%; right:20.5%; top:27%; bottom:11%; overflow:hidden; pointer-events:none; clip-path:polygon(0 0, 100% 0, 94% 100%, 6% 100%)}
+  .ux-cloud{position:absolute; left:15%; right:15%; top:-12%; aspect-ratio:1; border-radius:50%; background:radial-gradient(circle, rgba(243,140,168,.9), rgba(243,140,168,0) 68%); opacity:0; transform:scale(.2)}
+  .ux.play .ux-cloud{animation:uxCloud 2.3s 1.6s ease-out forwards}
+  @keyframes uxCloud{0%{opacity:0; transform:scale(.2)} 35%{opacity:.95} 100%{opacity:0; transform:scale(1.7) translateY(30%)}}
+  .ux-swirl{position:absolute; left:8%; width:84%; top:8%; height:34%; opacity:0; stroke-dasharray:16 18}
+  .ux.play .ux-swirl{animation:uxSwirlIn 2.7s 3.2s ease forwards}
+  .ux-swirl path{animation:uxSwirl .9s linear infinite}
+  @keyframes uxSwirl{to{stroke-dashoffset:-72}}
+  @keyframes uxSwirlIn{0%{opacity:0} 18%{opacity:.7} 70%{opacity:.6} 100%{opacity:0}}
+  .ux-fizz{position:absolute; inset:0; opacity:0}
+  .ux.play .ux-fizz{animation:uxSwirlIn 3.4s 3.1s ease forwards}
+  .ux-fizz i{position:absolute; bottom:-8%; width:6px; height:6px; border-radius:50%; background:rgba(255,255,255,.9); box-shadow:0 0 0 1px rgba(255,255,255,.5); animation:uxRise 1.5s linear infinite}
+  @keyframes uxRise{0%{transform:translateY(0) scale(.6); opacity:0} 15%{opacity:1} 100%{transform:translateY(-560%) scale(1.1); opacity:0}}
+  .ux-fizz i:nth-child(4n+1){left:14%; animation-delay:-.2s} .ux-fizz i:nth-child(4n+2){left:38%; animation-delay:-.7s; width:4px; height:4px}
+  .ux-fizz i:nth-child(4n+3){left:62%; animation-delay:-1.1s} .ux-fizz i:nth-child(4n){left:82%; animation-delay:-.45s; width:5px; height:5px}
+  .ux-fizz i:nth-child(n+5){bottom:12%; animation-duration:1.8s} .ux-fizz i:nth-child(n+9){bottom:34%; animation-duration:1.3s} .ux-fizz i:nth-child(n+13){bottom:52%}
+  /* الظرف: يدخل، يميل حول زاويته المفتوحة، يُسكب، ثم يخرج */
+  .ux-sachet{position:absolute; z-index:3; width:52%; height:auto; left:0; top:-10%; transform-origin:100% 0; opacity:0; filter:drop-shadow(0 14px 18px rgba(15,60,55,.28)); pointer-events:none}
+  .ux.play .ux-sachet{animation:uxSachet 3.6s .35s cubic-bezier(.4,.1,.3,1) forwards}
+  @keyframes uxSachet{0%{opacity:0; transform:translate(46%,-34%) rotate(-10deg)} 16%{opacity:1; transform:translate(0,0) rotate(0)} 28%{transform:rotate(41deg)} 32%{transform:rotate(36deg)} 36%{transform:rotate(41deg)} 40%{transform:rotate(38deg)} 78%{opacity:1; transform:rotate(39deg)} 94%,100%{opacity:0; transform:translate(36%,-48%) rotate(6deg)}}
+  .ux-stream{position:absolute; z-index:2; left:calc(51.8% - 5px); width:10px; top:-10%; height:38%; border-radius:6px; pointer-events:none;
+    background:linear-gradient(90deg, rgba(244,178,197,.7), rgba(255,236,241,.97) 50%, rgba(244,178,197,.7)); transform-origin:50% 0; transform:scaleY(0); opacity:0}
+  .ux.play .ux-stream{animation:uxStream 1.9s 1.45s ease forwards}
+  @keyframes uxStream{0%{opacity:1; transform:scaleY(0)} 12%{opacity:1; transform:scaleY(1)} 86%{opacity:1; transform:scaleY(1) scaleX(1)} 100%{opacity:0; transform:scaleY(1) scaleX(.12)}}
+  .ux-grains{position:absolute; z-index:2; left:calc(51.8% - 14px); width:28px; top:-8%; height:36%; opacity:0; pointer-events:none}
+  .ux.play .ux-grains{animation:uxSwirlIn 1.9s 1.5s linear forwards}
+  .ux-grains i{position:absolute; top:0; width:3px; height:3px; border-radius:50%; background:#F7C9D5; animation:uxGrain .55s linear infinite}
+  .ux-grains i:nth-child(3n+1){left:4px; animation-delay:-.1s} .ux-grains i:nth-child(3n+2){left:13px; animation-delay:-.3s} .ux-grains i:nth-child(3n){left:22px; animation-delay:-.45s}
+  .ux-grains i:nth-child(n+6){animation-duration:.7s} .ux-grains i:nth-child(n+10){animation-duration:.45s; width:2px; height:2px}
+  @keyframes uxGrain{from{transform:translateY(0)} to{transform:translateY(1400%)}}
+  .ux-pop{position:absolute; z-index:4; width:22px; height:22px; margin:-11px 0 0 -11px; border-radius:50%; border:2px solid rgba(255,255,255,.95); box-shadow:0 0 0 2px rgba(242,148,27,.5); pointer-events:none; animation:uxPop .65s ease-out forwards}
+  @keyframes uxPop{to{transform:scale(3.4); opacity:0}}
+  /* شريط الخطوات أسفل المشهد */
+  .ux-cap{position:absolute; z-index:4; left:50%; bottom:3%; transform:translateX(-50%); margin:0; display:flex; align-items:center; gap:.55em; max-width:94%; width:max-content;
+    padding:.5em 1.05em .5em .9em; border-radius:999px; background:rgba(255,255,255,.95); box-shadow:0 10px 26px -14px rgba(15,60,55,.6);
+    color:var(--teal-deep); font-weight:700; font-size:.95rem; line-height:1.35; opacity:0}
+  .ux-cap.show{animation:uxCap .45s ease forwards}
+  @keyframes uxCap{from{opacity:0; transform:translate(-50%, 8px)} to{opacity:1; transform:translate(-50%, 0)}}
+  .ux-cap b{flex:none; display:grid; place-items:center; width:1.7em; height:1.7em; border-radius:50%; background:var(--orange); color:var(--ink); font-size:.85rem}
+  .ux-cap.hint{color:var(--muted); font-weight:600}
+  .ux-cap.hint b{display:none}
+  /* المكونات حول الكوب */
+  .ux-ing{display:flex; flex-direction:column; align-items:center; gap:.4rem; width:96px; padding:4px 0; margin:0; border:0; background:none; cursor:pointer; color:inherit; font:inherit; border-radius:16px; -webkit-tap-highlight-color:transparent}
+  .ux-ing.hide{opacity:0; pointer-events:none}
+  .ux-orb{width:72px; height:72px; border-radius:50%; display:grid; place-items:center; box-shadow:0 12px 24px -14px rgba(15,92,87,.55), inset 0 0 0 1px rgba(255,255,255,.85);
+    transition:transform .3s cubic-bezier(.3,1.4,.5,1), box-shadow .3s ease}
+  .ux-orb svg, .ux-orb img{width:48px; height:48px; display:block}
+  .ux-nm{font-size:.8rem; font-weight:700; line-height:1.3; text-align:center; color:var(--teal-deep)}
+  .ux-ing:hover .ux-orb{transform:translateY(-3px) scale(1.06)}
+  .ux-ing[aria-pressed="true"] .ux-orb{transform:scale(1.12); box-shadow:0 0 0 3px #fff, 0 0 0 6px var(--orange), 0 16px 28px -12px rgba(242,148,27,.65)}
+  .ux-ing:focus-visible{outline:3px solid var(--orange); outline-offset:3px}
+  .ux-ing:nth-of-type(1){grid-area:1/1} .ux-ing:nth-of-type(2){grid-area:1/2} .ux-ing:nth-of-type(3){grid-area:2/1} .ux-ing:nth-of-type(4){grid-area:2/2}
+  .ux-ing:nth-of-type(5){grid-area:3/1} .ux-ing:nth-of-type(6){grid-area:3/2} .ux-ing:nth-of-type(7){grid-area:1/4} .ux-ing:nth-of-type(8){grid-area:1/5}
+  .ux-ing:nth-of-type(9){grid-area:2/4} .ux-ing:nth-of-type(10){grid-area:2/5} .ux-ing:nth-of-type(11){grid-area:3/4}
+  .ux-foot{grid-column:1 / -1; grid-row:4; justify-self:center; opacity:0; transition:opacity .4s ease}
+  .ux.done .ux-foot{opacity:1}
+  .ux-replay{display:inline-flex; align-items:center; gap:.45em; padding:.55em 1.1em; border-radius:999px; border:1.5px solid var(--line); background:var(--white); color:var(--teal-deep); font:inherit; font-size:.9rem; font-weight:600; cursor:pointer}
+  .ux-replay:hover{background:var(--lime)}
+  .ux-replay svg{width:1.1em; height:1.1em}
+  /* البطاقة */
+  .ix-card{grid-column:1 / -1; grid-row:5; justify-self:center; width:min(560px, 100%); background:var(--white); border:1px solid var(--line); border-radius:var(--r-md);
+    padding:1.15rem 1.25rem 1rem; box-shadow:0 26px 54px -30px rgba(15,92,87,.55)}
+  /* مساحة البطاقة محجوزة من البداية (ارتفاع أطول مكوّن) حتى لا تقفز الصفحة عند ظهورها أو تبدّل المكوّن */
+  .ix-card.is-hint{display:flex; flex-direction:column; justify-content:center; background:rgba(255,255,255,.55); box-shadow:none; border-style:dashed}
+  .ix-card.is-hint .ixc-nav{display:none}
+  .ix-hint{display:flex; flex-direction:column; align-items:center; text-align:center; gap:.35rem}
+  .ix-hint b{font-family:var(--f-display); font-size:1.1rem; color:var(--teal-deep)}
+  .ix-hint span{font-size:.9rem; color:var(--muted)}
   .ixc-body{transition:opacity .2s ease, transform .25s ease}
   .ix-card.swap .ixc-body{opacity:0; transform:translateY(8px)}
   .ixc-top{display:flex; gap:.9rem; align-items:center}
@@ -314,28 +342,28 @@
   .ixc-dose{margin:.85rem 0 0; color:var(--muted); font-size:.9rem}
   .ixc-dose b{font-family:var(--f-mono); color:var(--orange); font-size:1.15rem; margin-inline-end:.35em; unicode-bidi:isolate}
   .ixc-role{margin:.45rem 0 0; color:var(--ink); line-height:1.7; font-size:.96rem}
-  .ixc-nav{display:flex; align-items:center; justify-content:center; gap:22px; margin-top:.9rem; padding-top:.7rem; border-top:1px dashed var(--line)}   /* في الوسط: بعيداً عن أزرار واتساب والمساعد العائمة */
-  .ix-card.is-hint .ixc-nav{display:none}
+  .ixc-nav{display:flex; align-items:center; justify-content:center; gap:22px; margin-top:.9rem; padding-top:.7rem; border-top:1px dashed var(--line)}
   .ixc-nav button{width:44px; height:44px; border-radius:50%; border:1.5px solid var(--line); background:var(--paper); color:var(--teal-deep); display:grid; place-items:center; cursor:pointer}
   .ixc-nav button:hover{background:var(--lime)}
   .ixc-nav svg{width:18px; height:18px}
   [dir="rtl"] .ixc-nav svg{transform:scaleX(-1)}
   .ixc-count{font-family:var(--f-mono); color:var(--muted); font-size:.9rem}
-  .ix-hint{display:flex; flex-direction:column; align-items:center; text-align:center; gap:.35rem; padding:.6rem .4rem; transition:opacity .3s ease}
-  .ix-hint b{font-family:var(--f-display); font-size:1.12rem; color:var(--teal-deep)}
-  .ix-hint span{font-size:.9rem; color:var(--muted)}
-  .ix-hint .ico{width:40px; height:40px; color:var(--orange)}
-  .ix.touched .ix-hint{opacity:.7}
   .ix-notes{max-width:640px; margin:clamp(20px,3vw,32px) auto 0; text-align:center}
-  @media (max-width:760px){
-    .ix{grid-template-columns:1fr; justify-items:center; gap:22px}
-    .ix-glass{width:min(84vw, 270px)}            /* أصغر طبقة ≥ 24px للّمس حتى على شاشة 320px */
-    .ix-side{width:100%; max-width:520px}
-    .ix-card, .ix-card.is-hint{position:relative; top:auto !important; transform:none}
-    .ix-card::before{top:-8px; inset-inline-start:50%; margin-inline-start:-7px; transform:rotate(45deg); border-width:1px 0 0 1px !important}
+  @media (max-width:1000px){
+    .ux{grid-template-columns:repeat(4, minmax(0, 1fr)); max-width:520px; margin-inline:auto; gap:12px 8px}
+    .ux-stage{grid-column:1 / -1; grid-row:1; width:min(84vw, 340px); justify-self:center; margin-top:min(34vw, 140px)}
+    .ux-ing{grid-area:auto !important; width:100%}
+    .ux-foot{grid-row:auto}
+    .ix-card{grid-row:auto; margin-top:4px}
+  }
+  @media (max-width:640px){
+    .ux-orb{width:62px; height:62px}
+    .ux-orb svg, .ux-orb img{width:42px; height:42px}
+    .ux-nm{font-size:.76rem}
+    .ux-cap{font-size:.84rem}
   }
   @media (prefers-reduced-motion:reduce){
-    .ix-card, .ix-card::before, .ix-dot, .ixc-body{transition:none}
+    .ux-orb, .ixc-body{transition:none}
   }
   .efsa{display:inline-block; font-size:.7rem; background:var(--teal-deep); color:var(--white); border-radius:4px; padding:0 .4em; margin-inline-start:.4em; vertical-align:middle; font-family:var(--f-mono)}
   .ing-foot{font-size:.85rem; color:var(--muted); margin-top:.5rem}
@@ -1083,15 +1111,11 @@
     <div class="sec-head rv">
       <span class="eyebrow">داخل كل ظرف</span>
       <h2>11 مكوّناً، وكل جرعة مكتوبة على العلبة</h2>
-      <p>اضغط على أي طبقة في الكوب لتعرف المكوّن ودوره. الأرقام مطابقة للملصق الخلفي حرفياً.</p>
+      <p>شاهد طريقة التحضير، ثم اضغط على أي مكوّن لتعرف دوره. الأرقام مطابقة للملصق الخلفي حرفياً.</p>
     </div>
-    <!-- الكوب هو المستكشف: تُبنى الطبقات والبطاقة من product-data في app.js -->
-    <div class="ix" id="ingExplorer">
-      <div class="ix-glass" id="ixGlass"></div>
-      <div class="ix-side"><div class="ix-card is-hint" id="ixCard"></div></div>
-    </div>
+    <!-- طريقة التحضير ثم المكونات: يُبنى المشهد والمكونات والبطاقة من product-data في app.js -->
+    <div class="ux" id="ingExplorer"></div>
     <div class="ix-notes">
-      <p class="glass-note">سماكة الطبقات توضيحية، والجرعة الدقيقة تظهر عند اختيار المكوّن.</p>
       <p class="ing-foot"><span class="efsa">EFSA</span> = ادعاء صحي معتمد من هيئة سلامة الأغذية الأوروبية ومطبوع على العلبة. الجرعات لكل ظرف واحد. يحتوي على مُحلٍّ.</p>
     </div>
   </div>
@@ -1572,8 +1596,8 @@
 }
 </script>
 
-<script src="assets/i18n-en.js?v=20261029b"></script>
-<script src="assets/app.js?v=20261029b"></script>
-<script src="assets/shop.js?v=20261029b"></script>
+<script src="assets/i18n-en.js?v=20261029c"></script>
+<script src="assets/app.js?v=20261029c"></script>
+<script src="assets/shop.js?v=20261029c"></script>
 </body>
 </html>

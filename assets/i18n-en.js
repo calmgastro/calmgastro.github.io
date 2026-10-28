@@ -62,7 +62,7 @@ window.I18N_EN = {
   "<bdi dir=\"ltr\">5-HTP</bdi> · فيتامين B12": "<bdi dir=\"ltr\">5-HTP</bdi> · Vitamin B12",
   "داخل كل ظرف": "Inside every sachet",
   "11 مكوّناً، وكل جرعة مكتوبة على العلبة": "11 ingredients, every dose printed on the box",
-  "اضغط على أي طبقة في الكوب لتعرف المكوّن ودوره. الأرقام مطابقة للملصق الخلفي حرفياً.": "Tap any layer in the glass to see the ingredient and its role. The numbers match the back label exactly.",
+  "شاهد طريقة التحضير، ثم اضغط على أي مكوّن لتعرف دوره. الأرقام مطابقة للملصق الخلفي حرفياً.": "Watch how it is prepared, then tap any ingredient to see its role. The numbers match the back label exactly.",
   "سماكة الطبقات توضيحية، والجرعة الدقيقة تظهر عند اختيار المكوّن.": "Layer thickness is illustrative; the exact dose appears when you choose an ingredient.",
   "<span class=\"efsa\">EFSA</span> = ادعاء صحي معتمد من هيئة سلامة الأغذية الأوروبية ومطبوع على العلبة. الجرعات لكل ظرف واحد. يحتوي على مُحلٍّ.": "<span class=\"efsa\">EFSA</span> = health claim approved by the European Food Safety Authority and printed on the box. Doses are per sachet. Contains a sweetener.",
   "دقيقة واحدة في اليوم": "One minute a day",
@@ -283,6 +283,14 @@ window.I18N_EN = {
   "إغلاق السلة": "Close cart"
  },
  "ui": {
+  "11 مكوّناً في كل ظرف": "11 ingredients in every sachet",
+  "كوب ماء (250 مل)": "A glass of water (250 ml)",
+  "أضف ظرفاً واحداً": "Add one sachet",
+  "حرّكه جيداً واشربه مباشرة": "Stir well and drink it straight away",
+  "قبل وجبتك بنصف ساعة، ثم كوب ماء إضافي": "Half an hour before your meal, then an extra glass of water",
+  "اضغط على أي مكوّن لتعرف دوره": "Tap any ingredient to see its role",
+  "شاهد طريقة التحضير مرة أخرى": "Watch the preparation again",
+  "طريقة التحضير: ظرف واحد في كوب ماء 250 مل، حرّكه جيداً واشربه قبل وجبتك بنصف ساعة": "How to prepare: one sachet in a 250 ml glass of water, stir well and drink it half an hour before your meal",
   "لكل ظرف": "per sachet",
   "المكوّن السابق": "Previous ingredient",
   "المكوّن التالي": "Next ingredient",

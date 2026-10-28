@@ -105,78 +105,16 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
 
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  /* ---------- مكونات الظرف: الكوب نفسه هو المستكشف ----------
-     يُصب سائل وردي ثم يتحول إلى 11 طبقة؛ كل طبقة زر (مرور / تركيز / لمس) يعرض بطاقة المكوّن بجانب الكوب، وتحته في الجوال.
-     المصدر الوحيد للبيانات: product-data ← INGREDIENTS (الاسم، الجرعة، معلومات المستخلص، الوصف، EFSA). لا نص مكوّنات مكتوب هنا.
-     الصورة المصغّرة: ing.img إن وُجدت في البيانات، وإلا رسم SVG حسب ing.id */
+  /* ---------- مكونات الظرف: طريقة التحضير ثم المكونات ----------
+     مشهد بصورة الكوب الحقيقية: كوب ماء ← الظرف يميل ويُسكب ← التحريك (دوامة وفقاعات ويتحول المشروب للوردي) ← تخرج المكونات
+     من الكوب واحداً تلو الآخر وتستقر حوله، ثم تتنقل البطاقة بينها تلقائياً. مرور/تركيز/لمس أي مكوّن يعرض بطاقته ويوقف التنقل.
+     المصدر الوحيد للبيانات: product-data ← INGREDIENTS. الصورة المصغّرة: ing.img إن وُجدت، وإلا رسم SVG حسب ing.id */
   (function ingredientExplorer(){
-    const root = $("#ingExplorer"), glassBox = $("#ixGlass"), card = $("#ixCard");
-    if (!root || !glassBox || !card) return;
+    const root = $("#ingExplorer"); if (!root) return;
     const N = INGREDIENTS.length, plain = s => String(s).replace(/<[^>]+>/g, "");
     const hover = matchMedia("(hover: hover) and (pointer: fine)").matches;
-    const stacked = () => matchMedia("(max-width: 760px)").matches;
+    const stacked = () => matchMedia("(max-width: 1000px)").matches;
     const tint = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16},${n >> 8 & 255},${n & 255},${a})`; };
-
-    // هندسة الكوب بوحدات viewBox
-    const VB = { y: -40, h: 500 }, TOP = 64, BOTTOM = 420;
-    const wallX = y => 30 + 23 * (y - 28) / 378;                       // الجدار الداخلي عند الارتفاع y
-    // سماكة توضيحية: حد أدنى يكفي للّمس (≥ 24px في الجوال) والباقي حسب الجذر التربيعي للجرعة؛ الأكبر في القاع
-    const Hh = BOTTOM - TOP, MIN = Hh * .075, extra = Hh - MIN * N;
-    const roots = INGREDIENTS.map(i => Math.sqrt(i.w)), rs = roots.reduce((x, y) => x + y, 0);
-    let yy = BOTTOM;
-    const bands = INGREDIENTS.map((_, i) => { const hh = MIN + extra * roots[i] / rs; yy -= hh; return { y: yy, h: hh }; });
-
-    const wave = Array.from({ length: 7 }, () => "q37.5,-7 75,0 t75,0").join(" ");
-    glassBox.innerHTML = `
-<svg class="ix-svg" viewBox="0 ${VB.y} 300 ${VB.h}" aria-hidden="true" focusable="false">
-  <defs>
-    <clipPath id="ixClip"><path d="M30,28 L270,28 L247,406 Q245.8,420 231,420 L69,420 Q54.2,420 53,406 Z"/></clipPath>
-    <linearGradient id="ixGlassG" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity=".6"/><stop offset=".2" stop-color="#fff" stop-opacity=".14"/><stop offset=".55" stop-color="#fff" stop-opacity=".05"/><stop offset=".85" stop-color="#fff" stop-opacity=".14"/><stop offset="1" stop-color="#fff" stop-opacity=".5"/></linearGradient>
-    <linearGradient id="ixShadeG" x1="0" x2="1"><stop offset="0" stop-color="#000" stop-opacity=".3"/><stop offset=".17" stop-color="#000" stop-opacity=".05"/><stop offset=".3" stop-color="#fff" stop-opacity=".2"/><stop offset=".42" stop-color="#fff" stop-opacity="0"/><stop offset=".82" stop-color="#000" stop-opacity=".06"/><stop offset="1" stop-color="#000" stop-opacity=".32"/></linearGradient>
-    <linearGradient id="ixPinkG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FAC6D3"/><stop offset="1" stop-color="#EE8EA8"/></linearGradient>
-    <linearGradient id="ixStreamG" x1="0" x2="1"><stop offset="0" stop-color="#F3A2B7"/><stop offset=".5" stop-color="#FCD9E2"/><stop offset="1" stop-color="#F3A2B7"/></linearGradient>
-    <radialGradient id="ixShadowG"><stop offset="0" stop-color="#0F3C37" stop-opacity=".3"/><stop offset="1" stop-color="#0F3C37" stop-opacity="0"/></radialGradient>
-    <filter id="ixGlow" x="-10%" y="-60%" width="120%" height="220%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-  </defs>
-  <ellipse cx="150" cy="447" rx="128" ry="11" fill="url(#ixShadowG)"/>
-  <rect class="ix-stream" x="143" y="-40" width="14" height="460" rx="7" fill="url(#ixStreamG)"/>
-  <g clip-path="url(#ixClip)">
-    <g class="ix-pink"><path class="ix-wave" d="M-300,${TOP} ${wave} V${BOTTOM + 30} H-300 Z" fill="url(#ixPinkG)"/></g>
-    <g class="ix-liquid">
-      ${bands.map((b, i) => `<rect class="lyr" data-i="${i}" style="--k:${i}" x="0" y="${b.y.toFixed(2)}" width="300" height="${(b.h + .6).toFixed(2)}" fill="${INGREDIENTS[i].color}"/>`).join("")}
-      ${bands.slice(0, -1).map((b, i) => `<line class="ix-sep" style="--k:${i}" x1="0" x2="300" y1="${b.y.toFixed(2)}" y2="${b.y.toFixed(2)}" stroke="#fff" stroke-opacity=".38" stroke-width="1.2"/>`).join("")}
-      <rect class="ix-shade" x="0" y="0" width="300" height="440" fill="url(#ixShadeG)"/>
-      <ellipse class="ix-meniscus" cx="150" cy="${TOP}" rx="${(150 - wallX(TOP)).toFixed(1)}" ry="5" fill="#fff" fill-opacity=".3"/>
-    </g>
-    <rect class="ix-ring" x="0" y="${TOP}" width="300" height="20" fill="none" stroke="#fff" stroke-width="2.8" filter="url(#ixGlow)"/>
-  </g>
-  <path d="M22,20 L278,20 L253,426 Q251,440 236,440 L64,440 Q49,440 47,426 Z" fill="url(#ixGlassG)" stroke="#0F5C57" stroke-opacity=".32" stroke-width="1.6"/>
-  <path d="M41,44 L61,392" stroke="#fff" stroke-opacity=".7" stroke-width="7" stroke-linecap="round"/>
-  <path d="M258,56 L246,330" stroke="#fff" stroke-opacity=".35" stroke-width="3" stroke-linecap="round"/>
-  <ellipse cx="150" cy="20" rx="128" ry="8" fill="#fff" fill-opacity=".3" stroke="#0F5C57" stroke-opacity=".28" stroke-width="1.4"/>
-  <path d="M62,430 Q150,444 238,430" stroke="#fff" stroke-opacity=".65" stroke-width="3" fill="none" stroke-linecap="round"/>
-</svg>`;
-    const lyrs = $$(".lyr", glassBox), ring = $(".ix-ring", glassBox);
-    const pct = v => ((v - VB.y) / VB.h * 100).toFixed(3) + "%";
-
-    // أزرار الطبقات (بالترتيب من الأعلى للأسفل في التبويب حتى يطابق القراءة)
-    const group = document.createElement("div");
-    group.setAttribute("role", "group"); group.setAttribute("aria-label", t("مكونات الظرف في الكوب"));
-    const hots = [];
-    for (let i = N - 1; i >= 0; i--) {
-      const b = bands[i], ing = INGREDIENTS[i], btn = document.createElement("button");
-      btn.type = "button"; btn.className = "ix-hot"; btn.dataset.i = i;
-      btn.style.top = pct(b.y); btn.style.height = (b.h / VB.h * 100).toFixed(3) + "%";
-      btn.setAttribute("aria-label", `${plain(ing.name)} — ${ing.dose}`);
-      btn.setAttribute("aria-controls", "ixCard"); btn.setAttribute("aria-pressed", "false");
-      group.appendChild(btn); hots[i] = btn;
-    }
-    const dot = document.createElement("span"), invite = document.createElement("span");
-    dot.className = "ix-dot"; invite.className = "ix-invite";
-    invite.style.top = pct(bands[0].y + bands[0].h / 2);
-    glassBox.append(group, dot, invite);
-
-    // رسوم مصغّرة (SVG) لكل مكوّن حسب id — تُستبدل تلقائياً بصورة إن أضيف ing.img في product-data
     const ART = {
       konjac: '<ellipse cx="32" cy="39" rx="22" ry="16" fill="#A8794D"/><ellipse cx="32" cy="36" rx="19" ry="12" fill="#BE8E5F"/><circle cx="24" cy="35" r="2" fill="#86592F"/><circle cx="37" cy="32" r="1.8" fill="#86592F"/><circle cx="33" cy="43" r="2.2" fill="#86592F"/><circle cx="44" cy="39" r="1.6" fill="#86592F"/><path d="M32 24c0-6 3-10 9-12-1 6-4 9-9 12Z" fill="#5FA05B"/><path d="M31 24c-1-5-4-8-9-9 1 5 4 8 9 9Z" fill="#7FB77E"/>',
       inulin: '<path d="M8 40c0 7 11 13 24 13s24-6 24-13Z" fill="#C99A63"/><ellipse cx="32" cy="40" rx="24" ry="6" fill="#B5854F"/><path d="M14 40c2-9 9-15 18-15s16 6 18 15c-5 2-11 3-18 3s-13-1-18-3Z" fill="#F5F0E7"/><path d="M21 34c3-3 7-5 11-5" stroke="#fff" stroke-width="2.5" stroke-linecap="round" fill="none"/>',
@@ -193,105 +131,137 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
     const art = ing => ing.img ? `<img src="${ing.img}" alt="" width="52" height="52" loading="lazy" decoding="async">`
       : `<svg viewBox="0 0 64 64" aria-hidden="true">${ART[ing.id] || '<circle cx="32" cy="32" r="16" fill="' + ing.color + '"/>'}</svg>`;
     const CHEV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>';
-    const TAP = '<svg class="ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 22V10a3 3 0 0 1 6 0v11l7.6 1.6a4 4 0 0 1 3.1 4.6L34 37a6 6 0 0 1-5.9 5H23a6 6 0 0 1-4.8-2.4L12 31.5a3 3 0 0 1 4.6-3.8L19 30"/><path d="M14 8l-3-3M30 8l3-3M22 3V1"/></svg>';
+    const STEPS = [t("كوب ماء (250 مل)"), t("أضف ظرفاً واحداً"), t("حرّكه جيداً واشربه مباشرة"), t("قبل وجبتك بنصف ساعة، ثم كوب ماء إضافي")];
+    const SWIRL = "M50 8c22 0 36 8 36 18S70 44 50 44 18 36 18 27s14-15 32-15 28 6 28 14-12 12-28 12-22-4-22-10 9-9 22-9 16 3 16 7";
 
+    root.innerHTML = `
+      <div class="ux-stage" role="img" aria-label="${t("طريقة التحضير: ظرف واحد في كوب ماء 250 مل، حرّكه جيداً واشربه قبل وجبتك بنصف ساعة")}">
+        <img class="ux-glass" src="assets/usage-glass-water.jpg" alt="" width="916" height="1224" decoding="async">
+        <img class="ux-glass ux-pink" src="assets/usage-glass-pink.jpg" alt="" width="916" height="1224" decoding="async">
+        <div class="ux-liquid"><span class="ux-cloud"></span>
+          <svg class="ux-swirl" viewBox="0 0 100 60" preserveAspectRatio="none" aria-hidden="true"><path d="${SWIRL}" fill="none" stroke="#fff" stroke-opacity=".75" stroke-width="1.6" stroke-linecap="round"/><path d="${SWIRL}" fill="none" stroke="#F39AB2" stroke-opacity=".7" stroke-width="1.4" stroke-linecap="round" transform="translate(0 6)"/></svg>
+          <span class="ux-fizz">${"<i></i>".repeat(16)}</span></div>
+        <span class="ux-stream"></span>
+        <span class="ux-grains">${"<i></i>".repeat(14)}</span>
+        <img class="ux-sachet" src="assets/usage-sachet.png" alt="" width="760" height="520" decoding="async">
+        <p class="ux-cap" aria-hidden="true"><b class="num"></b><span></span></p>
+      </div>
+      ${INGREDIENTS.map((ing, i) => `<button type="button" class="ux-ing hide" data-i="${i}" aria-pressed="false" aria-controls="ixCard" aria-label="${plain(ing.name)} — ${ing.dose}"><span class="ux-orb" style="background:${tint(ing.color, .16)}">${art(ing)}</span><span class="ux-nm">${ing.name}</span></button>`).join("")}
+      <div class="ux-foot"><button type="button" class="ux-replay"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>${t("شاهد طريقة التحضير مرة أخرى")}</button></div>
+      <div class="ix-card is-hint" id="ixCard" aria-live="polite"></div>`;
+    const stage = $(".ux-stage", root), card = $("#ixCard", root), cap = $(".ux-cap", root);
+    const bubbles = $$(".ux-ing", root);
+
+    // البطاقة (المحتوى من product-data فقط)
     const body = document.createElement("div"), nav = document.createElement("div");
     body.className = "ixc-body"; nav.className = "ixc-nav";
     nav.innerHTML = `<button type="button" class="ixc-prev" aria-label="${t("المكوّن السابق")}">${CHEV.replace('d="m9 6 6 6-6 6"', 'd="m15 6-6 6 6 6"')}</button><span class="ixc-count num" aria-hidden="true"></span><button type="button" class="ixc-next" aria-label="${t("المكوّن التالي")}">${CHEV}</button>`;
-    card.setAttribute("aria-live", "polite");
     card.append(body, nav);
-    const hint = () => `<div class="ix-hint">${TAP}<b>${t("استكشف مكونات كالم كاسترو")}</b><span>${hover ? t("مرّر المؤشر أو اضغط على أي طبقة في الكوب") : t("اضغط على أي طبقة في الكوب")}</span></div>`;
+    const hint = () => `<div class="ix-hint"><b>${t("11 مكوّناً في كل ظرف")}</b><span>${t("اضغط على أي مكوّن لتعرف دوره")}</span></div>`;
     const content = ing => `<div class="ixc-top"><span class="ixc-art" style="background:${tint(ing.color, .14)}">${art(ing)}</span>
       <div><h3 class="ixc-name">${ing.name}${ing.efsa ? ` <span class="efsa" title="${t("ادعاء صحي معتمد من EFSA")}">EFSA</span>` : ""}</h3>
-      <p class="ixc-ext" dir="ltr">${ing.en.replace(/ (mg|µg)/g, " $1")}</p></div></div>
+      <p class="ixc-ext" dir="ltr">${ing.en.replace(/ (mg|µg)\b/g, " $1")}</p></div></div>
       <p class="ixc-dose"><b dir="ltr">${ing.dose}</b> ${t("لكل ظرف")}</p>
       <p class="ixc-role">${ing.role}</p>`;
-    body.innerHTML = hint();
 
-    let sel = -1, swapT = 0;
-    function place(){
-      if (sel < 0) return;
-      const b = bands[sel], g = glassBox.getBoundingClientRect(), mid = b.y + b.h / 2;
-      const cy = g.top + (mid - VB.y) / VB.h * g.height;
-      // النقطة على جدار الكوب من جهة البطاقة
-      const side = card.getBoundingClientRect(), cardLeft = side.left < g.left;
-      const wx = wallX(mid) + 14, x = cardLeft ? wx : 300 - wx;
-      dot.style.top = pct(mid); dot.style.left = (x / 300 * 100).toFixed(2) + "%";
-      if (stacked()) { card.style.top = ""; return; }
-      const col = card.parentElement.getBoundingClientRect(), ch = card.offsetHeight;
-      const top = Math.max(0, Math.min(col.height - ch, cy - col.top - ch / 2));
-      card.style.top = top + "px";
-      card.style.setProperty("--ny", Math.max(20, Math.min(ch - 20, cy - col.top - top)) + "px");
+    body.innerHTML = hint();
+    // ارتفاع ثابت = أطول بطاقة: لا تقفز الصفحة عند ظهور البطاقة أو تبدّل المكوّن تلقائياً
+    function sizeCard(){
+      if (!card.getBoundingClientRect().width) return;
+      const saved = body.innerHTML, wasHint = card.classList.contains("is-hint");
+      card.style.minHeight = ""; card.classList.remove("is-hint");
+      let max = 0;
+      for (const ing of INGREDIENTS) { body.innerHTML = content(ing); max = Math.max(max, card.getBoundingClientRect().height); }
+      body.innerHTML = saved; card.classList.toggle("is-hint", wasHint);
+      card.style.minHeight = Math.ceil(max) + "px";
     }
-    // الجوال: إظهار البطاقة كاملة إن كانت تحت الشريط السفلي (بعد اكتمال تبديل المحتوى)
-    let revealT = 0;
-    function reveal(){
-      clearTimeout(revealT);
-      revealT = setTimeout(() => {
-        if (!stacked() || sel < 0) return;
-        const r = card.getBoundingClientRect(), bottom = innerHeight - 110;   // فوق الشريط السفلي
-        if (r.bottom > bottom) scrollBy({ top: Math.min(r.bottom - bottom, r.top - 70), behavior: reduce ? "auto" : "smooth" });
-      }, 230);
-    }
+    sizeCard();
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(sizeCard);
+    let sizeT = 0; addEventListener("resize", () => { clearTimeout(sizeT); sizeT = setTimeout(sizeCard, 150); });
+    let sel = -1, swapT = 0, revealT = 0;
     function select(i){
       i = (i + N) % N;
       if (i === sel) return;
       const first = sel < 0;
       sel = i;
-      root.classList.add("has-sel", "touched");
-      lyrs.forEach(r => r.classList.toggle("on", +r.dataset.i === i));
-      hots.forEach(b => b.setAttribute("aria-pressed", String(+b.dataset.i === i)));
-      ring.setAttribute("y", bands[i].y.toFixed(2)); ring.setAttribute("height", bands[i].h.toFixed(2));
+      bubbles.forEach(b => b.setAttribute("aria-pressed", String(+b.dataset.i === i)));
       clearTimeout(swapT);
-      const show = () => {
-        body.innerHTML = content(INGREDIENTS[i]);
-        $(".ixc-count", nav).textContent = `${i + 1} / ${N}`;
-        card.classList.remove("is-hint", "swap");
-        place();
-      };
-      if (first || reduce) show();
-      else { card.classList.add("swap"); swapT = setTimeout(show, 170); }
+      const show = () => { body.innerHTML = content(INGREDIENTS[i]); $(".ixc-count", nav).textContent = `${i + 1} / ${N}`; card.classList.remove("is-hint", "swap"); };
+      if (first || reduce) show(); else { card.classList.add("swap"); swapT = setTimeout(show, 170); }
     }
-    function clear(){
-      if (sel < 0) return;
-      sel = -1; clearTimeout(swapT);
-      root.classList.remove("has-sel");
-      lyrs.forEach(r => r.classList.remove("on"));
-      hots.forEach(b => b.setAttribute("aria-pressed", "false"));
-      body.innerHTML = hint(); card.classList.add("is-hint"); card.classList.remove("swap"); card.style.top = "";
+    function reveal(){                                                    // الجوال: إظهار البطاقة كاملة فوق الشريط السفلي
+      clearTimeout(revealT);
+      revealT = setTimeout(() => {
+        if (!stacked() || sel < 0) return;
+        const r = card.getBoundingClientRect(), bottom = innerHeight - 110;
+        if (r.bottom > bottom) scrollBy({ top: Math.min(r.bottom - bottom, r.top - 70), behavior: reduce ? "auto" : "smooth" });
+      }, 230);
     }
 
-    let hoverT = 0;
-    hots.forEach(b => {
+    // تنقل تلقائي بين المكونات حتى يتفاعل الزائر
+    let cycleT = 0, userDriven = false, inView = false;
+    const stopCycle = () => clearInterval(cycleT);
+    const startCycle = () => { stopCycle(); if (userDriven || reduce) return; if (sel < 0) select(0); cycleT = setInterval(() => { if (inView && !document.hidden) select(sel + 1); }, 3200); };
+    const takeOver = () => { userDriven = true; stopCycle(); };
+
+    // التسلسل
+    let timers = [];
+    const at = (ms, fn) => timers.push(setTimeout(fn, ms));
+    function caption(k){
+      $("b", cap).textContent = k < STEPS.length ? String(k + 1) : "";
+      $("span", cap).textContent = k < STEPS.length ? STEPS[k] : t("اضغط على أي مكوّن لتعرف دوره");
+      cap.classList.toggle("hint", k >= STEPS.length);
+      cap.classList.remove("show"); void cap.offsetWidth; cap.classList.add("show");
+    }
+    function pop(b){
+      const s = stage.getBoundingClientRect(), r = b.getBoundingClientRect();
+      const mx = s.left + s.width * .515, my = s.top + s.height * .25;   // فم الكوب
+      const dx = mx - (r.left + r.width / 2), dy = my - (r.top + r.height / 2);
+      b.classList.remove("hide");
+      b.animate([
+        { transform: `translate(${dx}px, ${dy}px) scale(.15)`, opacity: 0 },
+        { transform: `translate(${dx * .45}px, ${dy * .5 - 70}px) scale(1.14)`, opacity: 1, offset: .58 },
+        { transform: "translate(0, 0) scale(1)", opacity: 1 }
+      ], { duration: 900, easing: "cubic-bezier(.3,.75,.3,1)" });
+      const ring = document.createElement("span");
+      ring.className = "ux-pop"; ring.style.left = "51.5%"; ring.style.top = "25%";
+      stage.appendChild(ring); setTimeout(() => ring.remove(), 700);
+    }
+    function play(){
+      timers.forEach(clearTimeout); timers = []; stopCycle();
+      sel = -1; card.classList.add("is-hint"); body.innerHTML = hint(); bubbles.forEach(b => { b.getAnimations().forEach(x => x.cancel()); b.classList.add("hide"); b.setAttribute("aria-pressed", "false"); });
+      root.classList.remove("play", "done"); void root.offsetWidth; root.classList.add("play");
+      caption(0);
+      at(1300, () => caption(1));
+      at(3300, () => caption(2));
+      at(5600, () => caption(3));
+      bubbles.forEach((b, i) => at(5800 + i * 260, () => pop(b)));
+      at(5800 + N * 260 + 800, () => { root.classList.add("done"); caption(STEPS.length); startCycle(); });
+    }
+    function finished(){                                                   // بدون حركة: الكوب الوردي والمكونات في أماكنها
+      root.classList.add("static", "done");
+      bubbles.forEach(b => b.classList.remove("hide"));
+      caption(STEPS.length); select(0);
+    }
+
+    bubbles.forEach(b => {
       const i = +b.dataset.i;
-      b.addEventListener("click", () => { select(i); reveal(); });   // اللمس يركّز الزر قبل الضغط، فالإظهار منفصل عن الاختيار
-      b.addEventListener("focus", () => select(i));
-      if (hover) {
-        b.addEventListener("mouseenter", () => { clearTimeout(hoverT); hoverT = setTimeout(() => select(i), 45); });
-        b.addEventListener("mouseleave", () => clearTimeout(hoverT));
-      }
-      b.addEventListener("keydown", e => {
-        const go = { ArrowUp: i + 1, ArrowRight: i + 1, ArrowDown: i - 1, ArrowLeft: i - 1, Home: N - 1, End: 0 }[e.key];
-        if (go != null) { e.preventDefault(); hots[(go + N) % N].focus(); }
-        else if (e.key === "Escape") { clear(); }
-      });
+      b.addEventListener("click", () => { takeOver(); select(i); reveal(); });
+      b.addEventListener("focus", () => { if (root.classList.contains("done")) { takeOver(); select(i); } });
+      if (hover) b.addEventListener("mouseenter", () => { if (root.classList.contains("done")) { takeOver(); select(i); } });
     });
-    $(".ixc-prev", nav).addEventListener("click", () => { select(sel - 1); reveal(); });
-    $(".ixc-next", nav).addEventListener("click", () => { select(sel + 1); reveal(); });
-    document.addEventListener("pointerdown", e => { if (sel >= 0 && !root.contains(e.target)) clear(); });
-    document.addEventListener("keydown", e => { if (e.key === "Escape" && sel >= 0 && root.contains(document.activeElement)) clear(); });
-    addEventListener("resize", place);
+    $(".ixc-prev", nav).addEventListener("click", () => { takeOver(); select(sel - 1); reveal(); });
+    $(".ixc-next", nav).addEventListener("click", () => { takeOver(); select(sel + 1); reveal(); });
+    $(".ux-replay", root).addEventListener("click", () => { userDriven = false; play(); stage.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" }); });
 
-    // الصب عند أول ظهور للقسم
-    const ready = () => root.classList.add("ready");
-    if (reduce || !("IntersectionObserver" in window)) { root.classList.add("static"); ready(); return; }
-    const io = new IntersectionObserver(([en]) => {
-      if (!en.isIntersecting) return;
-      io.disconnect();
-      root.classList.add("pour");
-      setTimeout(ready, 2650);
-    }, { threshold: .4 });
-    io.observe(glassBox);
+    if (reduce || !("IntersectionObserver" in window) || !Element.prototype.animate) { finished(); return; }
+    // يبدأ عندما يقف الزائر عند المشهد (ليس أثناء مرور سريع أو التمرير بزر القائمة)
+    let started = false, dwellT = 0;
+    new IntersectionObserver(([en]) => {
+      inView = en.isIntersecting;
+      clearTimeout(dwellT);
+      if (inView && !started && en.intersectionRatio >= .45) dwellT = setTimeout(() => { if (!started) { started = true; play(); } }, 250);
+    }, { threshold: [0, .45, .7] }).observe(stage);
   })();
 
   /* ---------- آراء العملاء: شريط يتقدم رأياً واحداً كل 4 ثوانٍ بحركة هادئة ----------
@@ -345,16 +315,15 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
 
   /* ---------- scroll reveal ---------- */
   /* ---------- فيديو «تعرف على كالم كاسترو»: نافذة تظهر من موضع الزر، والفيديو يُحمَّل عند أول فتح.
-     أول زيارة: عند وصول الزائر للزر يظهر مؤشر يضغطه تلقائياً ويُفتح الفيديو بدون صوت (المتصفحات تمنع الصوت بلا لمسة)،
-     مع زر «اضغط لتشغيل الصوت». مرة واحدة لكل زائر، ولا يحدث إن كان مشغولاً بالسلة أو المساعد أو الطلب ---------- */
+     في كل تحميل للصفحة: عند وصول الزائر للزر يظهر مؤشر يضغطه تلقائياً ويُفتح الفيديو بدون صوت (المتصفحات تمنع الصوت بلا لمسة)،
+     مع زر «اضغط لتشغيل الصوت». مرة واحدة في كل تحميل، ولا يحدث إن كان مشغولاً بالسلة أو المساعد أو الطلب ---------- */
   (function introVideo(){
     const openBtn = document.getElementById("introOpen"), dlg = document.getElementById("introDialog");
     if (!openBtn || !dlg || typeof dlg.showModal !== "function") return;
     const video = document.getElementById("introVideo"), closeBtn = document.getElementById("introClose"), soundBtn = document.getElementById("introSound");
-    const SEEN = "cg-intro-seen";
-    const seen = () => { try { return localStorage.getItem(SEEN) === "1"; } catch (_) { return true; } };
-    const markSeen = () => { try { localStorage.setItem(SEEN, "1"); } catch (_) {} };
-    let autoOpened = false;
+    // الضغطة التلقائية مرة في كل تحميل للصفحة (بعد التحديث تعود). cg-intro-auto=off يوقفها (للاختبارات الآلية فقط)
+    const autoOff = () => { try { return localStorage.getItem("cg-intro-auto") === "off"; } catch (_) { return false; } };
+    let autoOpened = false, autoDone = false;
 
     function showSound(){
       const muted = video.muted || video.paused;
@@ -362,7 +331,7 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
       if (muted) soundBtn.querySelector("span").textContent = video.paused ? t("اضغط لتشغيل الفيديو") : t("اضغط لتشغيل الصوت");
     }
     function open(auto){
-      markSeen(); autoOpened = !!auto;
+      autoDone = true; autoOpened = !!auto;
       const r = openBtn.getBoundingClientRect();
       dlg.style.setProperty("--fx", Math.round(r.left + r.width / 2 - innerWidth / 2) + "px");
       dlg.style.setProperty("--fy", Math.round(r.top + r.height / 2 - innerHeight / 2) + "px");
@@ -396,7 +365,7 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
 
     /* ---- الضغطة التلقائية ---- */
     const saveData = navigator.connection && navigator.connection.saveData;
-    if (seen() || reduce || saveData || !("IntersectionObserver" in window) || !Element.prototype.animate) return;
+    if (autoOff() || reduce || saveData || !("IntersectionObserver" in window) || !Element.prototype.animate) return;
     const busy = () => document.visibilityState !== "visible" || dlg.open || document.body.classList.contains("view-active")
       || !(document.getElementById("cartDrawer") || {}).hidden || !(document.getElementById("aiPanel") || {}).hidden
       || /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || "");
@@ -406,7 +375,7 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
     const stillThere = () => { const r = openBtn.getBoundingClientRect(); return visible && !busy() && r.top >= 0 && r.bottom <= innerHeight; };
 
     async function demo(){
-      if (running || seen()) return;
+      if (running || autoDone) return;
       running = true;
       const ARROW = '<svg class="arrow" viewBox="0 0 32 32" aria-hidden="true"><path d="M6 3.5 25 16.4l-8.3 1.3 4.8 9.6-3.8 1.9-4.8-9.7L6 25.2Z" fill="#fff" stroke="#12302E" stroke-width="1.9" stroke-linejoin="round"/></svg>';
       const HAND = '<svg class="hand" viewBox="0 0 32 32" aria-hidden="true"><path d="M11.6 2.6c1.3 0 2.3 1 2.3 2.3v8l.9-.1c.3-1 1.2-1.7 2.2-1.7s1.9.6 2.2 1.5c.4-.6 1.1-1 1.9-1 1.1 0 2 .7 2.2 1.7.4-.4 1-.6 1.6-.6 1.3 0 2.3 1 2.3 2.3v6.4c0 4.7-3.8 8.5-8.5 8.5h-1.8c-2.6 0-5-1.2-6.6-3.2L5 20.1c-.8-1-.6-2.4.4-3.2 1-.8 2.4-.7 3.2.2l.6.7V4.9c0-1.3 1-2.3 2.4-2.3Z" fill="#fff" stroke="#12302E" stroke-width="1.8" stroke-linejoin="round"/></svg>';
@@ -446,7 +415,7 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
     const io = new IntersectionObserver(([en]) => {
       visible = en.intersectionRatio >= .95;
       clearTimeout(timer);
-      if (visible) timer = setTimeout(() => { if (stillThere()) demo(); }, 900);
+      if (visible && !autoDone) timer = setTimeout(() => { if (stillThere()) demo(); }, 900);
     }, { threshold: [0, .95, 1] });
     io.observe(openBtn);
     openBtn.addEventListener("click", e => { if (e.isTrusted) io.disconnect(); });
