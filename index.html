@@ -254,49 +254,91 @@
     .vm-card{animation:vmFade .2s ease both}
   }
 
-  /* ---------- signature: the glass ---------- */
-  .inside{display:grid; grid-template-columns:minmax(260px, .8fr) 1.2fr; gap:clamp(24px,5vw,72px); align-items:start}
-  .glass-stage{position:sticky; top:96px; display:flex; flex-direction:column; align-items:center; gap:1.2rem}
-  .glass{position:relative; width:min(240px, 60vw); aspect-ratio:240/430}
-  .glass-fill{
-    position:absolute; inset:0;
-    clip-path:polygon(0 0, 100% 0, 89% 100%, 11% 100%);
-    background:linear-gradient(180deg, rgba(233,243,207,.0) 0%, rgba(233,243,207,.55) 100%);
-    display:flex; flex-direction:column; justify-content:flex-end;
+  /* ---------- مكونات الظرف: الكوب المستكشف ---------- */
+  .ix{display:grid; grid-template-columns:minmax(230px,300px) minmax(280px,380px); justify-content:center; align-items:stretch; gap:clamp(28px,5vw,72px)}
+  .ix-glass{position:relative; width:100%; aspect-ratio:300/500}
+  .ix-svg{position:absolute; inset:0; width:100%; height:100%; overflow:hidden}
+  /* قبل الصب: كوب فارغ */
+  .ix-stream{transform-box:fill-box; transform-origin:50% 0; transform:scaleY(0); opacity:0}
+  .ix-pink{transform:translateY(380px)}
+  .lyr, .ix-sep, .ix-meniscus, .ix-shade{opacity:0}
+  .ix-wave{animation:ixWave 1.1s linear infinite}
+  @keyframes ixWave{to{transform:translateX(150px)}}
+  /* الصب (≈2.6 ث): تيار وردي ← يرتفع السائل ← تتكوّن الطبقات من الأسفل للأعلى */
+  .ix.pour .ix-stream{animation:ixStream 1.95s cubic-bezier(.4,.1,.3,1) forwards}
+  @keyframes ixStream{0%{opacity:1; transform:scaleY(0)} 16%{opacity:1; transform:scaleY(1)} 70%{opacity:1; transform:scaleY(1) scaleX(1)} 100%{opacity:0; transform:scaleY(1) scaleX(.15)}}
+  .ix.pour .ix-pink{animation:ixRise 1.45s .22s cubic-bezier(.33,.08,.25,1) forwards, ixOut .6s 2s ease forwards}
+  @keyframes ixRise{to{transform:translateY(0)}}
+  @keyframes ixOut{to{opacity:0}}
+  .ix.pour .lyr, .ix.pour .ix-sep{animation:ixIn .55s ease forwards; animation-delay:calc(1.4s + var(--k) * 65ms)}
+  .ix.pour .ix-shade, .ix.pour .ix-meniscus{animation:ixIn .7s 1.5s ease forwards}
+  @keyframes ixIn{to{opacity:1}}
+  /* بعد الصب، أو مباشرة لمن فعّل «تقليل الحركة» */
+  .ix.ready .ix-stream, .ix.ready .ix-pink{animation:none; opacity:0}
+  .ix.ready .lyr, .ix.ready .ix-sep, .ix.ready .ix-shade, .ix.ready .ix-meniscus{animation:none; opacity:1}
+  .ix.static .ix-liquid{animation:vmFade .5s ease both}
+  .lyr{transition:opacity .3s ease}
+  .ix.has-sel .lyr{opacity:.74}
+  .ix.has-sel .lyr.on{opacity:1}
+  .ix-ring{opacity:0; transition:opacity .3s ease}
+  .ix.has-sel .ix-ring{opacity:1}
+  /* الطبقات: أزرار شفافة فوق الكوب (لمس/مرور/لوحة مفاتيح) */
+  .ix-hot{position:absolute; left:10%; right:10%; padding:0; border:0; margin:0; background:transparent; cursor:pointer; border-radius:6px; -webkit-tap-highlight-color:transparent}
+  .ix:not(.ready) .ix-hot{pointer-events:none}
+  .ix-hot:focus-visible{outline:3px solid var(--orange); outline-offset:-3px}
+  .ix-dot{position:absolute; width:14px; height:14px; margin:-7px 0 0 -7px; border-radius:50%; background:#fff; border:3px solid var(--teal-deep);
+    box-shadow:0 0 0 4px rgba(255,255,255,.45); pointer-events:none; opacity:0; transition:top .35s cubic-bezier(.2,.8,.2,1), left .35s ease, opacity .25s ease}
+  .ix.has-sel .ix-dot{opacity:1}
+  .ix-invite{position:absolute; left:50%; width:16px; height:16px; margin:-8px 0 0 -8px; border-radius:50%; background:#fff; pointer-events:none; opacity:0;
+    box-shadow:0 0 0 0 rgba(255,255,255,.7); transition:opacity .3s ease}
+  .ix.ready:not(.touched) .ix-invite{opacity:.95; animation:ixInvite 2.2s ease-out infinite}
+  @keyframes ixInvite{0%{box-shadow:0 0 0 0 rgba(255,255,255,.75)} 70%,100%{box-shadow:0 0 0 16px rgba(255,255,255,0)}}
+  /* البطاقة بجانب الكوب عند ارتفاع الطبقة */
+  .ix-side{position:relative}
+  .ix-card{position:absolute; inset-inline:0; top:0; background:var(--white); border:1px solid var(--line); border-radius:var(--r-md);
+    padding:1.15rem 1.25rem 1rem; box-shadow:0 26px 54px -30px rgba(15,92,87,.55); transition:top .38s cubic-bezier(.2,.8,.2,1)}
+  .ix-card::before{content:""; position:absolute; top:var(--ny,50%); inset-inline-start:-8px; width:14px; height:14px; background:var(--white);
+    border:solid var(--line); transform:translateY(-50%) rotate(45deg); transition:top .38s cubic-bezier(.2,.8,.2,1)}
+  [dir="rtl"] .ix-card::before{border-width:1px 1px 0 0}
+  [dir="ltr"] .ix-card::before{border-width:0 0 1px 1px}
+  .ix-card.is-hint{top:50%; transform:translateY(-50%); background:rgba(255,255,255,.6); box-shadow:none; border-style:dashed}
+  .ix-card.is-hint::before{display:none}
+  .ixc-body{transition:opacity .2s ease, transform .25s ease}
+  .ix-card.swap .ixc-body{opacity:0; transform:translateY(8px)}
+  .ixc-top{display:flex; gap:.9rem; align-items:center}
+  .ixc-art{flex:none; width:66px; height:66px; border-radius:18px; display:grid; place-items:center}
+  .ixc-art svg, .ixc-art img{width:52px; height:52px; display:block}
+  .ixc-name{font-size:1.22rem; color:var(--teal-deep); margin:0; line-height:1.35}
+  .ixc-ext{font-size:.84rem; color:var(--muted); margin:.15rem 0 0; line-height:1.45}
+  [dir="rtl"] .ixc-ext{text-align:right}
+  .ixc-dose{margin:.85rem 0 0; color:var(--muted); font-size:.9rem}
+  .ixc-dose b{font-family:var(--f-mono); color:var(--orange); font-size:1.15rem; margin-inline-end:.35em; unicode-bidi:isolate}
+  .ixc-role{margin:.45rem 0 0; color:var(--ink); line-height:1.7; font-size:.96rem}
+  .ixc-nav{display:flex; align-items:center; justify-content:center; gap:22px; margin-top:.9rem; padding-top:.7rem; border-top:1px dashed var(--line)}   /* في الوسط: بعيداً عن أزرار واتساب والمساعد العائمة */
+  .ix-card.is-hint .ixc-nav{display:none}
+  .ixc-nav button{width:44px; height:44px; border-radius:50%; border:1.5px solid var(--line); background:var(--paper); color:var(--teal-deep); display:grid; place-items:center; cursor:pointer}
+  .ixc-nav button:hover{background:var(--lime)}
+  .ixc-nav svg{width:18px; height:18px}
+  [dir="rtl"] .ixc-nav svg{transform:scaleX(-1)}
+  .ixc-count{font-family:var(--f-mono); color:var(--muted); font-size:.9rem}
+  .ix-hint{display:flex; flex-direction:column; align-items:center; text-align:center; gap:.35rem; padding:.6rem .4rem; transition:opacity .3s ease}
+  .ix-hint b{font-family:var(--f-display); font-size:1.12rem; color:var(--teal-deep)}
+  .ix-hint span{font-size:.9rem; color:var(--muted)}
+  .ix-hint .ico{width:40px; height:40px; color:var(--orange)}
+  .ix.touched .ix-hint{opacity:.7}
+  .ix-notes{max-width:640px; margin:clamp(20px,3vw,32px) auto 0; text-align:center}
+  @media (max-width:760px){
+    .ix{grid-template-columns:1fr; justify-items:center; gap:22px}
+    .ix-glass{width:min(84vw, 270px)}            /* أصغر طبقة ≥ 24px للّمس حتى على شاشة 320px */
+    .ix-side{width:100%; max-width:520px}
+    .ix-card, .ix-card.is-hint{position:relative; top:auto !important; transform:none}
+    .ix-card::before{top:-8px; inset-inline-start:50%; margin-inline-start:-7px; transform:rotate(45deg); border-width:1px 0 0 1px !important}
   }
-  .layer{
-    width:100%; border:0; padding:0; margin:0; cursor:pointer; display:block;
-    border-top:1px solid rgba(255,255,255,.55);
-    transform-origin:bottom; transition:filter .2s ease, opacity .2s ease, transform .6s cubic-bezier(.2,.8,.2,1);
+  @media (prefers-reduced-motion:reduce){
+    .ix-card, .ix-card::before, .ix-dot, .ixc-body{transition:none}
   }
-  .glass.is-focus .layer{opacity:.45}
-  .glass.is-focus .layer.on{opacity:1; filter:saturate(1.15)}
-  .glass-outline{position:absolute; inset:0; pointer-events:none}
-  .glass-readout{
-    width:100%; max-width:360px; background:var(--white); border-radius:var(--r-md); padding:1rem 1.2rem;
-    border:1px solid var(--line); min-height:132px
-  }
-  .glass-readout .r-name{font-family:var(--f-display); font-weight:700; font-size:1.1rem; color:var(--teal-deep)}
-  .glass-readout .r-dose{font-family:var(--f-mono); color:var(--orange); font-weight:600; font-size:.95rem}
-  .glass-readout p{font-size:.93rem; color:var(--muted); margin-top:.35rem}
-  .glass-note{font-size:.78rem; color:var(--muted); text-align:center}
-  .js-anim .layer{transform:scaleY(0)}
-  .js-anim.filled .layer{transform:scaleY(1)}
-
-  .ing-list{list-style:none; margin:0; padding:0; border-top:1px solid var(--line)}
-  .ing-list li{border-bottom:1px solid var(--line)}
-  .ing{
-    width:100%; display:grid; grid-template-columns:14px 1fr auto; gap:.9rem; align-items:center; text-align:start;
-    background:none; border:0; padding:.95rem .4rem; font:inherit; color:inherit; cursor:pointer; border-radius:8px;
-  }
-  .ing:hover{background:rgba(233,243,207,.6)}
-  .ing[aria-pressed="true"]{background:var(--lime)}
-  .ing .sw{width:14px; height:14px; border-radius:4px}
-  .ing .nm{font-weight:600; line-height:1.4}
-  .ing .nm small{display:block; font-weight:400; color:var(--muted); font-size:.85rem}
-  .ing .ds{direction:ltr; unicode-bidi:isolate; font-family:var(--f-mono); font-weight:600; color:var(--teal-deep); font-size:.95rem; white-space:nowrap}
   .efsa{display:inline-block; font-size:.7rem; background:var(--teal-deep); color:var(--white); border-radius:4px; padding:0 .4em; margin-inline-start:.4em; vertical-align:middle; font-family:var(--f-mono)}
-  .ing-foot{font-size:.85rem; color:var(--muted); margin-top:1rem}
+  .ing-foot{font-size:.85rem; color:var(--muted); margin-top:.5rem}
 
   /* ---------- how to use ---------- */
   .steps{display:grid; grid-template-columns:repeat(3,1fr); gap:20px; counter-reset:step}
@@ -808,7 +850,7 @@
   .lang-btn{min-height:40px; min-width:40px}
   [dir="ltr"] .tl .when::after{background:linear-gradient(to right, var(--orange), transparent)}
   [dir="ltr"] .ai-send svg{transform:scaleX(-1)}
-  [dir="ltr"] #f-phone, [dir="ltr"] .ing .nm small, [dir="ltr"] .r-dose{text-align:left !important}
+  [dir="ltr"] #f-phone{text-align:left !important}
 
   /* ---------- reveal ---------- */
   .rv{opacity:0; transform:translateY(16px); transition:opacity .6s ease, transform .6s ease}
@@ -828,7 +870,6 @@
     .hero-copy .eyebrow{align-self:flex-start}
     .hero-copy .lede{order:3; margin:1rem 0 0}
     .hero-copy .cta-row{order:4; margin-top:1.3rem}
-    .glass-stage{position:static}
     .steps, .timeline, .plan, .idea{grid-template-columns:1fr; gap:16px}
     .tl{padding:0}
     .order .bundles-col{order:0}
@@ -884,7 +925,6 @@
     html{scroll-behavior:auto}
     *,*::before,*::after{transition:none !important; animation:none !important}
     .rv{opacity:1; transform:none}
-    .js-anim .layer{transform:none}
   }
 </style>
 </head>
@@ -1031,24 +1071,16 @@
     <div class="sec-head rv">
       <span class="eyebrow">داخل كل ظرف</span>
       <h2>11 مكوّناً، وكل جرعة مكتوبة على العلبة</h2>
-      <p>اضغط على أي طبقة في الكوب أو على أي مكوّن في القائمة لتعرف دوره. الأرقام مطابقة للملصق الخلفي حرفياً.</p>
+      <p>اضغط على أي طبقة في الكوب لتعرف المكوّن ودوره. الأرقام مطابقة للملصق الخلفي حرفياً.</p>
     </div>
-    <div class="inside">
-      <div class="glass-stage">
-        <div class="glass js-anim" id="glass">
-          <div class="glass-fill" id="glassFill"></div>
-          <svg class="glass-outline" viewBox="0 0 240 430" preserveAspectRatio="none" aria-hidden="true">
-            <path d="M2 2 L238 2 L212 428 L28 428 Z" fill="none" stroke="#0F5C57" stroke-width="3" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
-            <path d="M22 24 L36 380" stroke="#fff" stroke-opacity=".7" stroke-width="5" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
-          </svg>
-        </div>
-        <div class="glass-readout" aria-live="polite" id="readout"></div>
-        <p class="glass-note">سماكة الطبقات توضيحية، والجرعات الدقيقة في القائمة.</p>
-      </div>
-      <div>
-        <ul class="ing-list" id="ingList"></ul>
-        <p class="ing-foot"><span class="efsa">EFSA</span> = ادعاء صحي معتمد من هيئة سلامة الأغذية الأوروبية ومطبوع على العلبة. الجرعات لكل ظرف واحد. يحتوي على مُحلٍّ.</p>
-      </div>
+    <!-- الكوب هو المستكشف: تُبنى الطبقات والبطاقة من product-data في app.js -->
+    <div class="ix" id="ingExplorer">
+      <div class="ix-glass" id="ixGlass"></div>
+      <div class="ix-side"><div class="ix-card is-hint" id="ixCard"></div></div>
+    </div>
+    <div class="ix-notes">
+      <p class="glass-note">سماكة الطبقات توضيحية، والجرعة الدقيقة تظهر عند اختيار المكوّن.</p>
+      <p class="ing-foot"><span class="efsa">EFSA</span> = ادعاء صحي معتمد من هيئة سلامة الأغذية الأوروبية ومطبوع على العلبة. الجرعات لكل ظرف واحد. يحتوي على مُحلٍّ.</p>
     </div>
   </div>
 </section>
@@ -1512,23 +1544,23 @@
     ]
   },
   "ingredients": [
-    {"ar": "ألياف الكونجاك", "en": "Konjac extract · Glucomannan 1800 mg", "dose": "2000 mg", "w": 2000, "color": "#0F5C57", "efsa": true, "role": "تمتص الماء وتتمدد في المعدة فتعطيك إحساساً بالامتلاء قبل الأكل. يساهم الغلوكومانان في الحفاظ على مستويات الكوليسترول الطبيعية في الدم.", "name_en": "Konjac fiber", "role_en": "Absorbs water and expands in the stomach, giving you a feeling of fullness before eating. Glucomannan contributes to the maintenance of normal blood cholesterol levels."},
-    {"ar": "إنولين", "en": "Inulin", "dose": "1000 mg", "w": 1000, "color": "#13857B", "role": "ألياف بريبيوتيك تغذي البكتيريا النافعة في القولون، فتدعم انتظام الهضم وتقلل الغازات.", "name_en": "Inulin", "role_en": "A prebiotic fiber that feeds the good bacteria in the colon, supporting regular digestion and reducing gas."},
-    {"ar": "مستخلص الشاي الأخضر", "en": "Green tea · Polyphenols 96 mg", "dose": "120 mg", "w": 120, "color": "#7FB77E", "role": "غني بالبوليفينولات الداعمة لعملية التمثيل الغذائي والطاقة.", "name_en": "Green tea extract", "role_en": "Rich in polyphenols that support metabolism and energy."},
-    {"ar": "مستخلص القهوة", "en": "Coffee extract", "dose": "120 mg", "w": 120, "color": "#8A5A2B", "role": "يعطي دفعة طاقة خفيفة تساعدك على النشاط خلال اليوم.", "name_en": "Coffee extract", "role_en": "Gives a light energy boost to help you stay active during the day."},
-    {"ar": "مستخلص الغارسينيا", "en": "Garcinia · HCA 60 mg", "dose": "120 mg", "w": 120, "color": "#F2941B", "role": "يحتوي على حمض الهيدروكسي ستريك (HCA) الذي يُستخدم تقليدياً لدعم التحكم في الشهية.", "name_en": "Garcinia extract", "role_en": "Contains hydroxycitric acid (HCA), traditionally used to support appetite control."},
-    {"ar": "ل-كارنيتين", "en": "L-Carnitine", "dose": "100 mg", "w": 100, "color": "#F7B955", "role": "يشارك في نقل الدهون إلى داخل الخلايا لتستخدمها مصدراً للطاقة.", "name_en": "L-Carnitine", "role_en": "Helps transport fats into cells to be used for energy."},
-    {"ar": "بروميلين", "en": "Bromelain", "dose": "50 mg", "w": 50, "color": "#E9D45C", "role": "إنزيم طبيعي من الأناناس يساعد على هضم البروتين ويخفف ثقل المعدة.", "name_en": "Bromelain", "role_en": "A natural enzyme from pineapple that helps digest protein and eases stomach heaviness."},
-    {"ar": "مستخلص الزنجبيل", "en": "Ginger · Gingerol 2.5 mg", "dose": "50 mg", "w": 50, "color": "#D9822B", "role": "مريح للمعدة ويساعد على تخفيف الانتفاخ والغازات.", "name_en": "Ginger extract", "role_en": "Soothing for the stomach and helps relieve bloating and gas."},
-    {"ar": "5-HTP", "ltr": true, "en": "5-Hydroxytryptophan", "dose": "25 mg", "w": 25, "color": "#B9A6D9", "role": "يدخل في تكوين السيروتونين المرتبط بالمزاج والإحساس بالشبع، ويساعد على تقليل الأكل العاطفي.", "name_en": "5-HTP", "role_en": "Involved in forming serotonin, which is linked to mood and satiety, and helps reduce emotional eating."},
-    {"ar": "كروميوم", "en": "Chromium", "dose": "50 µg", "w": 12, "color": "#5E8FA8", "efsa": true, "role": "يساهم في الحفاظ على مستويات الجلوكوز الطبيعية في الدم، وفي التمثيل الغذائي الطبيعي للمغذيات الكبرى.", "name_en": "Chromium", "role_en": "Contributes to the maintenance of normal blood glucose levels and to normal macronutrient metabolism."},
-    {"ar": "فيتامين B12", "en": "Vitamin B12", "dose": "2.5 µg", "w": 10, "color": "#D9546A", "efsa": true, "role": "يساهم في التمثيل الغذائي الطبيعي لإنتاج الطاقة، ويقلل الإحساس بالتعب.", "name_en": "Vitamin B12", "role_en": "Contributes to normal energy-yielding metabolism and helps reduce tiredness."}
+    {"id": "konjac", "ar": "ألياف الكونجاك", "en": "Konjac extract · Glucomannan 1800 mg", "dose": "2000 mg", "w": 2000, "color": "#0F5C57", "efsa": true, "role": "تمتص الماء وتتمدد في المعدة فتعطيك إحساساً بالامتلاء قبل الأكل. يساهم الغلوكومانان في الحفاظ على مستويات الكوليسترول الطبيعية في الدم.", "name_en": "Konjac fiber", "role_en": "Absorbs water and expands in the stomach, giving you a feeling of fullness before eating. Glucomannan contributes to the maintenance of normal blood cholesterol levels."},
+    {"id": "inulin", "ar": "إنولين", "en": "Inulin", "dose": "1000 mg", "w": 1000, "color": "#13857B", "role": "ألياف بريبيوتيك تغذي البكتيريا النافعة في القولون، فتدعم انتظام الهضم وتقلل الغازات.", "name_en": "Inulin", "role_en": "A prebiotic fiber that feeds the good bacteria in the colon, supporting regular digestion and reducing gas."},
+    {"id": "greentea", "ar": "مستخلص الشاي الأخضر", "en": "Green tea · Polyphenols 96 mg", "dose": "120 mg", "w": 120, "color": "#7FB77E", "role": "غني بالبوليفينولات الداعمة لعملية التمثيل الغذائي والطاقة.", "name_en": "Green tea extract", "role_en": "Rich in polyphenols that support metabolism and energy."},
+    {"id": "coffee", "ar": "مستخلص القهوة", "en": "Coffee extract", "dose": "120 mg", "w": 120, "color": "#8A5A2B", "role": "يعطي دفعة طاقة خفيفة تساعدك على النشاط خلال اليوم.", "name_en": "Coffee extract", "role_en": "Gives a light energy boost to help you stay active during the day."},
+    {"id": "garcinia", "ar": "مستخلص الغارسينيا", "en": "Garcinia · HCA 60 mg", "dose": "120 mg", "w": 120, "color": "#F2941B", "role": "يحتوي على حمض الهيدروكسي ستريك (HCA) الذي يُستخدم تقليدياً لدعم التحكم في الشهية.", "name_en": "Garcinia extract", "role_en": "Contains hydroxycitric acid (HCA), traditionally used to support appetite control."},
+    {"id": "carnitine", "ar": "ل-كارنيتين", "en": "L-Carnitine", "dose": "100 mg", "w": 100, "color": "#F7B955", "role": "يشارك في نقل الدهون إلى داخل الخلايا لتستخدمها مصدراً للطاقة.", "name_en": "L-Carnitine", "role_en": "Helps transport fats into cells to be used for energy."},
+    {"id": "bromelain", "ar": "بروميلين", "en": "Bromelain", "dose": "50 mg", "w": 50, "color": "#E9D45C", "role": "إنزيم طبيعي من الأناناس يساعد على هضم البروتين ويخفف ثقل المعدة.", "name_en": "Bromelain", "role_en": "A natural enzyme from pineapple that helps digest protein and eases stomach heaviness."},
+    {"id": "ginger", "ar": "مستخلص الزنجبيل", "en": "Ginger · Gingerol 2.5 mg", "dose": "50 mg", "w": 50, "color": "#D9822B", "role": "مريح للمعدة ويساعد على تخفيف الانتفاخ والغازات.", "name_en": "Ginger extract", "role_en": "Soothing for the stomach and helps relieve bloating and gas."},
+    {"id": "htp", "ar": "5-HTP", "ltr": true, "en": "5-Hydroxytryptophan", "dose": "25 mg", "w": 25, "color": "#B9A6D9", "role": "يدخل في تكوين السيروتونين المرتبط بالمزاج والإحساس بالشبع، ويساعد على تقليل الأكل العاطفي.", "name_en": "5-HTP", "role_en": "Involved in forming serotonin, which is linked to mood and satiety, and helps reduce emotional eating."},
+    {"id": "chromium", "ar": "كروميوم", "en": "Chromium", "dose": "50 µg", "w": 12, "color": "#5E8FA8", "efsa": true, "role": "يساهم في الحفاظ على مستويات الجلوكوز الطبيعية في الدم، وفي التمثيل الغذائي الطبيعي للمغذيات الكبرى.", "name_en": "Chromium", "role_en": "Contributes to the maintenance of normal blood glucose levels and to normal macronutrient metabolism."},
+    {"id": "b12", "ar": "فيتامين B12", "en": "Vitamin B12", "dose": "2.5 µg", "w": 10, "color": "#D9546A", "efsa": true, "role": "يساهم في التمثيل الغذائي الطبيعي لإنتاج الطاقة، ويقلل الإحساس بالتعب.", "name_en": "Vitamin B12", "role_en": "Contributes to normal energy-yielding metabolism and helps reduce tiredness."}
   ]
 }
 </script>
 
-<script src="assets/i18n-en.js?v=20261028f"></script>
-<script src="assets/app.js?v=20261028f"></script>
-<script src="assets/shop.js?v=20261028f"></script>
+<script src="assets/i18n-en.js?v=20261029a"></script>
+<script src="assets/app.js?v=20261029a"></script>
+<script src="assets/shop.js?v=20261029a"></script>
 </body>
 </html>

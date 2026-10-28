@@ -52,7 +52,7 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
   if (EN){
     const norm = s => s.replace(/\s+/g, " ").trim();
     const AR = /[\u0600-\u06FF]/;
-    const SKIP = "script,style,svg,datalist,#bundles,#ingList,#readout,#aiLog,#glassFill,[data-no-i18n]";
+    const SKIP = "script,style,svg,datalist,#bundles,#ingExplorer,#aiLog,[data-no-i18n]";
     for (const el of document.body.querySelectorAll("*")){
       if (!el.isConnected || !AR.test(el.textContent) || el.closest(SKIP)) continue;
       const en = EN.html[norm(el.innerHTML)];
@@ -99,50 +99,198 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
     a.target = "_blank"; a.rel = "noopener";
   });
 
-  /* ---------- glass + ingredient list ---------- */
-  const fill = $("#glassFill"), list = $("#ingList"), glass = $("#glass"), readout = $("#readout");
-  // ارتفاع الطبقة: الجذر التربيعي للجرعة حتى تظهر المكونات الصغيرة، مع حد أدنى
-  const FILL = 82; // نسبة امتلاء الكوب
-  const roots = INGREDIENTS.map(i => Math.sqrt(i.w));
-  const sum = roots.reduce((a,b)=>a+b,0);
-  const MIN = 2.6;
-  let raw = roots.map(r => Math.max(MIN, r / sum * FILL));
-  const scale = FILL / raw.reduce((a,b)=>a+b,0);
-  raw = raw.map(h => h * scale);
-
-  // الأكبر في القاع: نضيفها بترتيب عكسي لأن الحاوية تبدأ من الأسفل
-  INGREDIENTS.slice().reverse().forEach((ing, k) => {
-    const i = INGREDIENTS.length - 1 - k;
-    const b = document.createElement("button");
-    b.className = "layer"; b.type = "button";
-    b.style.height = raw[i] + "%"; b.style.background = ing.color;
-    b.style.transitionDelay = `0ms, 0ms, ${i * 70}ms`; // التأخير للتعبئة فقط وليس للتحديد
-    b.dataset.i = i; b.setAttribute("aria-label", `${ing.name.replace(/<[^>]+>/g, "")} ${ing.dose}`);
-    fill.appendChild(b);
-  });
-
-  INGREDIENTS.forEach((ing, i) => {
-    const li = document.createElement("li");
-    li.innerHTML = `<button type="button" class="ing" data-i="${i}" aria-pressed="false">
-        <span class="sw" style="background:${ing.color}"></span>
-        <span class="nm">${ing.name}${ing.efsa ? '<span class="efsa">EFSA</span>' : ''}<small dir="ltr" style="text-align:right">${ing.en}</small></span>
-        <span class="ds">${ing.dose}</span></button>`;
-    list.appendChild(li);
-  });
-
-  function select(i){
-    const ing = INGREDIENTS[i];
-    glass.classList.add("is-focus");
-    $$(".layer", fill).forEach(l => l.classList.toggle("on", +l.dataset.i === i));
-    $$(".ing", list).forEach(b => b.setAttribute("aria-pressed", String(+b.dataset.i === i)));
-    readout.innerHTML = `<div class="r-name">${ing.name}</div><div class="r-dose" dir="ltr" style="text-align:right">${ing.dose}</div><p>${ing.role}</p>`;
-  }
-  fill.addEventListener("click", e => { const l = e.target.closest(".layer"); if (l) select(+l.dataset.i); });
-  list.addEventListener("click", e => { const b = e.target.closest(".ing"); if (b) select(+b.dataset.i); });
-  select(0);
-
-  /* ---------- scroll reveal + glass fill ---------- */
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ---------- مكونات الظرف: الكوب نفسه هو المستكشف ----------
+     يُصب سائل وردي ثم يتحول إلى 11 طبقة؛ كل طبقة زر (مرور / تركيز / لمس) يعرض بطاقة المكوّن بجانب الكوب، وتحته في الجوال.
+     المصدر الوحيد للبيانات: product-data ← INGREDIENTS (الاسم، الجرعة، معلومات المستخلص، الوصف، EFSA). لا نص مكوّنات مكتوب هنا.
+     الصورة المصغّرة: ing.img إن وُجدت في البيانات، وإلا رسم SVG حسب ing.id */
+  (function ingredientExplorer(){
+    const root = $("#ingExplorer"), glassBox = $("#ixGlass"), card = $("#ixCard");
+    if (!root || !glassBox || !card) return;
+    const N = INGREDIENTS.length, plain = s => String(s).replace(/<[^>]+>/g, "");
+    const hover = matchMedia("(hover: hover) and (pointer: fine)").matches;
+    const stacked = () => matchMedia("(max-width: 760px)").matches;
+    const tint = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16},${n >> 8 & 255},${n & 255},${a})`; };
+
+    // هندسة الكوب بوحدات viewBox
+    const VB = { y: -40, h: 500 }, TOP = 64, BOTTOM = 420;
+    const wallX = y => 30 + 23 * (y - 28) / 378;                       // الجدار الداخلي عند الارتفاع y
+    // سماكة توضيحية: حد أدنى يكفي للّمس (≥ 24px في الجوال) والباقي حسب الجذر التربيعي للجرعة؛ الأكبر في القاع
+    const Hh = BOTTOM - TOP, MIN = Hh * .075, extra = Hh - MIN * N;
+    const roots = INGREDIENTS.map(i => Math.sqrt(i.w)), rs = roots.reduce((x, y) => x + y, 0);
+    let yy = BOTTOM;
+    const bands = INGREDIENTS.map((_, i) => { const hh = MIN + extra * roots[i] / rs; yy -= hh; return { y: yy, h: hh }; });
+
+    const wave = Array.from({ length: 7 }, () => "q37.5,-7 75,0 t75,0").join(" ");
+    glassBox.innerHTML = `
+<svg class="ix-svg" viewBox="0 ${VB.y} 300 ${VB.h}" aria-hidden="true" focusable="false">
+  <defs>
+    <clipPath id="ixClip"><path d="M30,28 L270,28 L247,406 Q245.8,420 231,420 L69,420 Q54.2,420 53,406 Z"/></clipPath>
+    <linearGradient id="ixGlassG" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity=".6"/><stop offset=".2" stop-color="#fff" stop-opacity=".14"/><stop offset=".55" stop-color="#fff" stop-opacity=".05"/><stop offset=".85" stop-color="#fff" stop-opacity=".14"/><stop offset="1" stop-color="#fff" stop-opacity=".5"/></linearGradient>
+    <linearGradient id="ixShadeG" x1="0" x2="1"><stop offset="0" stop-color="#000" stop-opacity=".3"/><stop offset=".17" stop-color="#000" stop-opacity=".05"/><stop offset=".3" stop-color="#fff" stop-opacity=".2"/><stop offset=".42" stop-color="#fff" stop-opacity="0"/><stop offset=".82" stop-color="#000" stop-opacity=".06"/><stop offset="1" stop-color="#000" stop-opacity=".32"/></linearGradient>
+    <linearGradient id="ixPinkG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FAC6D3"/><stop offset="1" stop-color="#EE8EA8"/></linearGradient>
+    <linearGradient id="ixStreamG" x1="0" x2="1"><stop offset="0" stop-color="#F3A2B7"/><stop offset=".5" stop-color="#FCD9E2"/><stop offset="1" stop-color="#F3A2B7"/></linearGradient>
+    <radialGradient id="ixShadowG"><stop offset="0" stop-color="#0F3C37" stop-opacity=".3"/><stop offset="1" stop-color="#0F3C37" stop-opacity="0"/></radialGradient>
+    <filter id="ixGlow" x="-10%" y="-60%" width="120%" height="220%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <ellipse cx="150" cy="447" rx="128" ry="11" fill="url(#ixShadowG)"/>
+  <rect class="ix-stream" x="143" y="-40" width="14" height="460" rx="7" fill="url(#ixStreamG)"/>
+  <g clip-path="url(#ixClip)">
+    <g class="ix-pink"><path class="ix-wave" d="M-300,${TOP} ${wave} V${BOTTOM + 30} H-300 Z" fill="url(#ixPinkG)"/></g>
+    <g class="ix-liquid">
+      ${bands.map((b, i) => `<rect class="lyr" data-i="${i}" style="--k:${i}" x="0" y="${b.y.toFixed(2)}" width="300" height="${(b.h + .6).toFixed(2)}" fill="${INGREDIENTS[i].color}"/>`).join("")}
+      ${bands.slice(0, -1).map((b, i) => `<line class="ix-sep" style="--k:${i}" x1="0" x2="300" y1="${b.y.toFixed(2)}" y2="${b.y.toFixed(2)}" stroke="#fff" stroke-opacity=".38" stroke-width="1.2"/>`).join("")}
+      <rect class="ix-shade" x="0" y="0" width="300" height="440" fill="url(#ixShadeG)"/>
+      <ellipse class="ix-meniscus" cx="150" cy="${TOP}" rx="${(150 - wallX(TOP)).toFixed(1)}" ry="5" fill="#fff" fill-opacity=".3"/>
+    </g>
+    <rect class="ix-ring" x="0" y="${TOP}" width="300" height="20" fill="none" stroke="#fff" stroke-width="2.8" filter="url(#ixGlow)"/>
+  </g>
+  <path d="M22,20 L278,20 L253,426 Q251,440 236,440 L64,440 Q49,440 47,426 Z" fill="url(#ixGlassG)" stroke="#0F5C57" stroke-opacity=".32" stroke-width="1.6"/>
+  <path d="M41,44 L61,392" stroke="#fff" stroke-opacity=".7" stroke-width="7" stroke-linecap="round"/>
+  <path d="M258,56 L246,330" stroke="#fff" stroke-opacity=".35" stroke-width="3" stroke-linecap="round"/>
+  <ellipse cx="150" cy="20" rx="128" ry="8" fill="#fff" fill-opacity=".3" stroke="#0F5C57" stroke-opacity=".28" stroke-width="1.4"/>
+  <path d="M62,430 Q150,444 238,430" stroke="#fff" stroke-opacity=".65" stroke-width="3" fill="none" stroke-linecap="round"/>
+</svg>`;
+    const lyrs = $$(".lyr", glassBox), ring = $(".ix-ring", glassBox);
+    const pct = v => ((v - VB.y) / VB.h * 100).toFixed(3) + "%";
+
+    // أزرار الطبقات (بالترتيب من الأعلى للأسفل في التبويب حتى يطابق القراءة)
+    const group = document.createElement("div");
+    group.setAttribute("role", "group"); group.setAttribute("aria-label", t("مكونات الظرف في الكوب"));
+    const hots = [];
+    for (let i = N - 1; i >= 0; i--) {
+      const b = bands[i], ing = INGREDIENTS[i], btn = document.createElement("button");
+      btn.type = "button"; btn.className = "ix-hot"; btn.dataset.i = i;
+      btn.style.top = pct(b.y); btn.style.height = (b.h / VB.h * 100).toFixed(3) + "%";
+      btn.setAttribute("aria-label", `${plain(ing.name)} — ${ing.dose}`);
+      btn.setAttribute("aria-controls", "ixCard"); btn.setAttribute("aria-pressed", "false");
+      group.appendChild(btn); hots[i] = btn;
+    }
+    const dot = document.createElement("span"), invite = document.createElement("span");
+    dot.className = "ix-dot"; invite.className = "ix-invite";
+    invite.style.top = pct(bands[0].y + bands[0].h / 2);
+    glassBox.append(group, dot, invite);
+
+    // رسوم مصغّرة (SVG) لكل مكوّن حسب id — تُستبدل تلقائياً بصورة إن أضيف ing.img في product-data
+    const ART = {
+      konjac: '<ellipse cx="32" cy="39" rx="22" ry="16" fill="#A8794D"/><ellipse cx="32" cy="36" rx="19" ry="12" fill="#BE8E5F"/><circle cx="24" cy="35" r="2" fill="#86592F"/><circle cx="37" cy="32" r="1.8" fill="#86592F"/><circle cx="33" cy="43" r="2.2" fill="#86592F"/><circle cx="44" cy="39" r="1.6" fill="#86592F"/><path d="M32 24c0-6 3-10 9-12-1 6-4 9-9 12Z" fill="#5FA05B"/><path d="M31 24c-1-5-4-8-9-9 1 5 4 8 9 9Z" fill="#7FB77E"/>',
+      inulin: '<path d="M8 40c0 7 11 13 24 13s24-6 24-13Z" fill="#C99A63"/><ellipse cx="32" cy="40" rx="24" ry="6" fill="#B5854F"/><path d="M14 40c2-9 9-15 18-15s16 6 18 15c-5 2-11 3-18 3s-13-1-18-3Z" fill="#F5F0E7"/><path d="M21 34c3-3 7-5 11-5" stroke="#fff" stroke-width="2.5" stroke-linecap="round" fill="none"/>',
+      greentea: '<path d="M14 46C12 26 26 12 50 12c2 22-12 36-36 34Z" fill="#6FAF5E"/><path d="M16 44C24 34 34 26 46 18" stroke="#3F7F3A" stroke-width="2.4" stroke-linecap="round" fill="none"/><path d="M10 55c4-12 12-18 22-20-2 10-10 18-22 20Z" fill="#8FC47A"/>',
+      coffee: '<ellipse cx="24" cy="35" rx="12" ry="16" transform="rotate(-25 24 35)" fill="#7A4A26"/><path d="M19 23c6 6 6 18 10 24" stroke="#4E2D15" stroke-width="2.6" fill="none" stroke-linecap="round"/><ellipse cx="42" cy="30" rx="11" ry="15" transform="rotate(20 42 30)" fill="#8D5A30"/><path d="M45 17c-5 6-4 17-7 25" stroke="#5A3418" stroke-width="2.4" fill="none" stroke-linecap="round"/>',
+      garcinia: '<circle cx="32" cy="37" r="18" fill="#9CC458"/><path d="M32 19v36M21 23c-4 9-4 19 0 28M43 23c4 9 4 19 0 28" stroke="#7DA63D" stroke-width="2" fill="none"/><path d="M32 19c2-6 7-9 13-9-2 6-7 9-13 9Z" fill="#4E8F45"/><ellipse cx="25" cy="31" rx="4" ry="6" fill="#fff" fill-opacity=".3"/>',
+      carnitine: '<g transform="rotate(-35 32 32)"><rect x="12" y="24" width="40" height="16" rx="8" fill="#fff" stroke="#E2D3B0" stroke-width="1.5"/><path d="M32 24h12a8 8 0 0 1 0 16H32Z" fill="#F7B955"/><rect x="16" y="27" width="10" height="3" rx="1.5" fill="#fff" fill-opacity=".85"/></g><circle cx="46" cy="49" r="3" fill="#EFE6D3"/><circle cx="53" cy="43" r="2" fill="#EFE6D3"/>',
+      bromelain: '<path d="M32 25c-3-7-8-10-13-10 2 5 6 8 10 10-5-2-10-1-13 2 5 0 10 1 13 3ZM32 25c3-7 8-10 13-10-2 5-6 8-10 10 5-2 10-1 13 2-5 0-10 1-13 3Z" fill="#5FA05B"/><path d="M32 13c-2 5-2 9 0 13 2-4 2-8 0-13Z" fill="#4E8F45"/><ellipse cx="32" cy="42" rx="14" ry="16" fill="#F2C744"/><path d="M24 33l3 3 3-3 3 3 3-3 3 3M21 40l3 3 3-3 3 3 3-3 3 3 3-3 3 3M22 47l3 3 3-3 3 3 3-3 3 3 3-3 3 3M26 54l3 2 3-2 3 2 3-2" stroke="#D29A1E" stroke-width="1.6" fill="none" stroke-linejoin="round"/>',
+      ginger: '<path d="M9 41c0-5 4-8 9-8 1-6 6-9 11-7 3-5 10-6 13-1 5-1 10 3 9 8 4 2 5 7 2 10-3 4-9 4-12 1-4 3-10 3-13 0-5 2-11 1-13-3-4 0-6-0-6 0Z" fill="#E0B072"/><path d="M18 33c2 4 6 6 11 5M29 26c2 5 6 7 11 7M42 25c0 4 3 7 7 8" stroke="#B9844A" stroke-width="2" fill="none" stroke-linecap="round"/><circle cx="23" cy="43" r="1.6" fill="#B9844A"/>',
+      htp: '<path d="M8 40c8-14 31-20 46-12-8 14-31 20-46 12Z" fill="#8BB36B"/><path d="M13 39c10-6 25-9 37-10" stroke="#6C9450" stroke-width="1.6" fill="none"/><ellipse cx="21" cy="38" rx="5" ry="4" fill="#5B3A2A"/><ellipse cx="32" cy="35" rx="5" ry="4" fill="#6B4433"/><ellipse cx="43" cy="32" rx="5" ry="4" fill="#5B3A2A"/>',
+      chromium: '<path d="M32 8 48 22 42 54H22L16 22Z" fill="#7FA9C0"/><path d="M32 8 40 24 32 54 24 24Z" fill="#A3C4D6"/><path d="M16 22h32M24 24l-8-2M40 24l8-2" stroke="#5E8FA8" stroke-width="1.4" fill="none"/><path d="M27 14l-4 6" stroke="#fff" stroke-width="2" stroke-linecap="round"/>',
+      b12: '<path d="M32 8C24 20 16 28 16 38a16 16 0 0 0 32 0c0-10-8-18-16-30Z" fill="#E06C80"/><path d="M24 34c0-5 2-9 5-12" stroke="#fff" stroke-opacity=".6" stroke-width="3" stroke-linecap="round" fill="none"/><text x="32" y="45" text-anchor="middle" font-family="Arial, sans-serif" font-weight="700" font-size="13" fill="#fff">B12</text>'
+    };
+    const art = ing => ing.img ? `<img src="${ing.img}" alt="" width="52" height="52" loading="lazy" decoding="async">`
+      : `<svg viewBox="0 0 64 64" aria-hidden="true">${ART[ing.id] || '<circle cx="32" cy="32" r="16" fill="' + ing.color + '"/>'}</svg>`;
+    const CHEV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>';
+    const TAP = '<svg class="ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 22V10a3 3 0 0 1 6 0v11l7.6 1.6a4 4 0 0 1 3.1 4.6L34 37a6 6 0 0 1-5.9 5H23a6 6 0 0 1-4.8-2.4L12 31.5a3 3 0 0 1 4.6-3.8L19 30"/><path d="M14 8l-3-3M30 8l3-3M22 3V1"/></svg>';
+
+    const body = document.createElement("div"), nav = document.createElement("div");
+    body.className = "ixc-body"; nav.className = "ixc-nav";
+    nav.innerHTML = `<button type="button" class="ixc-prev" aria-label="${t("المكوّن السابق")}">${CHEV.replace('d="m9 6 6 6-6 6"', 'd="m15 6-6 6 6 6"')}</button><span class="ixc-count num" aria-hidden="true"></span><button type="button" class="ixc-next" aria-label="${t("المكوّن التالي")}">${CHEV}</button>`;
+    card.setAttribute("aria-live", "polite");
+    card.append(body, nav);
+    const hint = () => `<div class="ix-hint">${TAP}<b>${t("استكشف مكونات كالم كاسترو")}</b><span>${hover ? t("مرّر المؤشر أو اضغط على أي طبقة في الكوب") : t("اضغط على أي طبقة في الكوب")}</span></div>`;
+    const content = ing => `<div class="ixc-top"><span class="ixc-art" style="background:${tint(ing.color, .14)}">${art(ing)}</span>
+      <div><h3 class="ixc-name">${ing.name}${ing.efsa ? ` <span class="efsa" title="${t("ادعاء صحي معتمد من EFSA")}">EFSA</span>` : ""}</h3>
+      <p class="ixc-ext" dir="ltr">${ing.en.replace(/ (mg|µg)/g, " $1")}</p></div></div>
+      <p class="ixc-dose"><b dir="ltr">${ing.dose}</b> ${t("لكل ظرف")}</p>
+      <p class="ixc-role">${ing.role}</p>`;
+    body.innerHTML = hint();
+
+    let sel = -1, swapT = 0;
+    function place(){
+      if (sel < 0) return;
+      const b = bands[sel], g = glassBox.getBoundingClientRect(), mid = b.y + b.h / 2;
+      const cy = g.top + (mid - VB.y) / VB.h * g.height;
+      // النقطة على جدار الكوب من جهة البطاقة
+      const side = card.getBoundingClientRect(), cardLeft = side.left < g.left;
+      const wx = wallX(mid) + 14, x = cardLeft ? wx : 300 - wx;
+      dot.style.top = pct(mid); dot.style.left = (x / 300 * 100).toFixed(2) + "%";
+      if (stacked()) { card.style.top = ""; return; }
+      const col = card.parentElement.getBoundingClientRect(), ch = card.offsetHeight;
+      const top = Math.max(0, Math.min(col.height - ch, cy - col.top - ch / 2));
+      card.style.top = top + "px";
+      card.style.setProperty("--ny", Math.max(20, Math.min(ch - 20, cy - col.top - top)) + "px");
+    }
+    // الجوال: إظهار البطاقة كاملة إن كانت تحت الشريط السفلي (بعد اكتمال تبديل المحتوى)
+    let revealT = 0;
+    function reveal(){
+      clearTimeout(revealT);
+      revealT = setTimeout(() => {
+        if (!stacked() || sel < 0) return;
+        const r = card.getBoundingClientRect(), bottom = innerHeight - 110;   // فوق الشريط السفلي
+        if (r.bottom > bottom) scrollBy({ top: Math.min(r.bottom - bottom, r.top - 70), behavior: reduce ? "auto" : "smooth" });
+      }, 230);
+    }
+    function select(i){
+      i = (i + N) % N;
+      if (i === sel) return;
+      const first = sel < 0;
+      sel = i;
+      root.classList.add("has-sel", "touched");
+      lyrs.forEach(r => r.classList.toggle("on", +r.dataset.i === i));
+      hots.forEach(b => b.setAttribute("aria-pressed", String(+b.dataset.i === i)));
+      ring.setAttribute("y", bands[i].y.toFixed(2)); ring.setAttribute("height", bands[i].h.toFixed(2));
+      clearTimeout(swapT);
+      const show = () => {
+        body.innerHTML = content(INGREDIENTS[i]);
+        $(".ixc-count", nav).textContent = `${i + 1} / ${N}`;
+        card.classList.remove("is-hint", "swap");
+        place();
+      };
+      if (first || reduce) show();
+      else { card.classList.add("swap"); swapT = setTimeout(show, 170); }
+    }
+    function clear(){
+      if (sel < 0) return;
+      sel = -1; clearTimeout(swapT);
+      root.classList.remove("has-sel");
+      lyrs.forEach(r => r.classList.remove("on"));
+      hots.forEach(b => b.setAttribute("aria-pressed", "false"));
+      body.innerHTML = hint(); card.classList.add("is-hint"); card.classList.remove("swap"); card.style.top = "";
+    }
+
+    let hoverT = 0;
+    hots.forEach(b => {
+      const i = +b.dataset.i;
+      b.addEventListener("click", () => { select(i); reveal(); });   // اللمس يركّز الزر قبل الضغط، فالإظهار منفصل عن الاختيار
+      b.addEventListener("focus", () => select(i));
+      if (hover) {
+        b.addEventListener("mouseenter", () => { clearTimeout(hoverT); hoverT = setTimeout(() => select(i), 45); });
+        b.addEventListener("mouseleave", () => clearTimeout(hoverT));
+      }
+      b.addEventListener("keydown", e => {
+        const go = { ArrowUp: i + 1, ArrowRight: i + 1, ArrowDown: i - 1, ArrowLeft: i - 1, Home: N - 1, End: 0 }[e.key];
+        if (go != null) { e.preventDefault(); hots[(go + N) % N].focus(); }
+        else if (e.key === "Escape") { clear(); }
+      });
+    });
+    $(".ixc-prev", nav).addEventListener("click", () => { select(sel - 1); reveal(); });
+    $(".ixc-next", nav).addEventListener("click", () => { select(sel + 1); reveal(); });
+    document.addEventListener("pointerdown", e => { if (sel >= 0 && !root.contains(e.target)) clear(); });
+    document.addEventListener("keydown", e => { if (e.key === "Escape" && sel >= 0 && root.contains(document.activeElement)) clear(); });
+    addEventListener("resize", place);
+
+    // الصب عند أول ظهور للقسم
+    const ready = () => root.classList.add("ready");
+    if (reduce || !("IntersectionObserver" in window)) { root.classList.add("static"); ready(); return; }
+    const io = new IntersectionObserver(([en]) => {
+      if (!en.isIntersecting) return;
+      io.disconnect();
+      root.classList.add("pour");
+      setTimeout(ready, 2650);
+    }, { threshold: .4 });
+    io.observe(glassBox);
+  })();
+
+  /* ---------- scroll reveal ---------- */
   /* ---------- فيديو «تعرف على كالم كاسترو»: نافذة تظهر من موضع الزر، والفيديو يُحمَّل عند أول فتح.
      أول زيارة: عند وصول الزائر للزر يظهر مؤشر يضغطه تلقائياً ويُفتح الفيديو بدون صوت (المتصفحات تمنع الصوت بلا لمسة)،
      مع زر «اضغط لتشغيل الصوت». مرة واحدة لكل زائر، ولا يحدث إن كان مشغولاً بالسلة أو المساعد أو الطلب ---------- */
@@ -255,15 +403,13 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
     const io = new IntersectionObserver(entries => {
       entries.forEach(en => {
         if (!en.isIntersecting) return;
-        en.target.classList.add(en.target === glass ? "filled" : "in");
+        en.target.classList.add("in");
         io.unobserve(en.target);
       });
     }, { threshold: .15 });
     $$(".rv").forEach(el => io.observe(el));
-    io.observe(glass);
   } else {
     $$(".rv").forEach(el => el.classList.add("in"));
-    glass.classList.add("filled");
   }
 
   // شريط الجوال يختفي داخل قسم العروض ما دامت السلة فارغة؛ وعند وجود منتجات يبقى ظاهراً بزر «إتمام الطلب»
