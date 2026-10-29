@@ -202,6 +202,8 @@ window.I18N_EN = {
   "للطلب بالجملة تواصل عبر الإيميل: <a href=\"mailto:info@vitamik.com?subject=%D8%A7%D8%B3%D8%AA%D9%81%D8%B3%D8%A7%D8%B1%20%D8%B9%D9%86%20%D8%B7%D9%84%D8%A8%20%D8%A8%D8%A7%D9%84%D8%AC%D9%85%D9%84%D8%A9%20-%20CalmGastro\" dir=\"ltr\">info@vitamik.com</a>": "For wholesale orders, email us: <a href=\"mailto:info@vitamik.com?subject=Wholesale%20inquiry%20-%20CalmGastro\" dir=\"ltr\">info@vitamik.com</a>"
  },
  "text": {
+  "تمثيل توضيحي متحرك. النتائج تختلف من شخص لآخر، مع نظام غذائي متوازن ونشاط بدني.": "Illustrative animation. Results vary from person to person, with a balanced diet and physical activity.",
+  "شاهد ماذا يحدث لدهونك العنيدة عندما يدخل كالم كاسترو إلى جسمك!": "See what happens to your stubborn fat when CalmGastro enters your body!",
   "الملصق الخلفي للعلبة كما هو": "The box back label, as printed",
   "تكبير الصورة": "Zoom in",
   "فتح الصورة بحجمها الكامل": "Open the full-size image",
@@ -262,6 +264,7 @@ window.I18N_EN = {
   "لم تجده؟ فريقنا يساعدك بعد التحقق من هويتك.": "Can't find it? Our team will help after verifying your identity."
  },
  "attr": {
+  "رسم متحرك توضيحي: جسم يشرب كوب كالم كاسترو ثم تتفكك خلايا الدهون في البطن": "Illustrative animation: a body drinks a glass of CalmGastro, then the belly fat cells break apart",
   "آراء العملاء": "Customer reviews",
   "فيديو تعريفي عن CalmGastro": "CalmGastro intro video",
   "إغلاق الفيديو": "Close video",
@@ -287,6 +290,8 @@ window.I18N_EN = {
   "إغلاق السلة": "Close cart"
  },
  "ui": {
+  "تشغيل الفيديو": "Play video",
+  "إيقاف الفيديو": "Pause video",
   "عرض جميع المكونات": "See all ingredients",
   "جميع المكونات": "All ingredients",
   "تصغير الصورة": "Zoom out",
