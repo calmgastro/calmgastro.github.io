@@ -811,3 +811,33 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
     document.addEventListener("keydown", e => { if (e.key === "Escape" && !panel.hidden) closePanel(); });
   }
 })();
+
+/* ---------- #watch: the 10-second illustration plays (muted, looping) only while it is on screen ---------- */
+(function watchVideo(){
+  const v = document.getElementById("watchVideo"), btn = document.getElementById("watchToggle");
+  if (!v || !btn) return;
+  if (LANG === "en"){ v.poster = v.dataset.posterEn; }
+  const src = LANG === "en" ? v.dataset.srcEn : v.dataset.src;
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const saveData = navigator.connection && navigator.connection.saveData;
+  let userPaused = reduce || saveData, onScreen = false;                     // الحركة المخففة/توفير البيانات: لا تشغيل تلقائي
+  const load = () => { if (!v.getAttribute("src")) { v.src = src; v.preload = "auto"; } };
+  const sync = () => {
+    const playing = !v.paused;
+    btn.setAttribute("aria-pressed", String(playing));
+    btn.setAttribute("aria-label", t(playing ? "إيقاف الفيديو" : "تشغيل الفيديو"));
+  };
+  const play = () => { load(); const p = v.play(); if (p && p.catch) p.catch(() => sync()); };
+  v.addEventListener("play", sync); v.addEventListener("pause", sync);
+  btn.addEventListener("click", () => {
+    if (v.paused){ userPaused = false; play(); } else { userPaused = true; v.pause(); }
+  });
+  document.addEventListener("visibilitychange", () => { if (document.hidden) v.pause(); else if (onScreen && !userPaused) play(); });
+  if (!("IntersectionObserver" in window)){ load(); sync(); return; }
+  new IntersectionObserver(([en]) => { if (en.isIntersecting) load(); }, { rootMargin: "400px 0px" }).observe(v);  // تحميل قبل الوصول بقليل
+  new IntersectionObserver(([en]) => {
+    onScreen = en.isIntersecting;
+    if (onScreen && !userPaused) play(); else if (!onScreen) v.pause();
+  }, { threshold: .45 }).observe(v);
+  sync();
+})();
