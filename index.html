@@ -277,8 +277,10 @@
   @media (prefers-reduced-motion:reduce){ .lm-card{animation:vmFade .2s ease both} .label-link{transition:none} }
 
   /* ---------- مكونات الظرف: طريقة التحضير ثم المكونات ---------- */
-  .ux{display:grid; grid-template-columns:repeat(2, 96px) minmax(260px, 360px) repeat(2, 96px); justify-content:center; align-items:center; gap:14px 16px}
-  .ux-stage{grid-column:3; grid-row:1 / 4; position:relative; width:100%; aspect-ratio:916/1224; margin-top:40%; isolation:isolate}
+  .ux{display:flex; flex-direction:column; align-items:center; gap:20px}
+  /* المشهد: الكوب في الوسط، وبطاقة المكوّن تظهر يميناً ويساراً (الجوال: تحته). المسافة العلوية لدخول الظرف */
+  .ux-tour{position:relative; width:100%; display:grid; grid-template-columns:minmax(0,1fr) minmax(260px,360px) minmax(0,1fr); column-gap:clamp(16px,3vw,44px); padding-top:118px}
+  .ux-stage{grid-column:2; grid-row:1; position:relative; width:100%; aspect-ratio:916/1224; isolation:isolate}
   .ux-glass{position:absolute; inset:0; width:100%; height:100%; display:block; user-select:none; -webkit-user-drag:none;
 }   /* الصورة نفسها تذوب في لون الصفحة (#FBFCF6) من الأطراف */
   .ux-pink{opacity:0}
@@ -336,16 +338,38 @@
   .ux-ing:hover .ux-orb{transform:translateY(-3px) scale(1.06)}
   .ux-ing[aria-pressed="true"] .ux-orb{transform:scale(1.12); box-shadow:0 0 0 3px #fff, 0 0 0 6px var(--orange), 0 16px 28px -12px rgba(242,148,27,.65)}
   .ux-ing:focus-visible{outline:3px solid var(--orange); outline-offset:3px}
-  .ux-ing:nth-of-type(1){grid-area:1/1} .ux-ing:nth-of-type(2){grid-area:1/2} .ux-ing:nth-of-type(3){grid-area:2/1} .ux-ing:nth-of-type(4){grid-area:2/2}
-  .ux-ing:nth-of-type(5){grid-area:3/1} .ux-ing:nth-of-type(6){grid-area:3/2} .ux-ing:nth-of-type(7){grid-area:1/4} .ux-ing:nth-of-type(8){grid-area:1/5}
-  .ux-ing:nth-of-type(9){grid-area:2/4} .ux-ing:nth-of-type(10){grid-area:2/5} .ux-ing:nth-of-type(11){grid-area:3/4}
-  .ux-foot{grid-column:1 / -1; grid-row:4; justify-self:center; opacity:0; transition:opacity .4s ease}
+  .ux-ing.lit .ux-orb{box-shadow:0 0 0 3px #fff, 0 0 0 5px rgba(242,148,27,.55), 0 12px 24px -14px rgba(15,92,87,.55)}
+  /* جميع المكونات تحت المشهد */
+  .ux-grid{display:flex; flex-wrap:wrap; justify-content:center; gap:16px; max-width:656px; scroll-margin-top:90px}
+  /* بطاقة المكوّن بجانب الكوب + الخط الواصل إليه */
+  .ux-spot{grid-column:1; grid-row:1; align-self:start; justify-self:center; z-index:5; display:flex; align-items:center; gap:14px; width:min(100%, 340px); box-sizing:border-box;
+    padding:14px 16px; border-radius:var(--r-md); background:var(--white); border:1px solid var(--line); box-shadow:0 22px 44px -26px rgba(15,92,87,.55);
+    opacity:0; transform:translateY(12px) scale(.96); transition:opacity .4s ease, transform .55s cubic-bezier(.2,.9,.3,1.25); pointer-events:none}
+  .ux-spot.in{opacity:1; transform:none}
+  .ux-spot-orb{flex:none; width:68px; height:68px; border-radius:50%; display:grid; place-items:center; box-shadow:0 12px 24px -14px rgba(15,92,87,.55), inset 0 0 0 1px rgba(255,255,255,.85)}
+  .ux-spot-orb svg, .ux-spot-orb img{width:46px; height:46px; display:block}
+  .ux-spot-txt{min-width:0; display:flex; flex-direction:column}
+  .ux-spot-txt > *{opacity:0; transform:translateY(6px); transition:opacity .35s ease .25s, transform .35s ease .25s}
+  .ux-spot.in .ux-spot-txt > *{opacity:1; transform:none}
+  .ux-spot.in .ux-spot-txt > :nth-child(2){transition-delay:.38s} .ux-spot.in .ux-spot-txt > :nth-child(3){transition-delay:.5s}
+  .ux-spot-nm{font-family:var(--f-display); font-size:1.08rem; color:var(--teal-deep); line-height:1.35}
+  .ux-spot-dose{font-size:.85rem; color:var(--muted); margin-top:2px}
+  .ux-spot-dose b{font-family:var(--f-mono); color:var(--orange); font-size:1.02rem; margin-inline-end:.3em; unicode-bidi:isolate}
+  .ux-spot-role{margin-top:.35rem; font-size:.9rem; line-height:1.6; color:var(--ink)}
+  .ux-wire{position:absolute; inset:0; width:100%; height:100%; overflow:visible; pointer-events:none; z-index:4}
+  .ux-wire path{fill:none; stroke:var(--orange); stroke-width:2; stroke-linecap:round; stroke-dasharray:1; stroke-dashoffset:1; opacity:0}
+  .ux-wire.draw path{opacity:1; stroke-dashoffset:0; transition:stroke-dashoffset .7s cubic-bezier(.4,0,.2,1)}
+  .ux-wire circle{fill:#fff; stroke:var(--orange); stroke-width:3; opacity:0; transform-box:fill-box; transform-origin:center}
+  .ux-wire.draw circle{opacity:1; transition:opacity .2s ease .6s; animation:wireDot 1.6s .7s ease-out infinite}
+  .ux-wire.out path, .ux-wire.out circle{opacity:0; transition:opacity .3s ease}
+  @keyframes wireDot{0%,60%,100%{transform:scale(1)} 30%{transform:scale(1.6)}}
+  .ux-foot{display:flex; flex-wrap:wrap; justify-content:center; gap:10px; opacity:0; transition:opacity .4s ease}
   .ux.done .ux-foot{opacity:1}
-  .ux-replay{display:inline-flex; align-items:center; gap:.45em; padding:.55em 1.1em; border-radius:999px; border:1.5px solid var(--line); background:var(--white); color:var(--teal-deep); font:inherit; font-size:.9rem; font-weight:600; cursor:pointer}
-  .ux-replay:hover{background:var(--lime)}
-  .ux-replay svg{width:1.1em; height:1.1em}
+  .ux-replay, .ux-down{display:inline-flex; min-height:42px; align-items:center; gap:.45em; padding:.55em 1.1em; border-radius:999px; border:1.5px solid var(--line); background:var(--white); color:var(--teal-deep); font:inherit; font-size:.9rem; font-weight:600; cursor:pointer}
+  .ux-replay:hover, .ux-down:hover{background:var(--lime)}
+  .ux-replay svg, .ux-down svg{width:1.1em; height:1.1em}
   /* البطاقة */
-  .ix-card{grid-column:1 / -1; grid-row:5; justify-self:center; width:min(560px, 100%); background:var(--white); border:1px solid var(--line); border-radius:var(--r-md);
+  .ix-card{width:min(560px, 100%); background:var(--white); border:1px solid var(--line); border-radius:var(--r-md);
     padding:1.15rem 1.25rem 1rem; box-shadow:0 26px 54px -30px rgba(15,92,87,.55)}
   /* مساحة البطاقة محجوزة من البداية (ارتفاع أطول مكوّن) حتى لا تقفز الصفحة عند ظهورها أو تبدّل المكوّن */
   .ix-card.is-hint{display:flex; flex-direction:column; justify-content:center; background:rgba(255,255,255,.55); box-shadow:none; border-style:dashed}
@@ -372,11 +396,12 @@
   .ixc-count{font-family:var(--f-mono); color:var(--muted); font-size:.9rem}
   .ix-notes{max-width:640px; margin:clamp(20px,3vw,32px) auto 0; text-align:center}
   @media (max-width:1000px){
-    .ux{grid-template-columns:repeat(4, minmax(0, 1fr)); max-width:520px; margin-inline:auto; gap:12px 8px}
-    .ux-stage{grid-column:1 / -1; grid-row:1; width:min(84vw, 340px); justify-self:center; margin-top:min(34vw, 140px)}
-    .ux-ing{grid-area:auto !important; width:100%}
-    .ux-foot{grid-row:auto}
-    .ix-card{grid-row:auto; margin-top:4px}
+    .ux{max-width:520px; margin-inline:auto; gap:16px}
+    .ux-tour{grid-template-columns:minmax(0,1fr); padding-top:min(24vw, 96px)}
+    .ux-stage{grid-column:1; width:min(68vw, 290px); justify-self:center}
+    .ux-spot{grid-column:1; grid-row:2; margin-top:14px; width:100%; max-width:420px}
+    .ux-grid{display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:12px 8px; width:100%; max-width:none}
+    .ux-ing{width:100%}
   }
   @media (max-width:640px){
     .ux-orb{width:62px; height:62px}
@@ -385,7 +410,8 @@
     .ux-cap{font-size:.84rem}
   }
   @media (prefers-reduced-motion:reduce){
-    .ux-orb, .ixc-body{transition:none}
+    .ux-orb, .ixc-body, .ux-spot, .ux-spot-txt > *{transition:none}
+    .ux-wire.draw path{transition:none} .ux-wire.draw circle{animation:none}
   }
   .efsa{display:inline-block; font-size:.7rem; background:var(--teal-deep); color:var(--white); border-radius:4px; padding:0 .4em; margin-inline-start:.4em; vertical-align:middle; font-family:var(--f-mono)}
   .ing-foot{font-size:.85rem; color:var(--muted); margin-top:.5rem}
@@ -1630,8 +1656,8 @@
 }
 </script>
 
-<script src="assets/i18n-en.js?v=20261029f"></script>
-<script src="assets/app.js?v=20261029f"></script>
-<script src="assets/shop.js?v=20261029f"></script>
+<script src="assets/i18n-en.js?v=20261029g"></script>
+<script src="assets/app.js?v=20261029g"></script>
+<script src="assets/shop.js?v=20261029g"></script>
 </body>
 </html>

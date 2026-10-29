@@ -133,23 +133,34 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
     const CHEV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>';
     const STEPS = [t("كوب ماء (250 مل)"), t("أضف ظرفاً واحداً"), t("حرّكه جيداً واشربه مباشرة"), t("قبل وجبتك بنصف ساعة، ثم كوب ماء إضافي")];
     const SWIRL = "M50 8c22 0 36 8 36 18S70 44 50 44 18 36 18 27s14-15 32-15 28 6 28 14-12 12-28 12-22-4-22-10 9-9 22-9 16 3 16 7";
+    const DOWN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg>';
 
     root.innerHTML = `
-      <div class="ux-stage" role="img" aria-label="${t("طريقة التحضير: ظرف واحد في كوب ماء 250 مل، حرّكه جيداً واشربه قبل وجبتك بنصف ساعة")}">
-        <img class="ux-glass" src="assets/usage-glass-water.jpg" alt="" width="916" height="1224" decoding="async">
-        <img class="ux-glass ux-pink" src="assets/usage-glass-pink.jpg" alt="" width="916" height="1224" decoding="async">
-        <div class="ux-liquid"><span class="ux-cloud"></span>
-          <svg class="ux-swirl" viewBox="0 0 100 60" preserveAspectRatio="none" aria-hidden="true"><path d="${SWIRL}" fill="none" stroke="#fff" stroke-opacity=".75" stroke-width="1.6" stroke-linecap="round"/><path d="${SWIRL}" fill="none" stroke="#F39AB2" stroke-opacity=".7" stroke-width="1.4" stroke-linecap="round" transform="translate(0 6)"/></svg>
-          <span class="ux-fizz">${"<i></i>".repeat(16)}</span></div>
-        <span class="ux-stream"></span>
-        <span class="ux-grains">${"<i></i>".repeat(14)}</span>
-        <img class="ux-sachet" src="assets/usage-sachet.png" alt="" width="760" height="520" decoding="async">
-        <p class="ux-cap" aria-hidden="true"><b class="num"></b><span></span></p>
+      <div class="ux-tour">
+        <div class="ux-stage" role="img" aria-label="${t("طريقة التحضير: ظرف واحد في كوب ماء 250 مل، حرّكه جيداً واشربه قبل وجبتك بنصف ساعة")}">
+          <img class="ux-glass" src="assets/usage-glass-water.jpg" alt="" width="916" height="1224" decoding="async">
+          <img class="ux-glass ux-pink" src="assets/usage-glass-pink.jpg" alt="" width="916" height="1224" decoding="async">
+          <div class="ux-liquid"><span class="ux-cloud"></span>
+            <svg class="ux-swirl" viewBox="0 0 100 60" preserveAspectRatio="none" aria-hidden="true"><path d="${SWIRL}" fill="none" stroke="#fff" stroke-opacity=".75" stroke-width="1.6" stroke-linecap="round"/><path d="${SWIRL}" fill="none" stroke="#F39AB2" stroke-opacity=".7" stroke-width="1.4" stroke-linecap="round" transform="translate(0 6)"/></svg>
+            <span class="ux-fizz">${"<i></i>".repeat(16)}</span></div>
+          <span class="ux-stream"></span>
+          <span class="ux-grains">${"<i></i>".repeat(14)}</span>
+          <img class="ux-sachet" src="assets/usage-sachet.png" alt="" width="760" height="520" decoding="async">
+          <p class="ux-cap" aria-hidden="true"><b class="num"></b><span></span></p>
+        </div>
+        <div class="ux-spot" aria-hidden="true"><span class="ux-spot-orb"></span><div class="ux-spot-txt"><b class="ux-spot-nm"></b><span class="ux-spot-dose"></span><span class="ux-spot-role"></span></div></div>
+        <svg class="ux-wire" aria-hidden="true"><path pathLength="1"/><circle r="5"/></svg>
       </div>
-      ${INGREDIENTS.map((ing, i) => `<button type="button" class="ux-ing hide" data-i="${i}" aria-pressed="false" aria-controls="ixCard" aria-label="${plain(ing.name)} — ${ing.dose}"><span class="ux-orb" style="background:${tint(ing.color, .16)}">${art(ing)}</span><span class="ux-nm">${ing.name}</span></button>`).join("")}
-      <div class="ux-foot"><button type="button" class="ux-replay"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>${t("شاهد طريقة التحضير مرة أخرى")}</button></div>
+      <div class="ux-foot">
+        <button type="button" class="ux-replay"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>${t("شاهد طريقة التحضير مرة أخرى")}</button>
+        <button type="button" class="ux-down">${DOWN}${t("عرض جميع المكونات")}</button>
+      </div>
+      <div class="ux-grid" role="group" aria-label="${t("جميع المكونات")}">
+        ${INGREDIENTS.map((ing, i) => `<button type="button" class="ux-ing" data-i="${i}" aria-pressed="false" aria-controls="ixCard" aria-label="${plain(ing.name)} — ${ing.dose}"><span class="ux-orb" style="background:${tint(ing.color, .16)}">${art(ing)}</span><span class="ux-nm">${ing.name}</span></button>`).join("")}
+      </div>
       <div class="ix-card is-hint" id="ixCard" aria-live="polite"></div>`;
-    const stage = $(".ux-stage", root), card = $("#ixCard", root), cap = $(".ux-cap", root);
+    const tour = $(".ux-tour", root), stage = $(".ux-stage", root), card = $("#ixCard", root), cap = $(".ux-cap", root);
+    const spotEl = $(".ux-spot", root), spotOrb = $(".ux-spot-orb", spotEl), wire = $(".ux-wire", root), grid = $(".ux-grid", root);
     const bubbles = $$(".ux-ing", root);
 
     // البطاقة (المحتوى من product-data فقط)
@@ -158,27 +169,36 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
     nav.innerHTML = `<button type="button" class="ixc-prev" aria-label="${t("المكوّن السابق")}">${CHEV.replace('d="m9 6 6 6-6 6"', 'd="m15 6-6 6 6 6"')}</button><span class="ixc-count num" aria-hidden="true"></span><button type="button" class="ixc-next" aria-label="${t("المكوّن التالي")}">${CHEV}</button>`;
     card.append(body, nav);
     const hint = () => `<div class="ix-hint"><b>${t("11 مكوّناً في كل ظرف")}</b><span>${t("اضغط على أي مكوّن لتعرف دوره")}</span></div>`;
+    const efsa = ing => ing.efsa ? ` <span class="efsa" title="${t("ادعاء صحي معتمد من EFSA")}">EFSA</span>` : "";
     const content = ing => `<div class="ixc-top"><span class="ixc-art" style="background:${tint(ing.color, .14)}">${art(ing)}</span>
-      <div><h3 class="ixc-name">${ing.name}${ing.efsa ? ` <span class="efsa" title="${t("ادعاء صحي معتمد من EFSA")}">EFSA</span>` : ""}</h3>
-      <p class="ixc-ext" dir="ltr">${ing.en.replace(/ (mg|µg)\b/g, " $1")}</p></div></div>
+      <div><h3 class="ixc-name">${ing.name}${efsa(ing)}</h3>
+      <p class="ixc-ext" dir="ltr">${ing.en.replace(/ (mg|µg)\b/g, " $1")}</p></div></div>
       <p class="ixc-dose"><b dir="ltr">${ing.dose}</b> ${t("لكل ظرف")}</p>
       <p class="ixc-role">${ing.role}</p>`;
+    function fillSpot(ing){
+      spotOrb.style.background = tint(ing.color, .18);
+      spotOrb.innerHTML = art(ing);
+      $(".ux-spot-nm", spotEl).innerHTML = ing.name + efsa(ing);
+      $(".ux-spot-dose", spotEl).innerHTML = `<b dir="ltr">${ing.dose}</b> ${t("لكل ظرف")}`;
+      $(".ux-spot-role", spotEl).innerHTML = ing.role;
+    }
 
     body.innerHTML = hint();
-    // ارتفاع ثابت = أطول بطاقة: لا تقفز الصفحة عند ظهور البطاقة أو تبدّل المكوّن تلقائياً
+    // ارتفاع ثابت = أطول محتوى: لا تقفز الصفحة عند ظهور البطاقة أو بطاقة المكوّن بجانب الكوب أو تبدّل المكوّن
     function sizeCard(){
       if (!card.getBoundingClientRect().width) return;
       const saved = body.innerHTML, wasHint = card.classList.contains("is-hint");
-      card.style.minHeight = ""; card.classList.remove("is-hint");
-      let max = 0;
+      card.style.minHeight = ""; card.classList.remove("is-hint"); spotEl.style.minHeight = "";
+      let max = 0, smax = 0;
       for (const ing of INGREDIENTS) { body.innerHTML = content(ing); max = Math.max(max, card.getBoundingClientRect().height); }
       body.innerHTML = saved; card.classList.toggle("is-hint", wasHint);
       card.style.minHeight = Math.ceil(max) + "px";
+      const shown = spot;
+      for (const ing of INGREDIENTS) { fillSpot(ing); smax = Math.max(smax, spotEl.offsetHeight); }   // ارتفاع التخطيط (لا يتأثر بحركة التصغير)
+      spotEl.style.minHeight = smax + 1 + "px";
+      if (shown >= 0) { fillSpot(INGREDIENTS[shown]); placeSpot(shown); }
     }
-    sizeCard();
-    if (document.fonts && document.fonts.ready) document.fonts.ready.then(sizeCard);
-    let sizeT = 0; addEventListener("resize", () => { clearTimeout(sizeT); sizeT = setTimeout(sizeCard, 150); });
-    let sel = -1, swapT = 0, revealT = 0;
+    let sel = -1, spot = -1, swapT = 0, revealT = 0;
     function select(i){
       i = (i + N) % N;
       if (i === sel) return;
@@ -198,61 +218,133 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
       }, 230);
     }
 
-    // تنقل تلقائي بين المكونات حتى يتفاعل الزائر
-    let cycleT = 0, userDriven = false, inView = false;
-    const stopCycle = () => clearInterval(cycleT);
-    const startCycle = () => { stopCycle(); if (userDriven || reduce) return; if (sel < 0) select(0); cycleT = setInterval(() => { if (inView && !document.hidden) select(sel + 1); }, 3200); };
-    const takeOver = () => { userDriven = true; stopCycle(); };
+    /* المكوّن بجانب الكوب: يخرج من فم الكوب إلى بطاقته، ويمتد منه خط إلى المشروب، ثم التالي في الجهة الأخرى.
+       الكمبيوتر: يميناً ويساراً بارتفاعات مختلفة؛ الجوال: تحت الكوب والخط يصعد إليه */
+    const YS = [.06, .42, .22, .58, .12, .48, .3, .64, .08, .4, .26];      // موضع البطاقة رأسياً (نسبة من المساحة المتاحة)
+    const TY = [.5, .6, .68, .55, .74, .63, .5, .71, .57, .66, .53];        // نقطة الخط على المشروب
+    function placeSpot(i){
+      const side = i % 2 ? 3 : 1;
+      if (stacked()) { spotEl.style.gridColumn = ""; spotEl.style.marginTop = ""; spotEl.style.flexDirection = ""; spotEl.style.justifySelf = ""; }
+      else {
+        spotEl.style.gridColumn = String(side);
+        spotEl.style.justifySelf = side === 1 ? "end" : "start";             // ملاصقة لجهة الكوب
+        const free = stage.getBoundingClientRect().height - spotEl.getBoundingClientRect().height;
+        spotEl.style.marginTop = Math.max(0, free * YS[i]) + "px";
+      }
+      const T = tour.getBoundingClientRect(), S = spotEl.getBoundingClientRect(), G = stage.getBoundingClientRect();
+      const left = S.left + S.width / 2 < G.left + G.width / 2;
+      if (!stacked()) spotEl.style.flexDirection = (left === (document.documentElement.dir === "rtl")) ? "row" : "row-reverse";   // الدائرة باتجاه الكوب
+      const O = spotOrb.getBoundingClientRect();
+      let sx, sy, ex, ey, d;
+      if (stacked()) {
+        sx = O.left + O.width / 2 - T.left; sy = O.top - T.top - 4;
+        ex = G.left + G.width * (i % 2 ? .58 : .42) - T.left; ey = G.top + G.height * .8 - T.top;
+        d = `M${sx} ${sy} C${sx} ${sy - 30} ${ex} ${ey + 40} ${ex} ${ey}`;
+      } else {
+        sx = (left ? O.right + 4 : O.left - 4) - T.left; sy = O.top + O.height / 2 - T.top;
+        ex = G.left + G.width * (left ? .3 : .72) - T.left; ey = G.top + G.height * TY[i] - T.top;
+        const mx = (sx + ex) / 2;
+        d = `M${sx} ${sy} C${mx} ${sy} ${mx} ${ey} ${ex} ${ey}`;
+      }
+      $("path", wire).setAttribute("d", d);
+      const c = $("circle", wire); c.setAttribute("cx", ex); c.setAttribute("cy", ey);
+    }
+    function showSpot(i, fly){
+      spot = i;
+      wire.classList.remove("draw", "out");
+      spotEl.classList.remove("in");
+      fillSpot(INGREDIENTS[i]);
+      placeSpot(i);
+      void spotEl.offsetWidth;
+      spotEl.classList.add("in");
+      if (fly && !reduce) {
+        const s = stage.getBoundingClientRect(), r = spotOrb.getBoundingClientRect();
+        const dx = s.left + s.width * .515 - (r.left + r.width / 2), dy = s.top + s.height * .25 - (r.top + r.height / 2);
+        spotOrb.animate([
+          { transform: `translate(${dx}px, ${dy}px) scale(.15)`, opacity: 0 },
+          { transform: `translate(${dx * .45}px, ${dy * .5 - 60}px) scale(1.18)`, opacity: 1, offset: .58 },
+          { transform: "none", opacity: 1 }
+        ], { duration: 850, easing: "cubic-bezier(.3,.75,.3,1)" });
+        const ring = document.createElement("span");
+        ring.className = "ux-pop"; ring.style.left = "51.5%"; ring.style.top = "25%";
+        stage.appendChild(ring); setTimeout(() => ring.remove(), 700);
+        clearTimeout(wireT); wireT = setTimeout(() => wire.classList.add("draw"), 650);
+      } else wire.classList.add("draw");
+    }
+    function hideSpot(){ spotEl.classList.remove("in"); wire.classList.add("out"); }
+
+    // جولة المكونات: واحد كل 3.4 ثوانٍ، وتتكرر. تنتظر حين يكون الكوب خارج الشاشة، وتتوقف عندما يختار الزائر مكوّناً بنفسه
+    const SPOT = 3400;
+    let tourT = 0, wireT = 0, touring = false, userDriven = false, inView = false;
+    function tourStep(i){
+      clearTimeout(tourT);
+      if (!touring) return;
+      if (!inView || document.hidden) { tourT = setTimeout(() => tourStep(i), 400); return; }
+      showSpot(i, true);
+      bubbles.forEach(b => b.classList.toggle("lit", +b.dataset.i === i));
+      if (!userDriven) select(i);
+      tourT = setTimeout(() => { hideSpot(); tourT = setTimeout(() => tourStep((i + 1) % N), 380); }, SPOT);
+    }
+    const stopTour = () => { touring = false; clearTimeout(tourT); clearTimeout(wireT); bubbles.forEach(b => b.classList.remove("lit")); };
+    function takeOver(i){                                                  // الزائر اختار مكوّناً: يظهر بجانب الكوب أيضاً
+      userDriven = true; stopTour();
+      select(i);
+      if (root.classList.contains("done")) showSpot(sel, false);
+    }
 
     // التسلسل
     let timers = [];
     const at = (ms, fn) => timers.push(setTimeout(fn, ms));
     function caption(k){
-      $("b", cap).textContent = k < STEPS.length ? String(k + 1) : "";
-      $("span", cap).textContent = k < STEPS.length ? STEPS[k] : t("اضغط على أي مكوّن لتعرف دوره");
-      cap.classList.toggle("hint", k >= STEPS.length);
+      $("b", cap).textContent = String(k + 1);
+      $("span", cap).textContent = STEPS[k];
       cap.classList.remove("show"); void cap.offsetWidth; cap.classList.add("show");
     }
-    function pop(b){
-      const s = stage.getBoundingClientRect(), r = b.getBoundingClientRect();
-      const mx = s.left + s.width * .515, my = s.top + s.height * .25;   // فم الكوب
-      const dx = mx - (r.left + r.width / 2), dy = my - (r.top + r.height / 2);
-      b.classList.remove("hide");
-      b.animate([
-        { transform: `translate(${dx}px, ${dy}px) scale(.15)`, opacity: 0 },
-        { transform: `translate(${dx * .45}px, ${dy * .5 - 70}px) scale(1.14)`, opacity: 1, offset: .58 },
-        { transform: "translate(0, 0) scale(1)", opacity: 1 }
-      ], { duration: 900, easing: "cubic-bezier(.3,.75,.3,1)" });
-      const ring = document.createElement("span");
-      ring.className = "ux-pop"; ring.style.left = "51.5%"; ring.style.top = "25%";
-      stage.appendChild(ring); setTimeout(() => ring.remove(), 700);
-    }
     function play(){
-      timers.forEach(clearTimeout); timers = []; stopCycle();
-      sel = -1; card.classList.add("is-hint"); body.innerHTML = hint(); bubbles.forEach(b => { b.getAnimations().forEach(x => x.cancel()); b.classList.add("hide"); b.setAttribute("aria-pressed", "false"); });
+      timers.forEach(clearTimeout); timers = []; stopTour(); hideSpot(); spot = -1; sizeCard();
+      sel = -1; userDriven = false; card.classList.add("is-hint"); body.innerHTML = hint(); bubbles.forEach(b => b.setAttribute("aria-pressed", "false"));
       root.classList.remove("play", "done"); void root.offsetWidth; root.classList.add("play");
       caption(0);
       at(1300, () => caption(1));
       at(3300, () => caption(2));
       at(5600, () => caption(3));
-      bubbles.forEach((b, i) => at(5800 + i * 260, () => pop(b)));
-      at(5800 + N * 260 + 800, () => { root.classList.add("done"); caption(STEPS.length); startCycle(); });
+      at(7400, () => { root.classList.add("done"); cap.classList.remove("show"); touring = true; tourStep(0); });
     }
-    function finished(){                                                   // بدون حركة: الكوب الوردي والمكونات في أماكنها
+    function finished(){                                                   // بدون حركة: الكوب الوردي والمكوّن الأول بجانبه، والزائر يختار البقية
       root.classList.add("static", "done");
-      bubbles.forEach(b => b.classList.remove("hide"));
-      caption(STEPS.length); select(0);
+      select(0); showSpot(0, false);
     }
+    sizeCard();
+    let sizeT = 0; const resize = () => { clearTimeout(sizeT); sizeT = setTimeout(sizeCard, 150); };
+    if (document.fonts) { if (document.fonts.ready) document.fonts.ready.then(sizeCard); document.fonts.addEventListener("loadingdone", resize); }   // الخط يغيّر الارتفاع
+    addEventListener("resize", resize);
 
     bubbles.forEach(b => {
       const i = +b.dataset.i;
-      b.addEventListener("click", () => { takeOver(); select(i); reveal(); });
-      b.addEventListener("focus", () => { if (root.classList.contains("done")) { takeOver(); select(i); } });
-      if (hover) b.addEventListener("mouseenter", () => { if (root.classList.contains("done")) { takeOver(); select(i); } });
+      b.addEventListener("click", () => { takeOver(i); reveal(); });
+      b.addEventListener("focus", () => { if (root.classList.contains("done")) takeOver(i); });
+      if (hover) b.addEventListener("mouseenter", () => { if (root.classList.contains("done")) takeOver(i); });
     });
-    $(".ixc-prev", nav).addEventListener("click", () => { takeOver(); select(sel - 1); reveal(); });
-    $(".ixc-next", nav).addEventListener("click", () => { takeOver(); select(sel + 1); reveal(); });
-    $(".ux-replay", root).addEventListener("click", () => { userDriven = false; play(); stage.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" }); });
+    $(".ixc-prev", nav).addEventListener("click", () => { takeOver(sel - 1); reveal(); });
+    $(".ixc-next", nav).addEventListener("click", () => { takeOver(sel + 1); reveal(); });
+    $(".ux-replay", root).addEventListener("click", () => { play(); tour.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" }); });
+    $(".ux-down", root).addEventListener("click", () => grid.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" }));
+
+    /* عند وصول الزائر للقسم وتوقفه عن التمرير: تُعدَّل الصفحة مرة واحدة (لأعلى أو لأسفل) حتى يكون مشهد التحضير في منتصف الشاشة */
+    let framed = false, scrollT = 0;
+    function frame(){
+      if (framed || !tour.offsetParent || document.documentElement.classList.contains("vm-open") || document.body.classList.contains("view-active")) return;
+      const drawer = document.getElementById("cartDrawer"); if (drawer && !drawer.hidden) return;
+      const head = $("header.top"), bar = $(".mbar");
+      const top = head ? Math.max(0, head.getBoundingClientRect().bottom) : 0;
+      const bottom = bar && getComputedStyle(bar).display !== "none" ? bar.getBoundingClientRect().top : innerHeight;
+      const r = tour.getBoundingClientRect(), avail = bottom - top;
+      if (Math.min(r.bottom, bottom) - Math.max(r.top, top) < Math.min(r.height, avail) * .35) return;   // ما زال بعيداً عن المشهد
+      framed = true;
+      const delta = r.top - (r.height <= avail ? top + (avail - r.height) / 2 : top + 8);
+      if (Math.abs(delta) > 24) scrollBy({ top: delta, behavior: reduce ? "auto" : "smooth" });
+    }
+    addEventListener("scroll", () => { if (!framed) { clearTimeout(scrollT); scrollT = setTimeout(frame, 180); } }, { passive: true });
 
     if (reduce || !("IntersectionObserver" in window) || !Element.prototype.animate) { finished(); return; }
     // يبدأ عندما يقف الزائر عند المشهد (ليس أثناء مرور سريع أو التمرير بزر القائمة)

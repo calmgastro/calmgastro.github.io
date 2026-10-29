@@ -289,6 +289,8 @@ window.I18N_EN = {
   "إغلاق السلة": "Close cart"
  },
  "ui": {
+  "عرض جميع المكونات": "See all ingredients",
+  "جميع المكونات": "All ingredients",
   "تصغير الصورة": "Zoom out",
   "تكبير الصورة": "Zoom in",
   "11 مكوّناً في كل ظرف": "11 ingredients in every sachet",
