@@ -337,7 +337,10 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
       const drawer = document.getElementById("cartDrawer"); if (drawer && !drawer.hidden) return;
       const head = $("header.top"), bar = $(".mbar");
       const top = head ? Math.max(0, head.getBoundingClientRect().bottom) : 0;
+      // شريط «اطلب الآن» يختفي مؤقتاً وقسم العروض ظاهر ثم يعود بعد التمرير: نقيس مكانه كأنه ظاهر
+      const away = bar && bar.classList.contains("away"); if (away) bar.classList.remove("away");
       const bottom = bar && getComputedStyle(bar).display !== "none" ? bar.getBoundingClientRect().top : innerHeight;
+      if (away) bar.classList.add("away");
       const r = tour.getBoundingClientRect(), avail = bottom - top;
       if (Math.min(r.bottom, bottom) - Math.max(r.top, top) < Math.min(r.height, avail) * .35) return;   // ما زال بعيداً عن المشهد
       framed = true;
