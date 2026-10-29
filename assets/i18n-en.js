@@ -202,7 +202,7 @@ window.I18N_EN = {
   "للطلب بالجملة تواصل عبر الإيميل: <a href=\"mailto:info@vitamik.com?subject=%D8%A7%D8%B3%D8%AA%D9%81%D8%B3%D8%A7%D8%B1%20%D8%B9%D9%86%20%D8%B7%D9%84%D8%A8%20%D8%A8%D8%A7%D9%84%D8%AC%D9%85%D9%84%D8%A9%20-%20CalmGastro\" dir=\"ltr\">info@vitamik.com</a>": "For wholesale orders, email us: <a href=\"mailto:info@vitamik.com?subject=Wholesale%20inquiry%20-%20CalmGastro\" dir=\"ltr\">info@vitamik.com</a>"
  },
  "text": {
-  "تمثيل توضيحي متحرك. النتائج تختلف من شخص لآخر، مع نظام غذائي متوازن ونشاط بدني.": "Illustrative animation. Results vary from person to person, with a balanced diet and physical activity.",
+  "تمثيل توضيحي متحرك. النتائج تختلف من شخص لآخر، مع الاستمرار على نمط غذائي متوازن ونشاط بدني خفيف.": "Illustrative animation. Results vary from person to person, with a steady balanced diet and light physical activity.",
   "شاهد ماذا يحدث لدهونك العنيدة عندما يدخل كالم كاسترو إلى جسمك!": "See what happens to your stubborn fat when CalmGastro enters your body!",
   "الملصق الخلفي للعلبة كما هو": "The box back label, as printed",
   "تكبير الصورة": "Zoom in",
