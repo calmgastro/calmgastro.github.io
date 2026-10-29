@@ -254,6 +254,28 @@
     .vm-card{animation:vmFade .2s ease both}
   }
 
+  /* «للملصق الخلفي»: زر داخل النص يفتح صورة الملصق (نفس نافذة الفيديو وخلفيتها) */
+  .label-link{display:inline-flex; align-items:center; gap:.3em; min-height:40px; padding:0 .65em; margin:-6px .1em;   /* 40px للمس، والسالب يحفظ ارتفاع السطر */
+    border:1px solid #F3C98C; border-radius:999px; cursor:pointer;
+    background:#FFF4E2; color:#A85A06; font:inherit; font-weight:700; line-height:1.5; vertical-align:baseline; transition:background .2s ease, border-color .2s ease}
+  .label-link::after{content:""; width:.95em; height:.95em; flex:none; background:currentColor;
+    -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='m20 20-4.2-4.2M11 8.5v5M8.5 11h5'/%3E%3C/svg%3E") center/contain no-repeat;
+            mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='m20 20-4.2-4.2M11 8.5v5M8.5 11h5'/%3E%3C/svg%3E") center/contain no-repeat}
+  .label-link:hover{background:#FFE9C7; border-color:var(--orange)}
+  .lm-card{position:relative; width:min(94vw, 1100px, calc((88svh - 64px) * 1224 / 1024 + 12px));   /* الصورة كاملة على الشاشة بدون قص */
+    border-radius:22px; padding:6px; background:var(--white);
+    box-shadow:0 40px 90px -20px rgba(0,0,0,.6); animation:vmPop .55s cubic-bezier(.18,.9,.22,1.12) both}
+  .lm-scroll{direction:ltr; overflow:auto; max-height:calc(88svh - 64px); border-radius:17px; overscroll-behavior:contain; -webkit-overflow-scrolling:touch}
+  .lm-scroll img{display:block; width:100%; height:auto; aspect-ratio:1224/1024; background:var(--lime); cursor:zoom-in}
+  .lm-card.zoom .lm-scroll img{width:230%; max-width:none; cursor:zoom-out}
+  .lm-bar{display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.5rem 1rem; padding:.7rem .6rem .35rem; font-size:.88rem; color:var(--muted)}
+  .lm-zoom{display:inline-flex; align-items:center; gap:.4em; padding:.45em 1em; border-radius:999px; border:1px solid var(--line); background:var(--paper); cursor:pointer;
+    font:inherit; font-weight:700; color:var(--teal-deep)}
+  .lm-bar a{color:var(--teal); font-weight:600}
+  .lmodal.closing .lm-card{animation:vmOut .28s ease-in both}
+  @media (min-width:900px){ .lm-zoom{display:none} }
+  @media (prefers-reduced-motion:reduce){ .lm-card{animation:vmFade .2s ease both} .label-link{transition:none} }
+
   /* ---------- مكونات الظرف: طريقة التحضير ثم المكونات ---------- */
   .ux{display:grid; grid-template-columns:repeat(2, 96px) minmax(260px, 360px) repeat(2, 96px); justify-content:center; align-items:center; gap:14px 16px}
   .ux-stage{grid-column:3; grid-row:1 / 4; position:relative; width:100%; aspect-ratio:916/1224; margin-top:40%; isolation:isolate}
@@ -1111,7 +1133,7 @@
     <div class="sec-head rv">
       <span class="eyebrow">داخل كل ظرف</span>
       <h2>11 مكوّناً، وكل جرعة مكتوبة على العلبة</h2>
-      <p>شاهد طريقة التحضير، ثم اضغط على أي مكوّن لتعرف دوره. الأرقام مطابقة للملصق الخلفي حرفياً.</p>
+      <p>شاهد طريقة التحضير، ثم اضغط على أي مكوّن لتعرف دوره. الأرقام مطابقة <button type="button" class="label-link" id="labelOpen" aria-haspopup="dialog" aria-controls="labelDialog">للملصق الخلفي</button> حرفياً.</p>
     </div>
     <!-- طريقة التحضير ثم المكونات: يُبنى المشهد والمكونات والبطاقة من product-data في app.js -->
     <div class="ux" id="ingExplorer"></div>
@@ -1296,6 +1318,18 @@
 </div>
 
 <!-- نافذة السلة -->
+<!-- الملصق الخلفي: الصورة تُحمَّل عند أول فتح فقط -->
+<dialog class="vmodal lmodal" id="labelDialog" aria-label="الملصق الخلفي لعلبة CalmGastro">
+  <div class="lm-card">
+    <button type="button" class="vm-close" id="labelClose" aria-label="إغلاق صورة الملصق"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    <div class="lm-scroll"><img id="labelImg" data-src="assets/back-label.webp" width="1224" height="1024" alt="الملصق الخلفي للعلبة: جدول المكونات النشطة وجرعة كل مكوّن لظرف واحد ولظرفين، والادعاءات الصحية المعتمدة من EFSA، والتحذيرات، ورقم موافقة المكمل الغذائي 023487"></div>
+    <div class="lm-bar">
+      <span>الملصق الخلفي للعلبة كما هو</span>
+      <button type="button" class="lm-zoom" id="labelZoom" aria-pressed="false">تكبير الصورة</button>
+      <a href="assets/back-label.webp" target="_blank" rel="noopener">فتح الصورة بحجمها الكامل</a>
+    </div>
+  </div>
+</dialog>
 <!-- فيديو تعريفي: يُحمَّل فقط عند الفتح، ويظهر من موضع الزر بحركة تكبير -->
 <dialog class="vmodal" id="introDialog" aria-label="فيديو تعريفي عن CalmGastro">
   <div class="vm-card">
@@ -1596,8 +1630,8 @@
 }
 </script>
 
-<script src="assets/i18n-en.js?v=20261029c"></script>
-<script src="assets/app.js?v=20261029c"></script>
-<script src="assets/shop.js?v=20261029c"></script>
+<script src="assets/i18n-en.js?v=20261029f"></script>
+<script src="assets/app.js?v=20261029f"></script>
+<script src="assets/shop.js?v=20261029f"></script>
 </body>
 </html>

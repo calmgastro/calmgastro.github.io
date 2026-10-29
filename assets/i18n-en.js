@@ -62,7 +62,7 @@ window.I18N_EN = {
   "<bdi dir=\"ltr\">5-HTP</bdi> · فيتامين B12": "<bdi dir=\"ltr\">5-HTP</bdi> · Vitamin B12",
   "داخل كل ظرف": "Inside every sachet",
   "11 مكوّناً، وكل جرعة مكتوبة على العلبة": "11 ingredients, every dose printed on the box",
-  "شاهد طريقة التحضير، ثم اضغط على أي مكوّن لتعرف دوره. الأرقام مطابقة للملصق الخلفي حرفياً.": "Watch how it is prepared, then tap any ingredient to see its role. The numbers match the back label exactly.",
+  "شاهد طريقة التحضير، ثم اضغط على أي مكوّن لتعرف دوره. الأرقام مطابقة <button type=\"button\" class=\"label-link\" id=\"labelOpen\" aria-haspopup=\"dialog\" aria-controls=\"labelDialog\">للملصق الخلفي</button> حرفياً.": "Watch how it is prepared, then tap any ingredient to see its role. The numbers match the <button type=\"button\" class=\"label-link\" id=\"labelOpen\" aria-haspopup=\"dialog\" aria-controls=\"labelDialog\">back label</button> exactly.",
   "سماكة الطبقات توضيحية، والجرعة الدقيقة تظهر عند اختيار المكوّن.": "Layer thickness is illustrative; the exact dose appears when you choose an ingredient.",
   "<span class=\"efsa\">EFSA</span> = ادعاء صحي معتمد من هيئة سلامة الأغذية الأوروبية ومطبوع على العلبة. الجرعات لكل ظرف واحد. يحتوي على مُحلٍّ.": "<span class=\"efsa\">EFSA</span> = health claim approved by the European Food Safety Authority and printed on the box. Doses are per sachet. Contains a sweetener.",
   "دقيقة واحدة في اليوم": "One minute a day",
@@ -202,6 +202,9 @@ window.I18N_EN = {
   "للطلب بالجملة تواصل عبر الإيميل: <a href=\"mailto:info@vitamik.com?subject=%D8%A7%D8%B3%D8%AA%D9%81%D8%B3%D8%A7%D8%B1%20%D8%B9%D9%86%20%D8%B7%D9%84%D8%A8%20%D8%A8%D8%A7%D9%84%D8%AC%D9%85%D9%84%D8%A9%20-%20CalmGastro\" dir=\"ltr\">info@vitamik.com</a>": "For wholesale orders, email us: <a href=\"mailto:info@vitamik.com?subject=Wholesale%20inquiry%20-%20CalmGastro\" dir=\"ltr\">info@vitamik.com</a>"
  },
  "text": {
+  "الملصق الخلفي للعلبة كما هو": "The box back label, as printed",
+  "تكبير الصورة": "Zoom in",
+  "فتح الصورة بحجمها الكامل": "Open the full-size image",
   "موثق": "Verified",
   "قبل الاستخدام: ظرف واحد يومياً في كوب ماء (250 مل) قبل الوجبة بنصف ساعة، مع كوب ماء إضافي بعده. لا يُستخدم للحامل والمرضع ومن هم دون 18 سنة، ويُستشار الطبيب لمن يتناول أدوية الاكتئاب أو القلق أو أدوية السكري، أو لديه حساسية من الكافيين.": "Before use: one sachet a day in a glass of water (250 ml) half an hour before a meal, followed by an extra glass of water. Not for pregnant or breastfeeding women or anyone under 18; ask a doctor first if you take antidepressants, anti-anxiety or diabetes medication, or are sensitive to caffeine.",
   "تعرف هالشعور؟": "Know this feeling?",
@@ -264,6 +267,9 @@ window.I18N_EN = {
   "آراء العملاء": "Customer reviews",
   "فيديو تعريفي عن CalmGastro": "CalmGastro intro video",
   "إغلاق الفيديو": "Close video",
+  "الملصق الخلفي لعلبة CalmGastro": "CalmGastro box back label",
+  "إغلاق صورة الملصق": "Close the label image",
+  "الملصق الخلفي للعلبة: جدول المكونات النشطة وجرعة كل مكوّن لظرف واحد ولظرفين، والادعاءات الصحية المعتمدة من EFSA، والتحذيرات، ورقم موافقة المكمل الغذائي 023487": "Box back label: active ingredients table with each dose per one and two sachets, EFSA-approved health claims, warnings, and food supplement approval number 023487",
   "مميزات CalmGastro": "CalmGastro highlights",
   "CalmGastro الصفحة الرئيسية": "CalmGastro home",
   "أقسام الصفحة": "Page sections",
@@ -283,6 +289,8 @@ window.I18N_EN = {
   "إغلاق السلة": "Close cart"
  },
  "ui": {
+  "تصغير الصورة": "Zoom out",
+  "تكبير الصورة": "Zoom in",
   "11 مكوّناً في كل ظرف": "11 ingredients in every sachet",
   "كوب ماء (250 مل)": "A glass of water (250 ml)",
   "أضف ظرفاً واحداً": "Add one sachet",

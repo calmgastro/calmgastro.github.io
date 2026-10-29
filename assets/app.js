@@ -313,6 +313,43 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
     go(0, false); schedule();
   })();
 
+  /* ---------- «للملصق الخلفي»: يفتح صورة الملصق في نافذة (تُحمَّل عند أول فتح)، مع تكبير على الجوال ---------- */
+  (function backLabel(){
+    const openBtn = document.getElementById("labelOpen"), dlg = document.getElementById("labelDialog");
+    if (!openBtn || !dlg || typeof dlg.showModal !== "function") return;
+    const card = $(".lm-card", dlg), img = document.getElementById("labelImg"), zoomBtn = document.getElementById("labelZoom");
+    function zoom(on){
+      card.classList.toggle("zoom", on);
+      zoomBtn.setAttribute("aria-pressed", String(on));
+      zoomBtn.textContent = t(on ? "تصغير الصورة" : "تكبير الصورة");
+    }
+    function open(){
+      if (!img.src) img.src = img.dataset.src;
+      zoom(false);
+      dlg.classList.remove("closing");
+      dlg.showModal(); document.documentElement.classList.add("vm-open");
+      document.getElementById("labelClose").focus({ preventScroll: true });
+    }
+    function close(){
+      if (!dlg.open || dlg.classList.contains("closing")) return;
+      if (reduce){ dlg.close(); return; }
+      dlg.classList.add("closing");
+      setTimeout(() => { dlg.close(); dlg.classList.remove("closing"); }, 270);
+    }
+    openBtn.addEventListener("click", open);
+    document.getElementById("labelClose").addEventListener("click", close);
+    zoomBtn.addEventListener("click", () => zoom(!card.classList.contains("zoom")));
+    img.addEventListener("click", e => {
+      const on = !card.classList.contains("zoom"), box = img.parentElement, r = img.getBoundingClientRect();
+      const fx = (e.clientX - r.left) / r.width, fy = (e.clientY - r.top) / r.height;
+      zoom(on);
+      if (on) { box.scrollLeft = fx * box.scrollWidth - box.clientWidth / 2; box.scrollTop = fy * box.scrollHeight - box.clientHeight / 2; }   // يكبّر حول موضع الضغط
+    });
+    dlg.addEventListener("cancel", e => { e.preventDefault(); close(); });                 // Esc
+    dlg.addEventListener("click", e => { if (e.target === dlg) close(); });               // الضغط خارج الصورة
+    dlg.addEventListener("close", () => { document.documentElement.classList.remove("vm-open"); openBtn.focus({ preventScroll: true }); });
+  })();
+
   /* ---------- scroll reveal ---------- */
   /* ---------- فيديو «تعرف على كالم كاسترو»: نافذة تظهر من موضع الزر، والفيديو يُحمَّل عند أول فتح.
      في كل تحميل للصفحة: عند وصول الزائر للزر يظهر مؤشر يضغطه تلقائياً ويُفتح الفيديو بدون صوت (المتصفحات تمنع الصوت بلا لمسة)،
