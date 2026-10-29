@@ -1,5 +1,5 @@
 /* ============================================================
-   المتجر: السلة ← إتمام الطلب ← مراجعة ← تأكيد ← صفحة الطلب ← تتبع الطلب
+   المتجر: السلة ← بيانات التوصيل وتأكيد الطلب ← صفحة الطلب ← تتبع الطلب
    - الطلب يُنشأ في خادم الطلبات (orders/) ويُحفظ في قاعدة البيانات قبل عرض التأكيد
    - الأسعار هنا للعرض فقط؛ الخادم يعيد حسابها من product-data ولا يثق بالمتصفح
    - السلة فقط تُحفظ في المتصفح (localStorage)؛ بيانات العميل لا تُحفظ في المتصفح
@@ -320,7 +320,7 @@
       return;
     }
     scrollTo(0, 0);
-    if (route.name === "checkout"){ step = "delivery"; renderCheckout(); track("begin_checkout", { boxes: cartBoxes(), value: quote(cart).total, items: cart.map(i => i.id) }); }
+    if (route.name === "checkout"){ renderCheckout(); track("begin_checkout", { boxes: cartBoxes(), value: quote(cart).total, items: cart.map(i => i.id) }); }
     if (route.name === "order") openOrderPage(route.arg);
     if (route.name === "track") openTrackPage(route.arg);
     const hd = $("h1", views[route.name]); if (hd){ hd.setAttribute("tabindex", "-1"); hd.focus({ preventScroll: true }); }
@@ -329,7 +329,7 @@
 
   /* ---------- إتمام الطلب ---------- */
   const form = $("#checkoutForm");
-  let step = "delivery";
+  let placing = false;            // الطلب قيد الإرسال
   let loc = null;                 // موقع العميل: في الذاكرة فقط
   let attempt = null;             // { key, payloadHash, expectedTotal }
   let serverQuote = null;         // آخر أسعار من الخادم إن اختلفت
@@ -390,6 +390,7 @@
       h("b", { class: "num-sum", text: money(l.total) })))),
       totalsRows(q));
     $("#coSumTotal").textContent = money(q.total);
+    if (!placing) $("#placeOrder").textContent = t("تأكيد الطلب — {total}", { total: money(q.total) });
   }
 
   function renderCheckout(){
@@ -398,13 +399,10 @@
     $("#coGrid").hidden = empty;
     if (empty){ renderCart($("#coEmptyBody"), { onBrowse: goOffers }); setSteps("cart"); return; }
     renderSummary();
-    form.hidden = step !== "delivery";
-    $("#reviewStep").hidden = step !== "review";
-    setSteps(step);
-    if (step === "review") renderReview();
+    setSteps("delivery");
   }
   function setSteps(current){
-    const order = ["cart", "delivery", "review", "done"];
+    const order = ["cart", "delivery", "done"];
     $$("#coSteps li").forEach(li => {
       const i = order.indexOf(li.dataset.step), c = order.indexOf(current);
       li.classList.toggle("done", i < c); li.classList.toggle("current", i === c);
@@ -413,33 +411,13 @@
   }
   $("#coEditCart").addEventListener("click", e => openDrawer(e.currentTarget));
 
+  // الضغط على «تأكيد الطلب» في نموذج التوصيل يسجّل الطلب مباشرة (بدون خطوة مراجعة؛ الملخص ظاهر بجانب النموذج)
   form.addEventListener("submit", e => {
     e.preventDefault();
     const bad = Object.keys(rules).filter(n => !check(n));
     if (bad.length){ form.elements[bad[0]].focus(); return; }
-    step = "review"; serverQuote = null;
-    renderCheckout();
-    $("#reviewStep").scrollIntoView({ behavior: "auto", block: "start" });
-    $("#reviewTitle").focus({ preventScroll: true });
+    placeOrder();
   });
-  $("#editDetails").addEventListener("click", () => { step = "delivery"; renderCheckout(); form.elements.name.focus(); });
-
-  function renderReview(){
-    const c = customer(), q = serverQuote ? Object.assign(quote(cart), serverQuote) : quote(cart);
-    const prod = $("#rvProducts"); prod.textContent = "";
-    prod.append(h("ul", { class: "rv-lines" }, q.lines.map(l => h("li", null,
-      h("span", { text: `CalmGastro · ${l.b.title} (${l.b.program})` }),
-      h("span", { class: "num-sum", text: `${l.qty} × ${money(l.b.price)}` })))));
-    const dl = $("#rvDelivery"); dl.textContent = "";
-    [[t("الاسم"), c.name], [t("الجوال"), c.phone], [t("المدينة"), c.city], [t("الحي"), c.district], [t("العنوان"), c.address],
-     c.notes ? [t("ملاحظات"), c.notes] : null, loc ? [t("الموقع"), t("تم تحديد موقعك على الخريطة")] : null]
-      .filter(Boolean).forEach(([k, v]) => dl.append(h("dt", { text: k }), h("dd", { text: v })));
-    const p = PAYMENTS.find(x => x.id === paymentId()) || PAYMENTS[0];
-    $("#rvPayment").textContent = p.label + (p.note ? " — " + p.note : "");
-    const tb = $("#rvTotals"); tb.textContent = ""; tb.append(totalsRows(q));
-    $("#rvEta").textContent = t("التوصيل المتوقع: {d}", { d: CONFIG.deliveryShort });
-    $("#placeOrder").textContent = t("تأكيد الطلب — {total}", { total: money(q.total) });
-  }
 
   /* ---------- تحديد الموقع (اختياري، عند الضغط فقط) ---------- */
   const locBtn = $("#locBtn"), locBtnText = $("#locBtnText"), locStatus = $("#locStatus");
@@ -504,7 +482,6 @@
 
   /* ---------- تأكيد الطلب: يُنشأ في قاعدة البيانات أولاً ---------- */
   const placeBtn = $("#placeOrder"), errBox = $("#orderError");
-  let placing = false;
   const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, "0")).join("")).replace(/-/g, "");
 
   async function placeOrder(){
@@ -532,15 +509,14 @@
       cart = []; saveCart();
       attempt = null; serverQuote = null; loc = null;
       form.reset(); locStatus.hidden = true; locBtnText.textContent = t("تحديد موقعي تلقائياً");
-      step = "delivery";
       justCreated = o;
       location.hash = "#/order/" + o.orderNumber;
       return;
     }
-    renderReview();
+    renderSummary();
     if (res && res.status === 409 && data && data.error === "price_changed" && data.quote){
       serverQuote = data.quote; attempt = null;
-      renderSummary(); renderReview();
+      renderSummary();
       const n = $("#priceNote"); n.textContent = t("تغيّرت الأسعار منذ فتحك للصفحة. هذا هو الإجمالي المحدّث؛ راجعه ثم اضغط «تأكيد الطلب» مرة أخرى."); n.hidden = false; n.focus();
       return;
     }
@@ -548,7 +524,7 @@
       const f = data.fields;
       const fieldMsgs = { phone: t("يرجى إدخال رقم جوال سعودي صحيح"), name: t("يرجى كتابة الاسم الكامل"), city: t("يرجى كتابة المدينة"), district: t("يرجى كتابة الحي"), address: t("يرجى كتابة عنوان التوصيل") };
       const fields = Object.keys(fieldMsgs).filter(k => f[k]);
-      if (fields.length){ step = "delivery"; renderCheckout(); fields.forEach(k => setFieldError(k, fieldMsgs[k])); form.elements[fields[0]].focus(); return; }
+      if (fields.length){ fields.forEach(k => setFieldError(k, fieldMsgs[k])); form.elements[fields[0]].focus(); return; }
       if (f.items){ showError(f.items === "max_boxes" || f.items === "qty_limit" ? limitMsg() : t("يوجد منتج غير متاح في سلتك. حدّث السلة ثم حاول مرة أخرى.")); return; }
     }
     if (res && res.status === 409 && data && data.error === "out_of_stock"){ showError(t("المنتج غير متوفر حالياً. لم يتم تسجيل الطلب.")); return; }
@@ -568,7 +544,6 @@
     errBox.hidden = false;
     errBox.focus();
   }
-  placeBtn.addEventListener("click", placeOrder);
   $("#retryOrder").addEventListener("click", placeOrder);
   $("#orderErrorWa").addEventListener("click", () => track("whatsapp_click", { context: "order_error" }));
 

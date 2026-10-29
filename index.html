@@ -707,8 +707,6 @@
   .field .hint{font-size:.8rem; color:var(--muted)}
   .hp{position:absolute !important; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap}
   .hp input{font-size:16px}
-  .review .rv-sec{padding:.9rem 0; border-bottom:1px solid var(--line)}
-  .review .rv-sec h3{font-size:1rem; color:var(--teal-deep); margin-bottom:.45rem}
   .rv-lines{list-style:none; margin:0; padding:0; display:grid; gap:6px}
   .rv-lines li{display:flex; justify-content:space-between; gap:12px}
   .kv{display:grid; grid-template-columns:auto 1fr; gap:4px 14px; margin:0}
@@ -724,7 +722,6 @@
   .oe-actions{display:flex; flex-wrap:wrap; gap:10px}
   .order-form .oe-actions .btn{flex:1 1 180px; width:auto; font-size:1rem}
   #placeOrder.loading{opacity:.75; cursor:progress}
-  .review .link-btn{display:block; margin-inline:auto; min-height:44px}
 
   .ok-head{text-align:center; padding:.6rem 0 1.4rem}
   .ok-head.plain{text-align:start; padding-bottom:.8rem}
@@ -1212,8 +1209,7 @@
       <ol class="co-steps" id="coSteps" aria-label="مراحل الطلب">
         <li data-step="cart"><span class="n">1</span><span>السلة</span></li>
         <li data-step="delivery"><span class="n">2</span><span>بيانات التوصيل</span></li>
-        <li data-step="review"><span class="n">3</span><span>مراجعة الطلب</span></li>
-        <li data-step="done"><span class="n">4</span><span>تأكيد</span></li>
+        <li data-step="done"><span class="n">3</span><span>تأكيد</span></li>
       </ol>
 
       <div class="co-empty" id="coEmpty" hidden><div class="obox" id="coEmptyBody"></div></div>
@@ -1271,17 +1267,7 @@
               <div id="payMethods"></div>
             </fieldset>
             <p class="co-eta" id="coEta"></p>
-            <button type="submit" class="btn btn-primary">متابعة لمراجعة الطلب</button>
-            <p class="form-note">نستخدم بياناتك لتوصيل طلبك والتواصل معك بخصوصه فقط.</p>
-          </form>
-
-          <div class="order-form review" id="reviewStep" hidden>
-            <h2 class="form-title" id="reviewTitle" tabindex="-1">مراجعة الطلب</h2>
             <p class="price-note" id="priceNote" role="alert" tabindex="-1" hidden></p>
-            <section class="rv-sec"><h3>المنتجات</h3><div id="rvProducts"></div></section>
-            <section class="rv-sec"><h3>التوصيل</h3><dl class="kv" id="rvDelivery"></dl><p class="rv-eta" id="rvEta"></p></section>
-            <section class="rv-sec"><h3>الدفع</h3><p id="rvPayment"></p></section>
-            <section class="rv-sec"><h3>الإجمالي</h3><div id="rvTotals"></div></section>
             <p class="rv-notice">بالضغط على «تأكيد الطلب» يتم تسجيل طلبك لدينا مباشرة وتحصل على رقم الطلب. لا تحتاج لإرسال أي رسالة.</p>
             <div class="order-error" id="orderError" role="alert" tabindex="-1" hidden>
               <p id="orderErrorText">حدث خطأ أثناء إنشاء الطلب. لم يتم تسجيل الطلب.</p>
@@ -1291,9 +1277,9 @@
                 <a class="btn btn-ghost" id="orderErrorWa" href="#" target="_blank" rel="noopener">تواصل معنا عبر واتساب</a>
               </div>
             </div>
-            <button type="button" class="btn btn-primary" id="placeOrder">تأكيد الطلب</button>
-            <button type="button" class="link-btn" id="editDetails">تعديل بيانات التوصيل</button>
-          </div>
+            <button type="submit" class="btn btn-primary" id="placeOrder">تأكيد الطلب</button>
+            <p class="form-note">نستخدم بياناتك لتوصيل طلبك والتواصل معك بخصوصه فقط.</p>
+          </form>
         </div>
 
         <aside class="co-summary" aria-labelledby="coSumTitle">
@@ -1656,8 +1642,8 @@
 }
 </script>
 
-<script src="assets/i18n-en.js?v=20261029h"></script>
-<script src="assets/app.js?v=20261029h"></script>
-<script src="assets/shop.js?v=20261029h"></script>
+<script src="assets/i18n-en.js?v=20261030a"></script>
+<script src="assets/app.js?v=20261030a"></script>
+<script src="assets/shop.js?v=20261030a"></script>
 </body>
 </html>
