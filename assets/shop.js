@@ -344,16 +344,49 @@
     if (d.startsWith("0")) d = d.slice(1);
     return /^5\d{8}$/.test(d) ? "0" + d : null;
   }
+  // المدن في قائمة الاختيار [عربي، إنجليزي]. القيمة المرسلة نص المدينة بلغة الصفحة (لوحة التحكم توحّد التهجئات)
+  const CITIES = [["الرياض", "Riyadh"], ["جدة", "Jeddah"], ["مكة المكرمة", "Makkah"], ["المدينة المنورة", "Madinah"], ["الدمام", "Dammam"],
+    ["الخبر", "Khobar"], ["الظهران", "Dhahran"], ["الأحساء", "Al-Ahsa"], ["القطيف", "Qatif"], ["الجبيل", "Jubail"], ["الطائف", "Taif"],
+    ["تبوك", "Tabuk"], ["أبها", "Abha"], ["خميس مشيط", "Khamis Mushait"], ["بريدة", "Buraidah"], ["عنيزة", "Unaizah"], ["الرس", "Ar Rass"],
+    ["حائل", "Hail"], ["جازان", "Jazan"], ["نجران", "Najran"], ["ينبع", "Yanbu"], ["الباحة", "Al Baha"], ["عرعر", "Arar"], ["سكاكا", "Sakaka"],
+    ["القريات", "Qurayyat"], ["حفر الباطن", "Hafar Al-Batin"], ["الخرج", "Al Kharj"], ["المجمعة", "Al Majmaah"], ["الزلفي", "Az Zulfi"],
+    ["الدوادمي", "Ad Dawadimi"], ["وادي الدواسر", "Wadi Ad-Dawasir"], ["بيشة", "Bisha"], ["القنفذة", "Al Qunfudhah"], ["رابغ", "Rabigh"],
+    ["العلا", "AlUla"], ["الخفجي", "Khafji"], ["صبيا", "Sabya"], ["محايل عسير", "Muhayil Asir"]];
+  const OTHER = "__other";
+  const citySel = form.elements.city, cityOther = $("#f-city-other");
+  citySel.append(h("option", { value: "", text: t("اختر المدينة"), disabled: true, selected: true }),
+    ...CITIES.map(([ar, en]) => { const n = LANG === "en" ? en : ar; return h("option", { value: n, text: n }); }),
+    h("option", { value: OTHER, text: t("مدينة أخرى") }));
+  cityOther.placeholder = t("اكتب اسم المدينة"); cityOther.setAttribute("aria-label", t("اسم المدينة"));
+  const cityValue = () => citySel.value === OTHER ? cityOther.value.trim() : citySel.value;
+  function syncCityOther(focus){
+    const on = citySel.value === OTHER;
+    cityOther.hidden = !on; cityOther.required = on;
+    if (on && focus) cityOther.focus();
+  }
+  // يضع مدينة (من تحديد الموقع مثلاً) في القائمة إن وُجدت، وإلا في «مدينة أخرى»
+  const foldCity = s => String(s || "").replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").replace(/^ال/, "").replace(/[\s\-]/g, "").toLowerCase();
+  function setCity(name){
+    const hit = CITIES.find(c => c.some(x => foldCity(x) === foldCity(name)));
+    if (hit){ citySel.value = LANG === "en" ? hit[1] : hit[0]; cityOther.value = ""; }
+    else { citySel.value = OTHER; cityOther.value = name; }
+    syncCityOther(false);
+  }
+  citySel.addEventListener("change", () => { syncCityOther(true); check("city"); });
+  cityOther.addEventListener("input", () => citySel.getAttribute("aria-invalid") === "true" && check("city"));
+  cityOther.addEventListener("blur", () => cityOther.value && check("city"));
+
   const rules = {
     name:     v => (v.trim().length >= 2 && /\p{L}/u.test(v)) || t("يرجى كتابة الاسم الكامل"),
     phone:    v => !!normPhone(v) || t("يرجى إدخال رقم جوال سعودي صحيح"),
-    city:     v => v.trim().length >= 2 || t("يرجى كتابة المدينة"),
+    city:     v => v === OTHER ? cityOther.value.trim().length >= 2 || t("يرجى كتابة المدينة") : !!v || t("يرجى اختيار المدينة"),
     district: v => v.trim().length >= 2 || t("يرجى كتابة الحي"),
     address:  v => v.trim().length >= 3 || t("يرجى كتابة عنوان التوصيل")
   };
   function check(name){
     const input = form.elements[name], res = rules[name](input.value), ok = res === true;
     input.setAttribute("aria-invalid", ok ? "false" : "true");
+    if (name === "city") cityOther.setAttribute("aria-invalid", ok ? "false" : "true");
     $("#e-" + name).textContent = ok ? "" : res;
     return ok;
   }
@@ -375,7 +408,7 @@
 
   const customer = () => ({
     name: form.elements.name.value.trim(), phone: normPhone(form.elements.phone.value) || form.elements.phone.value.trim(),
-    city: form.elements.city.value.trim(), district: form.elements.district.value.trim(),
+    city: cityValue(), district: form.elements.district.value.trim(),
     address: form.elements.address.value.trim(), notes: form.elements.notes.value.trim()
   });
   const paymentId = () => (form.elements.payment && form.elements.payment.value) || "cod";
@@ -466,7 +499,7 @@
         locBtnText.textContent = t("جارٍ تحديد المدينة والحي…");
         const place = await reverseGeocode(loc.lat, loc.lng);
         if (!loc) return;
-        if (place && place.city) form.elements.city.value = place.city;
+        if (place && place.city) setCity(place.city);
         if (place && place.district) form.elements.district.value = place.district;
         if (form.elements.city.value) check("city");
         if (form.elements.district.value) check("district");
@@ -508,7 +541,7 @@
       track("order_created", { order: o.orderNumber, value: o.total, boxes: o.boxes, items: o.items.map(i => i.productId) });
       cart = []; saveCart();
       attempt = null; serverQuote = null; loc = null;
-      form.reset(); locStatus.hidden = true; locBtnText.textContent = t("تحديد موقعي تلقائياً");
+      form.reset(); syncCityOther(false); locStatus.hidden = true; locBtnText.textContent = t("تحديد موقعي تلقائياً");
       justCreated = o;
       location.hash = "#/order/" + o.orderNumber;
       return;

@@ -536,16 +536,22 @@
   .field{display:flex; flex-direction:column; gap:.35rem; margin-bottom:1rem}
   .field label{font-weight:600; font-size:.95rem}
   .field label .opt{font-weight:400; color:var(--muted); font-size:.85rem}
-  .field input, .field textarea{
+  .field input, .field textarea, .field select{
     font:inherit; font-size:1rem; padding:.8rem 1rem; border-radius:12px; border:1.5px solid var(--line); background:var(--paper); color:var(--ink);
   }
-  .field input:focus, .field textarea:focus{outline:none; border-color:var(--teal); box-shadow:0 0 0 4px rgba(19,133,123,.15)}
-  .field input[aria-invalid="true"]{border-color:var(--danger)}
+  .field select{appearance:none; -webkit-appearance:none; min-height:3.3rem; cursor:pointer; padding-inline-end:2.6rem;
+    background:var(--paper) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2312302E' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 1rem center / 18px}
+  html[dir="rtl"] .field select{background-position:left 1rem center}
+  .field select:invalid{color:var(--muted)}
+  .field select option{color:var(--ink)}
+  #f-city-other{margin-top:.5rem}
+  .field input:focus, .field textarea:focus, .field select:focus{outline:none; border-color:var(--teal); box-shadow:0 0 0 4px rgba(19,133,123,.15)}
+  .field input[aria-invalid="true"], .field select[aria-invalid="true"]{border-color:var(--danger)}
   .field .err{color:var(--danger); font-size:.85rem; min-height:0}
   .field .err:empty{display:none}
   .row2{display:grid; grid-template-columns:1fr 1fr; gap:12px}
   .row2 > *{min-width:0}
-  .field input, .field textarea{width:100%; min-width:0}
+  .field input, .field textarea, .field select{width:100%; min-width:0}
   .order-form .btn{width:100%; font-size:1.15rem}
   .form-note{font-size:.82rem; color:var(--muted); text-align:center; margin-top:.8rem}
   [hidden]{display:none !important}
@@ -1270,10 +1276,9 @@
             <div class="row2">
               <div class="field">
                 <label for="f-city">المدينة<span class="req" aria-hidden="true">*</span></label>
-                <input id="f-city" name="city" list="cities" autocomplete="address-level2" maxlength="60" required aria-describedby="e-city">
-                <datalist id="cities">
-                  <option value="الرياض"><option value="جدة"><option value="مكة المكرمة"><option value="المدينة المنورة"><option value="الدمام"><option value="الخبر"><option value="الطائف"><option value="تبوك"><option value="بريدة"><option value="أبها"><option value="خميس مشيط"><option value="حائل"><option value="جازان"><option value="نجران"><option value="الأحساء">
-                </datalist>
+                <!-- قائمة اختيار (تعمل على كل الجوالات)، تُملأ من CITIES في shop.js، و«مدينة أخرى» يفتح حقل كتابة -->
+                <select id="f-city" name="city" autocomplete="address-level2" required aria-describedby="e-city"></select>
+                <input id="f-city-other" name="cityOther" autocomplete="address-level2" maxlength="60" aria-describedby="e-city" hidden>
                 <span class="err" id="e-city"></span>
               </div>
               <div class="field">
@@ -1680,9 +1685,9 @@
 }
 </script>
 
-<script src="assets/i18n-en.js?v=20261030n"></script>
-<script src="assets/app.js?v=20261030b"></script>
-<script src="assets/shop.js?v=20261030b"></script>
+<script src="assets/i18n-en.js?v=20261030p"></script>
+<script src="assets/app.js?v=20261030p"></script>
+<script src="assets/shop.js?v=20261030p"></script>
 <!-- إشعارات عائمة: الإعدادات ← البيانات ← العرض ← الإدارة (assets/notifications/) -->
 <script src="assets/notifications/config/notificationConfig.js?v=20261030n"></script>
 <script src="assets/notifications/data/testimonials.js?v=20261030n"></script>

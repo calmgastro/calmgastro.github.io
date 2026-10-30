@@ -80,7 +80,6 @@ const INGREDIENTS = PRODUCT.ingredients.map(i => Object.assign({}, i, {
     meta('meta[name="description"]', EN.meta.description);
     meta('meta[property="og:title"]', EN.meta.ogTitle);
     meta('meta[property="og:description"]', EN.meta.ogDescription);
-    document.getElementById("cities").innerHTML = EN.cities.map(c => `<option value="${c}">`).join("");
     // عند تعديل نص عربي في الصفحة بدون تحديث مفتاحه في i18n-en.js يظهر هنا
     if (missing.length) console.warn("[i18n] untranslated:", missing);
   }
