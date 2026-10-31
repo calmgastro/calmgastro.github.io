@@ -8,18 +8,18 @@ window.CalmGastroNotify = window.CalmGastroNotify || {};
 window.CalmGastroNotify.config = {
   enabled: true,
 
-  initialDelayMin: 10000,       // أول إشعار بعد فتح الصفحة
-  initialDelayMax: 15000,
+  initialDelayMin: 5000,        // أول إشعار بعد فتح الصفحة
+  initialDelayMax: 5000,
 
-  displayDurationMin: 6000,     // مدة ظهور الإشعار
-  displayDurationMax: 7000,
+  displayDurationMin: 5000,     // مدة ظهور الإشعار
+  displayDurationMax: 5000,
 
-  nextDelayMin: 15000,          // الفترة بين إشعار وآخر
-  nextDelayMax: 25000,
+  nextDelayMin: 5000,           // الفترة بين إشعار وآخر (كل 5 ثوانٍ، بطلب صاحب المتجر 2026-10-31)
+  nextDelayMax: 5000,
 
   afterCloseDelay: 30000,       // بعد أن يغلق الزائر الإشعار بنفسه: لا شيء قبل هذه المدة
-  maxPerSession: 6,             // أقصى عدد في الجلسة (sessionStorage: calmgastro_notification_count)
-  recentHistory: 6,             // لا يتكرر الإشعار نفسه ضمن آخر N إشعارات
+  maxPerSession: 60,            // أقصى عدد في الجلسة (sessionStorage: calmgastro_notification_count)
+  recentHistory: 20,            // لا يتكرر الإشعار نفسه ضمن آخر N إشعارات
 
   showTestimonials: true,
   showStockNotifications: true,

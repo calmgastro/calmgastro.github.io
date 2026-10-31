@@ -37,7 +37,7 @@
   }
   // القالب يظهر فقط إذا تحقق شرطه من بيانات المخزون الحقيقية (العدد مطلوب لقوالب min/max)
   function stockMatches(n, st){
-    if (n.when === "inStock") return st.inStock && (st.count == null || st.count > 20);
+    if (n.when === "inStock") return st.inStock && st.count !== 0;
     if (n.when === "outOfStock") return !st.inStock || st.count === 0;
     if (n.min != null || n.max != null) return st.inStock && st.count != null && st.count >= (n.min != null ? n.min : -Infinity) && st.count <= (n.max != null ? n.max : Infinity);
     return false;
@@ -48,7 +48,7 @@
     stock: cfg.showStockNotifications ? (NS.stockNotifications || []).filter(n => stockMatches(n, st)) : [],
     purchase: cfg.showPurchaseNotifications ? (NS.purchaseNotifications || []) : []
   };
-  Object.keys(pools).forEach(k => pools[k] = pools[k].map(local).filter(n => n && n.text && n.id != null).map(n => Object.assign({ type: k }, n)));
+  Object.keys(pools).forEach(k => pools[k] = pools[k].filter(n => n && !n.hold).map(local).filter(n => n && n.text && n.id != null).map(n => Object.assign({ type: k }, n)));
   const types = Object.keys(pools).filter(k => pools[k].length && (cfg.weights || {})[k] > 0);
   const total = types.reduce((s, k) => s + pools[k].length, 0);
   if (!total) return;

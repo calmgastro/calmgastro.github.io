@@ -1,16 +1,50 @@
 /* ============================================================
    قوالب إشعارات المخزون
-   يظهر القالب فقط إذا تحقق شرطه من بيانات المخزون الحقيقية:
-   - when: "inStock"    → المنتج متوفر (product-data: store.inStock = true)
-   - when: "outOfStock" → المنتج غير متوفر (store.inStock = false)
-   - min / max          → يحتاج عدد العبوات الفعلي (product-data: store.stockCount). لا يوجد عدد حالياً،
-                          فهذه القوالب جاهزة ولا تظهر حتى يُربط العدد الحقيقي. لا تكتب أرقاماً ثابتة داخل النص.
+   يظهر القالب فقط إذا تحقق شرطه من بيانات المخزون الحقيقية في product-data:
+   - when: "inStock"    → المنتج متوفر (store.inStock = true)
+   - when: "outOfStock" → المنتج غير متوفر (store.inStock = false أو store.stockCount = 0)
+   - min / max          → عدد العبوات الفعلي store.stockCount ضمن المدى (min = max = عدد محدد)
+   لا يوجد store.stockCount حالياً، فقوالب الكميات (باقي 15 / 12 / … / آخر الكميات) جاهزة ولا تظهر
+   حتى تضيف العدد الحقيقي، مثلاً: "stockCount": 12 داخل store في product-data (وتحدّثه عند تغيّر المخزون).
+   «محدود» = 20 عبوة أو أقل.
    ============================================================ */
 window.CalmGastroNotify = window.CalmGastroNotify || {};
 window.CalmGastroNotify.stockNotifications = [
-  { id: 101, type: "stock", icon: "📦", when: "inStock", text: "كالم كاسترو متوفر حالياً", text_en: "CalmGastro is in stock now" },
-  { id: 102, type: "stock", icon: "⚡", min: 10, max: 20, text: "الكمية المتوفرة محدودة حالياً", text_en: "Available quantity is limited right now" },
-  { id: 103, type: "stock", icon: "🔥", min: 5, max: 9, text: "باقي عدد قليل من العبوات", text_en: "Only a few boxes left" },
-  { id: 104, type: "stock", icon: "🚨", min: 1, max: 4, text: "الكمية المتبقية محدودة جداً", text_en: "Very limited quantity left" },
-  { id: 105, type: "stock", icon: "📦", when: "outOfStock", text: "نفدت الكمية الحالية", text_en: "The current batch is sold out" }
+  // صحيحة الآن (المنتج متوفر)
+  { id: 108, type: "stock", icon: "💚", when: "inStock", text: "لا تفوّت فرصة طلب كالم كاسترو وهو متوفر." },
+  { id: 116, type: "stock", icon: "🛍️", when: "inStock", text: "لا تأجل طلبك إذا باقتك متوفرة الحين." },
+
+  // تظهر فقط عندما يكون المخزون الحقيقي 20 عبوة أو أقل
+  { id: 102, type: "stock", icon: "⚠️", min: 1, max: 20, text: "المخزون قرب يخلص! الحق اطلب كالم كاسترو قبل النفاد." },
+  { id: 103, type: "stock", icon: "📦", min: 1, max: 20, text: "الكمية المتبقية محدودة، لا تأجل طلبك لين تخلص." },
+  { id: 104, type: "stock", icon: "⏳", min: 1, max: 20, text: "باقي عدد قليل من العبوات، اطلب قبل ما تنفد الكمية." },
+  { id: 105, type: "stock", icon: "🚨", min: 1, max: 20, text: "تنبيه مخزون! كالم كاسترو متوفر بكميات محدودة حالياً." },
+  { id: 106, type: "stock", icon: "🛒", min: 1, max: 20, text: "ناوي تطلب؟ تأكد من توفر باقتك قبل ما تخلص." },
+  { id: 109, type: "stock", icon: "📦", min: 1, max: 20, text: "المخزون الحالي محدود، اطلب باقتك قبل النفاد." },
+  { id: 110, type: "stock", icon: "⚡", min: 1, max: 20, text: "الكمية تقل! لا تنتظر لين تنتهي العبوات المتوفرة." },
+  { id: 112, type: "stock", icon: "⏳", min: 1, max: 20, text: "آخر الكميات المتوفرة من كالم كاسترو، لا تتأخر." },
+  { id: 113, type: "stock", icon: "🔥", min: 1, max: 20, text: "الكمية محدودة والطلب متاح الآن، الحق على باقتك." },
+  { id: 115, type: "stock", icon: "⚠️", min: 1, max: 20, text: "تنبيه! بعض باقات كالم كاسترو قربت تخلص." },
+  { id: 118, type: "stock", icon: "💚", min: 1, max: 20, text: "باقتك المفضلة ممكن تنفد، شوف المتوفر حالياً." },
+  { id: 119, type: "stock", icon: "⏳", min: 1, max: 20, text: "المخزون قرب ينتهي، اطلب كالم كاسترو قبل النفاد." },
+  { id: 121, type: "stock", icon: "🔥", min: 1, max: 20, text: "آخر الكميات! لا تفوّت طلبك قبل ما يخلص المخزون." },
+  { id: 122, type: "stock", icon: "⚡", min: 1, max: 20, text: "كالم كاسترو متوفر حالياً، لكن الكميات محدودة." },
+  { id: 123, type: "stock", icon: "🛒", min: 1, max: 20, text: "باقي عدد قليل من الباقات، الحق على المتوفر." },
+  { id: 124, type: "stock", icon: "🚨", min: 1, max: 20, text: "تنبيه مهم! المخزون الحالي على وشك النفاد." },
+  { id: 126, type: "stock", icon: "⏳", min: 1, max: 20, text: "لا تنتظر لين يخلص المخزون، تأكد من توفر باقتك الآن." },
+  { id: 128, type: "stock", icon: "⚠️", min: 1, max: 20, text: "قربنا من نفاد الكمية، شوف الباقات المتوفرة." },
+
+  // تظهر فقط عندما يساوي المخزون الحقيقي العدد المذكور
+  { id: 101, type: "stock", icon: "🔥", min: 15, max: 15, text: "باقي 15 عبوة بس من كالم كاسترو! لا يفوتك طلبك." },
+  { id: 107, type: "stock", icon: "🔥", min: 12, max: 12, text: "باقي 12 عبوة فقط من الدفعة الحالية، الحق عليها!" },
+  { id: 111, type: "stock", icon: "🚨", min: 10, max: 10, text: "باقي 10 عبوات فقط! احجز طلبك قبل نفاد الكمية." },
+  { id: 114, type: "stock", icon: "📦", min: 8, max: 8, text: "باقي 8 عبوات فقط من المخزون الحالي!" },
+  { id: 117, type: "stock", icon: "🚨", min: 6, max: 6, text: "باقي 6 عبوات بس! تأكد من توفر الكمية قبل الطلب." },
+  { id: 120, type: "stock", icon: "📦", min: 5, max: 5, text: "باقي 5 عبوات فقط من الدفعة الحالية!" },
+  { id: 125, type: "stock", icon: "📦", min: 3, max: 3, text: "باقي 3 عبوات فقط! اطلب قبل ما تنتهي الكمية." },
+  { id: 127, type: "stock", icon: "🔥", min: 2, max: 2, text: "آخر عبوتين من الدفعة الحالية! لا تفوّتها." },
+  { id: 129, type: "stock", icon: "🚨", min: 1, max: 1, text: "باقي عبوة واحدة فقط من كالم كاسترو!" },
+
+  // عند النفاد فعلاً
+  { id: 130, type: "stock", icon: "📦", when: "outOfStock", text: "نفدت الكمية الحالية! سجّل اهتمامك لمعرفة موعد التوفر القادم." }
 ];
