@@ -140,11 +140,46 @@
   }
   const limitMsg = () => t("الحد الأقصى للطلب الواحد {n} علبة. للكميات الأكبر تواصل معنا لطلب الجملة.", { n: RULES.maxBoxes });
 
+  /* ---------- عرض لفترة محدودة (product-data: store.offer + bundles[].was) ---------- */
+  const OFFER = CONFIG.offer && CONFIG.offer.active !== false ? CONFIG.offer : null;
+  const offerEnd = OFFER && OFFER.endsAt ? new Date(OFFER.endsAt) : null;
+  const saveOf = b => b.was > b.price ? Math.round((1 - b.price / b.was) * 100) : 0;
+  const maxSave = Math.max(0, ...CONFIG.bundles.map(saveOf));
+  const offerOn = () => !!OFFER && maxSave > 0 && !(offerEnd && offerEnd <= new Date());
+  if (offerOn()){
+    const label = LANG === "en" && OFFER.label_en ? OFFER.label_en : OFFER.label;
+    const timer = offerEnd ? h("span", { class: "ob-timer", role: "timer" }, h("span", { text: t("ينتهي العرض خلال") }), h("b", { class: "num" })) : null;
+    const pct = h("em", { text: maxSave + "%" });
+    const banner = h("div", { class: "offer-banner", role: "note" },
+      h("span", { class: "ob-ico", "aria-hidden": "true", text: "🔥" }),
+      h("span", { class: "ob-txt" },
+        h("b", null, label + " · " + t("خصم حتى") + " ", pct),
+        h("span", { text: t("على جميع الباقات · شحن مجاني والدفع عند الاستلام") })),
+      timer);
+    $(".bundles-col").prepend(banner);
+    // نفس العرض في الشريط العلوي، مع رابط للعروض
+    const top = $(".announce");
+    if (top) top.prepend(h("p", { class: "announce-offer" },
+      h("span", { text: "🔥 " + label + " · " + t("خصم حتى") + " " + maxSave + "%" }),
+      h("a", { href: "#order", text: t("اطلب الآن") })));
+    if (timer){                                           // عدّاد حقيقي حتى endsAt، ثم يختفي العرض
+      const out = $("b", timer), pad = n => String(n).padStart(2, "0");
+      const tickOffer = () => {
+        const s = Math.max(0, Math.floor((offerEnd - Date.now()) / 1000));
+        if (!s){ banner.remove(); const a = $(".announce-offer"); if (a) a.remove(); return; }
+        const d = Math.floor(s / 86400), hh = Math.floor(s % 86400 / 3600), mm = Math.floor(s % 3600 / 60);
+        out.textContent = (d ? t("{d} يوم", { d }) + " " : "") + pad(hh) + ":" + pad(mm) + ":" + pad(s % 60);
+        setTimeout(tickOffer, 1000);
+      };
+      tickOffer();
+    }
+  }
+
   /* ---------- بطاقات العروض ---------- */
   const bundlesBox = $("#bundles");
   const offerMsg = $("#offerMsg");
   CONFIG.bundles.forEach(b => {
-    const save = b.was ? Math.round((1 - b.price / b.was) * 100) : 0;
+    const save = saveOf(b);
     const per = Math.round(b.price / (b.boxes * 30) * 10) / 10;
     // الكمية تُعدّل في السلة؛ كل ضغطة «إضافة للسلة» تضيف عرضاً واحداً
     const addBtn = h("button", { type: "button", class: "btn btn-primary add-btn", "data-id": b.id, disabled: CONFIG.inStock === false },
@@ -168,6 +203,7 @@
     const img = "assets/bundle-" + Math.min(3, Math.max(1, b.boxes)) + ".jpg";
     bundlesBox.appendChild(h("article", { class: "bundle" + (b.id === CONFIG.defaultBundle ? " featured" : ""), "data-id": b.id, "aria-labelledby": "bt-" + b.id },
       b.tag ? h("span", { class: "tag", text: b.tag }) : null,
+      save ? h("span", { class: "b-off", "aria-hidden": "true", text: "-" + save + "%" }) : null,
       h("div", { class: "card" },
         h("img", { class: "b-img", src: img, alt: "", width: "480", height: "360", loading: "lazy", decoding: "async" }),
         h("div", { class: "b-info" },
@@ -177,8 +213,9 @@
         h("div", { class: "b-price" },
           h("span", { class: "now", text: money(b.price) }),
           h("span", { class: "meta" },
-            b.was ? h("span", { class: "was", text: money(b.was) }) : null,
-            save ? h("span", { class: "b-save", text: t("وفّر {save}%", { save }) }) : null)),
+            save ? h("span", { class: "sr-only", text: t("بدلاً من") }) : null,
+            save ? h("span", { class: "was", text: money(b.was) }) : null,
+            save ? h("span", { class: "b-save", text: t("وفّر {amount}", { amount: money(b.was - b.price) }) }) : null)),
         addBtn)));
   });
   if (RULES.after){
@@ -195,7 +232,14 @@
       row(t("المجموع الفرعي"), money(q.subtotal)),
       q.discount ? row(serverDiscountLabel || t("خصم أفضل سعر"), "− " + money(q.discount), "disc") : null,
       row(t("الشحن"), q.shipping ? money(q.shipping) : t("مجاني"), q.shipping ? "" : "free"),
-      row(t("الإجمالي"), money(q.total), "grand"));
+      row(t("الإجمالي"), money(q.total), "grand"),
+      saveNote(q));
+  }
+  // «وفّرت …»: الفرق عن الأسعار الأصلية (bundles[].was) + خصم أفضل سعر
+  function saveNote(q){
+    if (!offerOn()) return null;
+    const off = (q.lines || []).reduce((s, l) => s + (l.b && l.b.was > l.b.price ? (l.b.was - l.b.price) * l.qty : 0), 0);
+    return off ? h("p", { class: "save-note", text: "🎉 " + t("وفّرت {amount} مع العرض", { amount: money(off + (q.discount || 0)) }) }) : null;
   }
   function renderCart(container, { onBrowse, onCheckout, onContinue } = {}){
     container.textContent = "";

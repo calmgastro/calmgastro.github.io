@@ -526,6 +526,29 @@
   .b-price .now{font-family:var(--f-display); font-weight:800; font-size:1.45rem; color:var(--teal-deep); white-space:nowrap}
   .b-price .was{font-size:.85rem; color:var(--muted); text-decoration:line-through; white-space:nowrap}
   .b-save{font-size:.78rem; color:var(--danger); font-weight:700}
+  /* ---------- عرض لفترة محدودة ---------- */
+  .b-off{position:absolute; z-index:2; top:26px; right:-8px; display:grid; place-items:center; width:54px; height:54px; border-radius:50%;
+    background:#D93F2B; color:#fff; font-family:var(--f-display); font-weight:800; font-size:.95rem; direction:ltr; transform:rotate(-10deg);
+    box-shadow:0 6px 14px -6px rgba(217,63,43,.75); border:2px solid #fff}
+  html[dir="ltr"] .b-off{right:auto; left:-8px; transform:rotate(10deg)}   /* direction:ltr للنص فقط، فالموضع بالاتجاه الفعلي: فوق زاوية الصورة */
+  .bundle .b-price .now{color:#C2361F}
+  .b-price .was{font-size:.92rem}
+  .b-save{background:#FDE7E2; border-radius:999px; padding:.05em .6em; font-size:.8rem}
+  .offer-banner{position:relative; overflow:hidden; display:flex; align-items:center; gap:.8rem; margin-bottom:22px; padding:.85rem 1.1rem; border-radius:16px;
+    background:linear-gradient(110deg,#0F4B47 0%,#13857B 55%,#F2941B 140%); color:#fff; box-shadow:0 16px 30px -22px rgba(15,75,71,.9)}
+  .offer-banner .ob-ico{flex:none; font-size:1.7rem; line-height:1; filter:drop-shadow(0 2px 4px rgba(0,0,0,.25))}
+  .offer-banner .ob-txt{flex:1; min-width:0; display:flex; flex-direction:column; line-height:1.45}
+  .offer-banner .ob-txt b{font-family:var(--f-display); font-size:1.12rem; font-weight:800}
+  .offer-banner .ob-txt b em{font-style:normal; color:var(--butter)}
+  .offer-banner .ob-txt span{font-size:.86rem; color:#DDF0E8}
+  .offer-banner .ob-timer{flex:none; text-align:center; background:rgba(255,255,255,.14); border:1px solid rgba(255,255,255,.28); border-radius:12px; padding:.35rem .7rem; font-size:.75rem; color:#DDF0E8}
+  .offer-banner .ob-timer b{display:block; font-family:var(--f-mono); font-size:1.05rem; color:#fff; direction:ltr}
+  .offer-banner::after{content:""; position:absolute; inset:0; background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.22) 50%,transparent 70%); transform:translateX(-120%); animation:obShine 5.5s ease-in-out 1.2s infinite; pointer-events:none}
+  @keyframes obShine{0%,70%{transform:translateX(-120%)} 100%{transform:translateX(120%)}}
+  .save-note{margin:.6rem 0 0; padding:.5rem .75rem; border-radius:10px; background:#FDE7E2; color:#A3301C; font-weight:700; font-size:.9rem; text-align:center}
+  .announce-offer{margin:0 0 2px; font-weight:700; color:#fff}
+  .announce-offer a{color:var(--butter); text-decoration:none; border-bottom:1px solid rgba(247,240,176,.6); margin-inline-start:.4em}
+  @media (prefers-reduced-motion: reduce){ .offer-banner::after{display:none} }
   .tag{
     position:absolute; z-index:1; inset-block-start:-12px; left:50%; transform:translateX(-50%); white-space:nowrap; background:var(--orange); color:var(--ink);
     font-family:var(--f-display); font-weight:700; font-size:.78rem; padding:.2em .9em; border-radius:999px; box-shadow:0 4px 10px -4px rgba(201,116,11,.6)
@@ -607,6 +630,7 @@
     .b-price .meta{flex-direction:column; align-items:flex-end; gap:0; min-height:0}
     .bundle .add-btn{grid-area:act; margin-top:.3rem}
     .tag{left:auto; inset-inline-end:18px; transform:none}
+    .b-off{top:-10px}
   }
   @container (max-width:360px){
     .bundle .card{grid-template-columns:72px 1fr auto; gap:.5rem .7rem; padding:.9rem .8rem}
@@ -1635,7 +1659,10 @@
      تقرأها الصفحة، ويقرأها مساعد الذكاء الاصطناعي من الموقع المنشور. عدّل القيم هنا فقط.
      الصيغة JSON: النصوص بين علامتي " ولا توضع تعليقات داخل الكتلة.
      يقرأها أيضاً خادم الطلبات (orders/) لحساب الأسعار، فلا يُعتمد على أي سعر يرسله المتصفح:
-       pricing.boxPriceAfterBundles: سعر العلبة فوق أكبر باقة (4 علب = 4 × 200)
+       pricing.boxPriceAfterBundles: سعر العلبة فوق أكبر باقة (4 علب = 4 × 120)
+       bundles[].price: سعر البيع الآن · bundles[].was: السعر الأصلي قبل الخصم (يظهر مشطوباً مع نسبة ومبلغ التوفير)
+       offer: شريط «عرض لفترة محدودة». active: false يخفيه. endsAt (اختياري، مثل "2026-11-30T23:59:00+03:00")
+              يُظهر عدّاداً حقيقياً حتى ذلك الوقت ثم يختفي الشريط، وعندها أعد الأسعار الأصلية في price
        shipping.cost / shipping.freeFrom: تكلفة الشحن، والحد الأدنى للشحن المجاني (0 = بدون حد)
        orders.maxBoxesPerOrder / maxQtyPerLine: حدود الطلب الواحد (الكميات الأكبر عبر طلب الجملة)
        inStock: false يوقف استقبال الطلبات مؤقتاً
@@ -1652,7 +1679,8 @@
     "defaultBundle": "b2",
     "currencyCode": "SAR",
     "inStock": true,
-    "pricing": {"boxPriceAfterBundles": 200},
+    "pricing": {"boxPriceAfterBundles": 120},
+    "offer": {"active": true, "label": "عرض لفترة محدودة", "label_en": "Limited-time offer", "endsAt": null},
     "shipping": {"cost": 0, "freeFrom": 0},
     "orders": {"prefix": "CG", "maxBoxesPerOrder": 30, "maxQtyPerLine": 10},
     "paymentMethods": [
@@ -1664,9 +1692,9 @@
     "deliveryShort_en": "2–5 days",
     "deliveryLong_en": "2 to 5 business days to all cities in Saudi Arabia. We’ll contact you before delivery to confirm the time.",
     "bundles": [
-      {"id": "b1", "boxes": 1, "title": "علبة واحدة", "program": "برنامج شهر", "price": 250, "title_en": "1 box", "program_en": "1-month program"},
-      {"id": "b2", "boxes": 2, "title": "علبتان", "program": "برنامج شهرين", "price": 450, "was": 500, "tag": "الأكثر طلباً", "title_en": "2 boxes", "program_en": "2-month program", "tag_en": "Most popular"},
-      {"id": "b3", "boxes": 3, "title": "3 علب", "program": "برنامج 3 أشهر", "price": 600, "was": 750, "tag": "أفضل قيمة", "title_en": "3 boxes", "program_en": "3-month program", "tag_en": "Best value"}
+      {"id": "b1", "boxes": 1, "title": "علبة واحدة", "program": "برنامج شهر", "price": 150, "was": 250, "title_en": "1 box", "program_en": "1-month program"},
+      {"id": "b2", "boxes": 2, "title": "علبتان", "program": "برنامج شهرين", "price": 270, "was": 450, "tag": "الأكثر طلباً", "title_en": "2 boxes", "program_en": "2-month program", "tag_en": "Most popular"},
+      {"id": "b3", "boxes": 3, "title": "3 علب", "program": "برنامج 3 أشهر", "price": 350, "was": 600, "tag": "أفضل قيمة", "title_en": "3 boxes", "program_en": "3-month program", "tag_en": "Best value"}
     ]
   },
   "ingredients": [
@@ -1685,9 +1713,9 @@
 }
 </script>
 
-<script src="assets/i18n-en.js?v=20261030p"></script>
-<script src="assets/app.js?v=20261030p"></script>
-<script src="assets/shop.js?v=20261030p"></script>
+<script src="assets/i18n-en.js?v=20261031a"></script>
+<script src="assets/app.js?v=20261031a"></script>
+<script src="assets/shop.js?v=20261031a"></script>
 <!-- إشعارات عائمة: الإعدادات ← البيانات ← العرض ← الإدارة (assets/notifications/) -->
 <script src="assets/notifications/config/notificationConfig.js?v=20261030n"></script>
 <script src="assets/notifications/data/testimonials.js?v=20261030n"></script>
