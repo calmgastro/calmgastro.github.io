@@ -218,10 +218,6 @@
             save ? h("span", { class: "b-save", text: t("وفّر {amount}", { amount: money(b.was - b.price) }) }) : null)),
         addBtn)));
   });
-  if (RULES.after){
-    $("#priceRule").textContent = t("أكثر من {max} علب؟ سعر العلبة {p} فقط. يُطبَّق أفضل سعر تلقائياً في السلة.", {
-      max: Math.max(...CONFIG.bundles.map(b => b.boxes)), p: money(RULES.after) });
-  }
   $$(".js-wa-wholesale").forEach(a => { a.href = waLink(t("السلام عليكم، أرغب في الاستفسار عن أسعار وكميات طلبات الجملة لمنتج CalmGastro.")); a.target = "_blank"; a.rel = "noopener"; a.addEventListener("click", () => track("whatsapp_click", { context: "wholesale" })); });
   $$(".js-wa").forEach(a => a.addEventListener("click", () => track("whatsapp_click", { context: "support" })));
 
