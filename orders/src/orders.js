@@ -2,6 +2,7 @@
 import { getCatalog, quote } from "./catalog.js";
 
 import { notifyMessage } from "./statuses.js";
+import { creationStmts, checkAlert } from "./inventory.js";
 export { notifyMessage };
 
 /* ---------- input cleaning ---------- */
@@ -112,44 +113,70 @@ export async function createOrder(env, body) {
   if (v.errors) throw new HttpError(422, { error: "validation", fields: v.errors });
   const o = v.value;
   const q = quote(o.items, catalog);
-  const requestHash = await sha256(JSON.stringify([o.items, o.customer, o.location, o.payment]));
-
-  // Same checkout attempt sent again (double click, slow network, retry): return the order already created.
-  const existing = await env.DB.prepare("SELECT order_number, request_hash FROM orders WHERE idempotency_key = ?1").bind(o.key).first();
-  if (existing) {
-    if (existing.request_hash !== requestHash) throw new HttpError(409, { error: "idempotency_conflict" });
-    return { replay: true, number: existing.order_number };
-  }
+  const replay = await findReplay(env, o, await sha256(JSON.stringify([o.items, o.customer, o.location, o.payment])));
+  if (replay) return replay;
   // The customer reviewed a total; if prices changed meanwhile, show the new numbers instead of charging silently.
   if (o.expectedTotal != null && o.expectedTotal !== q.total) throw new HttpError(409, { error: "price_changed", quote: publicQuote(q) });
+  return insertOrder(env, catalog, o, q, { source: "WEBSITE", actor: "customer" });
+}
 
+// Same checkout attempt sent again (double click, slow network, retry): return the order already created.
+export async function findReplay(env, o, requestHash) {
+  o.requestHash = requestHash;
+  const existing = await env.DB.prepare("SELECT order_number, request_hash FROM orders WHERE idempotency_key = ?1").bind(o.key).first();
+  if (!existing) return null;
+  if (existing.request_hash !== requestHash) throw new HttpError(409, { error: "idempotency_conflict" });
+  return { replay: true, number: existing.order_number };
+}
+
+/* One order, one transaction: counter, customer record, order, items, history, optional internal note, stock reservation
+   and (for admin orders) the audit entry. Website and admin orders both come through here, so inventory, revenue and
+   COGS treat them identically; only source / created_by differ.
+   opts: { source, actor, userId, status, manualDiscount, manualReason, internalNote, saveProfile, auditStmt } */
+export async function insertOrder(env, catalog, o, q, opts) {
   const now = new Date().toISOString();
   const year = now.slice(0, 4);                // bound as text: D1 passes JS numbers as REAL, which would print "2026.0"
   const db = env.DB;
+  const status = opts.status || "RECEIVED", manual = opts.manualDiscount || 0;
+  const discount = q.discount + manual, total = q.subtotal - discount + q.shipping;
   const orderId = "(SELECT id FROM orders WHERE idempotency_key = ?1)";
+  // customer record per mobile number: website orders never overwrite it; an admin may choose to update it
+  const customerSql = opts.saveProfile
+    ? `INSERT INTO customers (phone, name, city, district, address, created_by, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)
+       ON CONFLICT (phone) DO UPDATE SET name = excluded.name, city = excluded.city, district = excluded.district, address = excluded.address, updated_at = excluded.updated_at`
+    : "INSERT INTO customers (phone, name, city, district, address, created_by, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7) ON CONFLICT (phone) DO NOTHING";
+  const inv = await creationStmts(db, { items: q.lines.map(l => ({ productId: l.productId, boxesPerUnit: l.boxesPerUnit, quantity: l.quantity })),
+    oid: { sql: "(SELECT id FROM orders WHERE idempotency_key = ?)", binds: [o.key] }, actor: opts.actor, userId: opts.userId, t: now, key: o.key,
+    label: opts.source === "ADMIN" ? "admin_order" : "website_order" });
   const stmts = [
     db.prepare("INSERT INTO order_counters (year, last_value) VALUES (?1, 1) ON CONFLICT(year) DO UPDATE SET last_value = last_value + 1").bind(year),
+    db.prepare(customerSql).bind(o.customer.phone, o.customer.name, o.customer.city, o.customer.district, o.customer.address, opts.actor, now),
     db.prepare(`INSERT INTO orders (order_number, idempotency_key, request_hash, customer_name, customer_phone, city, district, address,
         location_latitude, location_longitude, customer_notes, boxes, subtotal, discount_amount, shipping_amount, total_amount,
-        currency, payment_method, status, lang, created_at, updated_at)
+        currency, payment_method, status, lang, created_at, updated_at, source, created_by, created_by_user_id, customer_id, manual_discount, manual_discount_reason)
       VALUES (?1 || '-' || ?2 || '-' || printf('%06d', (SELECT last_value FROM order_counters WHERE year = ?2)),
-        ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, 'RECEIVED', ?20, ?21, ?21)`)
-      .bind(catalog.orderPrefix, year, o.key, requestHash, o.customer.name, o.customer.phone, o.customer.city, o.customer.district,
+        ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?22, ?23, ?24, ?25, (SELECT id FROM customers WHERE phone = ?6), ?26, ?27)`)
+      .bind(catalog.orderPrefix, year, o.key, o.requestHash, o.customer.name, o.customer.phone, o.customer.city, o.customer.district,
         o.customer.address, o.location ? o.location.lat : null, o.location ? o.location.lng : null, o.customer.notes,
-        q.boxes, q.subtotal, q.discount, q.shipping, q.total, q.currency, o.payment, o.lang, now),
+        q.boxes, q.subtotal, discount, q.shipping, total, q.currency, o.payment, status, o.lang, now,
+        opts.source, opts.actor, opts.userId ?? null, manual, opts.manualReason || ""),
     ...q.lines.map(l => db.prepare(`INSERT INTO order_items (order_id, product_id, product_name_snapshot, product_name_en_snapshot,
         boxes_per_unit, unit_price, quantity, line_total, created_at, updated_at) VALUES (${orderId}, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)`)
       .bind(o.key, l.productId, l.name, l.nameEn, l.boxesPerUnit, l.unitPrice, l.quantity, l.lineTotal, now)),
-    db.prepare(`INSERT INTO order_status_history (order_id, previous_status, new_status, changed_by, note, visibility, created_at)
-      VALUES (${orderId}, NULL, 'RECEIVED', 'customer', '', 'internal', ?2)`).bind(o.key, now)
+    db.prepare(`INSERT INTO order_status_history (order_id, previous_status, new_status, changed_by, user_id, note, visibility, created_at)
+      VALUES (${orderId}, NULL, ?2, ?3, ?4, ?5, 'internal', ?6)`).bind(o.key, status, opts.actor, opts.userId ?? null, opts.source === "ADMIN" ? "أُنشئ من لوحة التحكم" : "", now),
+    ...(opts.internalNote ? [db.prepare(`INSERT INTO order_notes (order_id, note, created_by, user_id, created_at) VALUES (${orderId}, ?2, ?3, ?4, ?5)`)
+      .bind(o.key, opts.internalNote, opts.actor, opts.userId ?? null, now)] : []),
+    ...inv.stmts,
+    ...(opts.auditStmt ? [opts.auditStmt] : [])
   ];
-  // All statements run as one transaction: either the whole order exists or nothing does.
+  // All statements run as one transaction: either the whole order (with its reservation) exists or nothing does.
   try {
     await db.batch(stmts);
   } catch (e) {
     if (/UNIQUE constraint failed: orders\.idempotency_key/i.test(e.message)) {   // a parallel duplicate won the race
       const row = await db.prepare("SELECT order_number, request_hash FROM orders WHERE idempotency_key = ?1").bind(o.key).first();
-      if (row && row.request_hash === requestHash) return { replay: true, number: row.order_number };
+      if (row && row.request_hash === o.requestHash) return { replay: true, number: row.order_number };
     }
     console.log("order insert failed:", e.message);
     throw new HttpError(500, { error: "create_failed" });
@@ -157,11 +184,21 @@ export async function createOrder(env, body) {
   const row = await db.prepare("SELECT id, order_number FROM orders WHERE idempotency_key = ?1").bind(o.key).first();
   if (!row) throw new HttpError(500, { error: "create_failed" });
   try {
-    await db.prepare("INSERT INTO notification_outbox (order_id, event, lang, message, created_at) VALUES (?1, 'RECEIVED', ?2, ?3, ?4)")
-      .bind(row.id, o.lang, notifyMessage("RECEIVED", o.lang, row.order_number), now).run();
+    await db.prepare("INSERT INTO notification_outbox (order_id, event, lang, message, created_at) VALUES (?1, ?2, ?3, ?4, ?5)")
+      .bind(row.id, status, o.lang, notifyMessage(status, o.lang, row.order_number), now).run();
   }
   catch (e) { console.log("outbox write failed:", e.message); }                          // never fails the order
-  return { replay: false, number: row.order_number };
+  try { await checkAlert(db); } catch (e) { console.log("stock alert failed:", e.message); }
+  return { replay: false, number: row.order_number, id: row.id };
+}
+
+/* Boxes → bundle lines for an admin order: the largest bundles first; quote() then applies the same best-price rule as
+   the website cart, so N boxes cost exactly what a customer would pay for N boxes online. */
+export function linesForBoxes(boxes, catalog) {
+  const sorted = [...catalog.bundles].sort((a, b) => b.boxes - a.boxes), items = [];
+  let left = boxes;
+  for (const b of sorted) { const n = Math.floor(left / b.boxes); if (n) { items.push({ id: b.id, qty: n }); left -= n * b.boxes; } }
+  return left ? null : items;
 }
 
 const publicQuote = q => ({ boxes: q.boxes, subtotal: q.subtotal, discount: q.discount, shipping: q.shipping, total: q.total, currency: q.currency });

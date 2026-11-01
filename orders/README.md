@@ -102,7 +102,7 @@ Admin (`/admin/api/*`, session cookie; POST needs `X-CG-Admin: 1`):
 `GET /orders/{n}` · `POST /orders/{n}/status|customer|items|notes|archive|revoke-link|anonymize` ·
 `GET /customers` · `GET /products` · `GET /audit` · `GET /users` · `POST /users` · `POST /users/{id}` · `GET /backup`.
 
-## Database (migrations `0001`, `0002`)
+## Database (migrations `0001`, `0002`, `0003`)
 
 `orders` (unique `order_number`, unique `idempotency_key`, CHECKs on status/payment/totals, `token_version`,
 `archived_at`, `anonymized_at`; indexes on created/updated/status/phone) · `order_items` (name/price snapshots,
@@ -112,6 +112,57 @@ customer messages; sender to be connected later) · `order_counters` (atomic yea
 `permissions`, `role_permissions`, `sessions`, `login_throttle`, `audit_logs` (append-only) · `catalog_cache`.
 Migration 0002 rebuilt the order tables to the new status enum, keeping every existing row
 (`pending` → `RECEIVED`, `problem` → `ON_HOLD`), children-first so no cascade can delete data.
+
+## Inventory, cost and profit (migration `0003`, `src/inventory.js`, `src/stock_admin.js`, `src/finance.js`)
+
+**One stock service.** `src/inventory.js` is the only code that moves stock. Website orders and admin orders
+(`orders.insertOrder`), single and bulk status changes (`admin.applyTransition`) and item edits all call it, and every
+movement is written in the same D1 transaction as the order change that caused it.
+
+**Units and states.** 1 unit = 1 box. Per product: `on_hand` (physical, not yet sold), `reserved` (held for open orders),
+`sold`; available = on_hand − reserved. CHECK constraints make available < 0 impossible: such a transaction aborts.
+
+**Status → stock** (`ORDER_STATUS_INVENTORY_RULES`): RECEIVED / CONFIRMED / PREPARING / SHIPPED / OUT_FOR_DELIVERY /
+ON_HOLD → RESERVE · DELIVERED → COMMIT (FIFO consumption, COGS stored on the reservation) · CANCELLED / FAILED → RELEASE.
+Overrides are handled too: Cancelled → open re-reserves, Cancelled → Delivered consumes directly if stock is available,
+Delivered → Cancelled is a RETURN (restocks the same batches; or WRITE_OFF per the return policy setting).
+
+**Shortage.** An order needing more than is available reserves what is there (policy RESERVE_AVAILABLE, or nothing with
+RESERVE_NONE) and is flagged SHORTAGE (admin only; the customer sees nothing). It cannot be delivered until an admin
+allocates stock (Inventory → Shortages → «حجز المتوفر»); arriving stock never changes an order by itself.
+
+**Cost.** Every receipt is its own batch (`inventory_batches`, never merged). The admin enters the batch TOTAL; the unit
+cost is computed on the server. FIFO consumption is recorded per batch (`inventory_consumptions`); a batch total that does
+not divide evenly is spread without rounding drift. Costs and expenses are stored in halalas. A batch entered without a
+cost can get its cost once later; the stored COGS of orders that used it is recalculated in that same audited step.
+
+**Idempotency.** Status-change stock statements are guarded by the order's new (status, updated_at); order creation by
+the idempotency key; receipts / adjustments by a per-form request id (`inventory_transactions.idempotency_key` UNIQUE).
+FIFO plans that went stale under concurrency abort on the batch CHECK and are rebuilt (`runWithRetry`).
+
+**Ledger.** `inventory_transactions` is append-only (triggers) with before/after on-hand, reserved and available, actor and
+reference. Admin → المخزون → «فحص تطابق الأرصدة» recomputes the balance from the ledger, the batches and the reservations.
+
+**Opening balance.** Created once from Admin → المخزون: quantity, a date before the first order, optional total cost. The
+same step replays every existing order by its current status (delivered → consumed, open → reserved, cancelled/failed → no
+effect), with a preview first. Until it exists the stock hooks do nothing.
+
+**Alerts.** One `inventory_alerts` row when the level changes (LOW ≤ threshold, CRITICAL ≤ critical threshold, OUT = 0, all
+on available stock) — never on page loads. Thresholds and policies live in `inventory_settings`.
+
+**Expenses and profit.** `expenses` (DELIVERY / ADVERTISING / OTHER via `expense_categories`, optional order, platform,
+campaign; voided with a reason, never deleted). Profit for a period: revenue = totals of orders currently Delivered, dated
+when they became Delivered; COGS = their stored FIFO cost; minus expenses dated in the period; minus stock losses (cost of
+negative adjustments and write-offs). Filter by source (WEBSITE / ADMIN): general expenses then are excluded.
+
+**Admin orders.** Admin → الطلبات → «+ طلب جديد»: same validation, website pricing (boxes → bundles, best price), customer
+record per mobile number (`customers`), reservation and history as a website order; `source = ADMIN`, `created_by`. Preview
+first (totals + stock impact); with insufficient stock the admin must confirm «إنشاء كطلب نقص». Initial status RECEIVED or
+CONFIRMED only. Optional manual discount (`orders.discount`, reason required) is kept when items are edited later.
+
+**Permissions.** `inventory.view` (stock, shortages; no costs) · `inventory.manage` (receipts, adjustments, settings,
+opening balance, allocation) · `finance.view` (costs, COGS, stock value, profit) · `expenses.manage` · `orders.create` ·
+`orders.discount`. Super Admin: all · Order Manager: inventory.view, orders.create · Support Agent: orders.create.
 
 ## Backup and recovery
 
@@ -126,7 +177,7 @@ Migration 0002 rebuilt the order tables to the new status enum, keeping every ex
 
 ```sh
 npx wrangler d1 export calmgastro-orders --remote --output before-migration.sql   # always back up first
-npx wrangler d1 migrations apply calmgastro-orders --remote
+npx wrangler d1 migrations apply calmgastro-orders --remote   # BEFORE deploying code that needs the new tables/columns
 npx wrangler deploy
 npx wrangler secret put PASSWORD_PEPPER    # random, 32+ chars (set once; changing it invalidates all admin passwords)
 npx wrangler secret put TOKEN_SECRET       # random, 32+ chars (changing it invalidates customers' secure links)

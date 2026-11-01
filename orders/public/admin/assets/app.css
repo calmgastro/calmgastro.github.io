@@ -169,3 +169,18 @@ details.data summary{cursor:pointer; color:var(--teal); font-size:.88rem; margin
 /* فلتر المدينة + جدول المدن في التقارير */
 .city-filter{max-width:240px}
 .city-table tr[aria-current="true"] td{background:var(--lime); font-weight:600}
+
+/* ---------- المخزون والمصاريف ---------- */
+.inv{display:inline-block; font-size:.75rem; border-radius:999px; padding:.05em .6em; font-weight:700; margin-inline-start:4px}
+.inv-RESERVED{background:#DDF0FF; color:#0B4F80} .inv-SHORTAGE{background:#F8E3DE; color:#B4321F} .inv-COMMITTED{background:#0F5C57; color:#fff} .inv-RELEASED{background:#ECECEC; color:#555}
+.stock-alert{display:flex; flex-wrap:wrap; align-items:center; gap:8px; border-radius:12px; padding:.7em .9em; margin-bottom:12px; font-size:.92rem; background:var(--warn-bg); color:var(--warn)}
+.stock-alert.lvl-CRITICAL,.stock-alert.lvl-OUT{background:#F8E3DE; color:var(--danger)}
+.stock-alert .btn{margin-inline-start:auto}
+.tile-warn{border-color:#E7B4A8; background:#FFF8F5} .tile-warn .v{color:var(--danger)}
+.tile-good .v{color:var(--teal)}
+.danger-text{color:var(--danger)}
+.chip.on{background:var(--teal-deep); color:#fff; border-color:var(--teal-deep)}
+.cust-results{display:flex; flex-wrap:wrap; gap:6px; margin:6px 0 10px}
+details summary{cursor:pointer; color:var(--teal-deep); margin-top:8px}
+a.chip{text-decoration:none; color:var(--teal-deep); display:inline-flex; align-items:center}
+.tile .v .u{font:600 .8rem/1 "IBM Plex Sans Arabic","Segoe UI",Tahoma,sans-serif; color:var(--muted); margin-inline-start:2px; white-space:nowrap}

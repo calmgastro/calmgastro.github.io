@@ -7,6 +7,8 @@
 import { createOrder, loadOrder, customerView, orderToken, normalizeOrderNumber, normalizePhone, safeEqual, HttpError } from "./orders.js";
 import { login, completeMfa, loadSession, revokeCurrent, clearCookie, setup, setupNeeded, audit } from "./auth.js";
 import * as A from "./admin.js";
+import * as S from "./stock_admin.js";
+import * as F from "./finance.js";
 
 const MAX_BODY = 16 * 1024;
 // browser family only, for diagnosing "works on X, fails on Y" reports
@@ -149,6 +151,19 @@ async function adminApi(request, env, url) {
         "Content-Disposition": `attachment; filename="orders-${new Date().toISOString().slice(0, 10)}.csv"` } });
     case "POST /orders/bulk-status": return json(await A.bulkStatus(env, ctx, body));
     case "GET /customers": return json(await A.customers(env, ctx, p));
+    case "GET /customers/search": return json(await A.customerLookup(env, ctx, p));
+    case "POST /orders/new": return json(await A.adminOrder(env, ctx, body));
+    case "GET /inventory": return json(await S.inventoryPage(env, ctx, p));
+    case "GET /inventory/summary": A.need(ctx, "inventory.view"); return json(await S.stockSummary(env, ctx));
+    case "GET /inventory/reconcile": return json(await S.reconcileStock(env, ctx));
+    case "GET /inventory/shortages": A.need(ctx, "inventory.view"); return json({ shortages: await S.shortageRows(env) });
+    case "POST /inventory/init": return json(await S.initStock(env, ctx, body));
+    case "POST /inventory/receipts": return json(await S.receiveStock(env, ctx, body));
+    case "POST /inventory/adjustments": return json(await S.adjustStock(env, ctx, body));
+    case "POST /inventory/settings": return json(await S.saveSettings(env, ctx, body));
+    case "GET /finance/summary": return json(await F.financeSummary(env, ctx, p));
+    case "GET /expenses": return json(await F.expenseList(env, ctx, p));
+    case "POST /expenses": return json(await F.createExpense(env, ctx, body));
     case "GET /products": return json(await A.products(env, ctx));
     case "GET /audit": return json(await A.auditLog(env, ctx, p));
     case "GET /users": return json(await A.listUsers(env, ctx));
@@ -159,10 +174,16 @@ async function adminApi(request, env, url) {
   }
   let m = path.match(/^\/users\/(\d{1,9})$/);
   if (m && method === "POST") return json(await A.updateUser(env, ctx, m[1], body));
-  m = path.match(/^\/orders\/([A-Za-z0-9-]{6,24})(?:\/(status|customer|items|notes|archive|revoke-link|anonymize))?$/);
+  m = path.match(/^\/expenses\/(\d{1,9})\/void$/);
+  if (m && method === "POST") return json(await F.voidExpense(env, ctx, m[1], body));
+  m = path.match(/^\/inventory\/alerts\/(\d{1,9})\/ack$/);
+  if (m && method === "POST") return json(await S.ackAlert(env, ctx, m[1]));
+  m = path.match(/^\/inventory\/batches\/(\d{1,9})\/cost$/);
+  if (m && method === "POST") return json(await S.setBatchCost(env, ctx, m[1], body));
+  m = path.match(/^\/orders\/([A-Za-z0-9-]{6,24})(?:\/(status|customer|items|notes|archive|revoke-link|anonymize|allocate))?$/);
   if (m && method === "GET" && !m[2]) return json(await A.orderDetail(env, ctx, m[1]));
   if (m && method === "POST") {
-    const h = { status: A.changeStatus, customer: A.editCustomer, items: A.editItems, notes: A.addNote, archive: A.setArchived, "revoke-link": A.revokeLink, anonymize: A.anonymize }[m[2]];
+    const h = { status: A.changeStatus, customer: A.editCustomer, items: A.editItems, notes: A.addNote, archive: A.setArchived, "revoke-link": A.revokeLink, anonymize: A.anonymize, allocate: (e, c, n) => S.allocateOrder(e, c, n) }[m[2]];
     if (h) return json(await h(env, ctx, m[1], body));
   }
   throw new HttpError(404, { error: "not_found" });

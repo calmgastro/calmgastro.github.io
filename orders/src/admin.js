@@ -1,8 +1,10 @@
 /* Admin API: every handler receives ctx = { user, perms, session, ip, ua } from an authenticated session.
    Permissions are checked here, on the server, for every action. */
 import { STATUSES, FLOW, LABELS, LOCKED, allowedTransition, nextOptions, notifyMessage } from "./statuses.js";
-import { loadOrder, localPhone, normalizeOrderNumber, normalizePhone, latinDigits, HttpError } from "./orders.js";
-import { getCatalog, priceForBoxes } from "./catalog.js";
+import { loadOrder, localPhone, normalizeOrderNumber, normalizePhone, latinDigits, HttpError, validateOrderInput, findReplay, insertOrder, linesForBoxes, sha256 } from "./orders.js";
+import { getCatalog, priceForBoxes, quote } from "./catalog.js";
+import { transitionStmts, requantityStmts, runWithRetry, checkAlert, orderGuard, reservationPreview, ruleOf, isInitialized } from "./inventory.js";
+import { stockSummary, sar } from "./stock_admin.js";
 import { groupCities, citySpellings } from "./cities.js";
 import { audit, auditStmt, hashPassword, verifyPassword, passwordProblem, validUsername, revokeAllStmt,
          encryptSecret, decryptSecret, verifyTotp, base32 } from "./auth.js";
@@ -15,11 +17,11 @@ const DAY = 86400000;
 
 /* ---------- navigation for the signed-in admin (sidebar shows only what the role may open) ---------- */
 const NAV = [
-  ["dashboard", "dashboard.view"], ["orders", "orders.view"], ["customers", "customers.view"], ["products", "products.view"],
-  ["reports", "reports.view"], ["audit", "audit.view"], ["users", "users.manage"], ["settings", null]
+  ["dashboard", "dashboard.view"], ["orders", "orders.view"], ["inventory", "inventory.view"], ["expenses", ["finance.view", "expenses.manage"]],
+  ["customers", "customers.view"], ["products", "products.view"], ["reports", "reports.view"], ["audit", "audit.view"], ["users", "users.manage"], ["settings", null]
 ];
 export function me(ctx) {
-  return { user: ctx.user, permissions: [...ctx.perms].sort(), nav: NAV.filter(([, p]) => !p || ctx.perms.has(p)).map(([k]) => k) };
+  return { user: ctx.user, permissions: [...ctx.perms].sort(), nav: NAV.filter(([, p]) => !p || [].concat(p).some(x => ctx.perms.has(x))).map(([k]) => k) };
 }
 
 /* ---------- filters shared by the list, "select all", bulk and export ---------- */
@@ -53,6 +55,14 @@ function orderFilter(params, spellings = null) {
   else if (status === "OPEN") where.push("o.status IN ('RECEIVED','CONFIRMED','PREPARING','SHIPPED','OUT_FOR_DELIVERY','ON_HOLD')");
   const payment = params.get("payment");
   if (payment === "cod") add("o.payment_method = ?", payment);
+  const source = params.get("source");
+  if (source === "WEBSITE" || source === "ADMIN") add("o.source = ?", source);
+  const inv = params.get("inv");
+  if (["RESERVED", "SHORTAGE", "COMMITTED", "RELEASED"].includes(inv)) add("EXISTS (SELECT 1 FROM inventory_reservations r WHERE r.order_id = o.id AND r.status = ?)", inv);
+  else if (inv === "NONE") where.push("NOT EXISTS (SELECT 1 FROM inventory_reservations r WHERE r.order_id = o.id)");
+  const pay = params.get("pay");                                   // cash on delivery: collected once delivered
+  if (pay === "collected") where.push("o.status = 'DELIVERED'");
+  else if (pay === "outstanding") where.push("o.status NOT IN ('DELIVERED','CANCELLED','FAILED')");
   if (spellings) {
     if (spellings.length) add("o.city IN (" + spellings.map(() => "?").join(",") + ")", ...spellings);
     else where.push("0");                                   // a city with no orders (or an unknown key) matches nothing
@@ -83,7 +93,8 @@ export async function listOrders(env, ctx, params) {
   const sort = params.get("sort") === "updated" ? "o.updated_at DESC" : "o.id DESC";
   const [rows, count, counts] = await Promise.all([
     env.DB.prepare(`SELECT o.order_number, o.created_at, o.updated_at, o.customer_name, o.customer_phone, o.city, o.district, o.boxes,
-        o.total_amount, o.currency, o.payment_method, o.status, o.archived_at
+        o.total_amount, o.currency, o.payment_method, o.status, o.archived_at, o.source,
+        (SELECT r.status FROM inventory_reservations r WHERE r.order_id = o.id LIMIT 1) inv_status
       FROM orders o ${f.sql} ORDER BY ${sort} LIMIT ${per} OFFSET ${(page - 1) * per}`).bind(...f.binds).all(),
     env.DB.prepare(`SELECT COUNT(*) AS n FROM orders o ${f.sql}`).bind(...f.binds).first(),
     env.DB.prepare("SELECT status, COUNT(*) AS n FROM orders WHERE archived_at IS NULL GROUP BY status").all()
@@ -91,7 +102,7 @@ export async function listOrders(env, ctx, params) {
   return {
     orders: rows.results.map(r => ({ orderNumber: r.order_number, createdAt: r.created_at, updatedAt: r.updated_at, customerName: r.customer_name,
       phone: localPhone(r.customer_phone), city: r.city, district: r.district, boxes: r.boxes, total: r.total_amount, currency: r.currency,
-      paymentMethod: r.payment_method, status: r.status, archived: !!r.archived_at })),
+      paymentMethod: r.payment_method, status: r.status, archived: !!r.archived_at, source: r.source, inventoryStatus: r.inv_status || null })),
     total: count.n, page, per, counts: Object.fromEntries(counts.results.map(r => [r.status, r.n]))
   };
 }
@@ -135,17 +146,23 @@ async function getOrderOr404(env, number) {
 
 export async function orderDetail(env, ctx, number) {
   need(ctx, "orders.view");
-  const full = await getOrderOr404(env, number), o = full.order;
-  const [notes, auditRows] = await Promise.all([
+  const full = await getOrderOr404(env, number), o = full.order, fin = ctx.perms.has("finance.view");
+  const [notes, auditRows, reservations, invTx] = await Promise.all([
     env.DB.prepare("SELECT note, created_by, created_at FROM order_notes WHERE order_id = ?1 ORDER BY id").bind(o.id).all(),
     ctx.perms.has("audit.view") || ctx.perms.has("orders.edit_customer")
       ? env.DB.prepare("SELECT username, action, old_value, new_value, created_at FROM audit_logs WHERE entity_type = 'order' AND entity_id = ?1 ORDER BY id DESC LIMIT 200").bind(o.order_number).all()
-      : Promise.resolve({ results: [] })
+      : Promise.resolve({ results: [] }),
+    ctx.perms.has("inventory.view") ? env.DB.prepare("SELECT * FROM inventory_reservations WHERE order_id = ?1").bind(o.id).all() : Promise.resolve({ results: [] }),
+    ctx.perms.has("inventory.view") ? env.DB.prepare("SELECT * FROM inventory_transactions WHERE order_id = ?1 ORDER BY id").bind(o.id).all() : Promise.resolve({ results: [] })
   ]);
+  const delivered = o.status === "DELIVERED", closed = ["CANCELLED", "FAILED"].includes(o.status);
   return {
     id: o.id, orderNumber: o.order_number, status: o.status, createdAt: o.created_at, updatedAt: o.updated_at, lang: o.lang,
     paymentMethod: o.payment_method, boxes: o.boxes, subtotal: o.subtotal, discount: o.discount_amount, shipping: o.shipping_amount,
     total: o.total_amount, currency: o.currency, archived: !!o.archived_at, anonymized: !!o.anonymized_at, locked: LOCKED.includes(o.status),
+    source: o.source, createdBy: o.created_by, manualDiscount: o.manual_discount, manualDiscountReason: o.manual_discount_reason,
+    // cash on delivery: collected when the order is delivered; nothing is owed on a cancelled / failed order
+    payment: { status: delivered ? "COLLECTED" : closed ? "NONE" : "PENDING", collected: delivered ? o.total_amount : 0, outstanding: delivered || closed ? 0 : o.total_amount },
     customer: { name: o.customer_name, phone: localPhone(o.customer_phone), phoneIntl: o.customer_phone, city: o.city, district: o.district,
       address: o.address, notes: o.customer_notes, location: o.location_latitude != null ? { lat: o.location_latitude, lng: o.location_longitude } : null },
     items: full.items.map(i => ({ id: i.id, productId: i.product_id, name: i.product_name_snapshot, boxesPerUnit: i.boxes_per_unit,
@@ -153,13 +170,48 @@ export async function orderDetail(env, ctx, number) {
     history: full.history.map(h => ({ from: h.previous_status, to: h.new_status, by: h.changed_by, note: h.note, visibility: h.visibility, bulk: !!h.bulk_id, at: h.created_at })),
     notes: notes.results.map(x => ({ note: x.note, by: x.created_by, at: x.created_at })),
     audit: auditRows.results.map(a => ({ by: a.username, action: a.action, old: a.old_value, new: a.new_value, at: a.created_at })),
+    inventory: ctx.perms.has("inventory.view") ? {
+      reservations: reservations.results.map(r => ({ product: r.product_id, status: r.status, requested: r.requested_qty, reserved: r.reserved_qty, shortage: r.shortage_qty,
+        availableBefore: r.available_at_order, availableAfter: r.available_after, reservedAt: r.reserved_at, releasedAt: r.released_at, committedAt: r.committed_at,
+        ...(fin ? { cogs: sar(r.cogs_halalas), cogsComplete: !!r.cogs_complete } : {}) })),
+      transactions: invTx.results.map(t => ({ type: t.type, quantity: t.quantity, availableBefore: t.available_before, availableAfter: t.available_after,
+        onHandBefore: t.on_hand_before, onHandAfter: t.on_hand_after, actor: t.actor, at: t.created_at, ...(fin ? { cost: sar(t.cost_halalas) } : {}) })),
+      canAllocate: ctx.perms.has("inventory.manage") && reservations.results.some(r => r.status === "SHORTAGE")
+    } : null,
     nextStatuses: o.anonymized_at ? [] : nextOptions(ctx.perms, o.status),
     can: Object.fromEntries(["orders.edit_customer", "orders.edit_items", "orders.edit_price", "orders.notes", "orders.revoke_link", "orders.archive", "orders.anonymize"]
       .map(p => [p.split(".")[1], ctx.perms.has(p) && !o.anonymized_at]))
   };
 }
+/* ---------- status change: one transition, used by the single and the bulk change ----------
+   The order update, its history, the customer notification and every stock movement are one transaction. The stock
+   statements are guarded by the new (status, updated_at) the same transaction writes, so a duplicated, retried or
+   concurrent request can never reserve, release or consume twice. */
+async function applyTransition(env, ctx, full, to, { note, visibility, kind, bulkId = null }) {
+  const o = full.order, db = env.DB;
+  const msg = notifyMessage(to, o.lang, o.order_number) + (visibility === "customer" && note ? " " + note : "");
+  let t;
+  const res = await runWithRetry(async () => {
+    t = new Date().toISOString();
+    const inv = await transitionStmts(db, { order: o, items: full.items, from: o.status, to, actor: ctx.user.username, userId: ctx.user.id, t, g: orderGuard(o.id, to, t) });
+    // when stock moves, the order must not have changed since it was read (its reservation was read with it)
+    const upd = inv.length
+      ? db.prepare("UPDATE orders SET status = ?1, updated_at = ?2 WHERE id = ?3 AND status = ?4 AND updated_at = ?5").bind(to, t, o.id, o.status, o.updated_at)
+      : db.prepare("UPDATE orders SET status = ?1, updated_at = ?2 WHERE id = ?3 AND status = ?4").bind(to, t, o.id, o.status);
+    return [
+      upd,
+      // each insert runs only if the update above changed the row, so a lost race writes nothing
+      db.prepare(`INSERT INTO order_status_history (order_id, previous_status, new_status, changed_by, user_id, note, visibility, bulk_id, ip_address, user_agent, created_at)
+        SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11 WHERE changes() = 1`).bind(o.id, o.status, to, ctx.user.username, ctx.user.id, note, visibility, bulkId, ctx.ip, (ctx.ua || "").slice(0, 300), t),
+      db.prepare("INSERT INTO notification_outbox (order_id, event, lang, message, created_at) SELECT ?1, ?2, ?3, ?4, ?5 WHERE changes() = 1").bind(o.id, to, o.lang, msg, t),
+      ...inv,
+      ...(bulkId ? [] : [auditStmt(env, ctx, to === "CANCELLED" ? "order_cancelled" : "order_status_changed", "order", o.order_number, { status: o.status }, { status: to, note, visibility, override: kind === "override" })])
+    ];
+  }, db);
+  if (!res[0].meta.changes) throw new HttpError(409, { error: "status_changed" });
+  if (ruleOf(o.status) !== ruleOf(to)) { try { await checkAlert(db); } catch (e) { console.log("stock alert failed:", e.message); } }
+}
 
-/* ---------- status change: one order ---------- */
 export async function changeStatus(env, ctx, number, body) {
   const full = await getOrderOr404(env, number), o = full.order;
   if (o.anonymized_at) throw new HttpError(409, { error: "anonymized" });
@@ -168,21 +220,13 @@ export async function changeStatus(env, ctx, number, body) {
   if (!kind) throw new HttpError(STATUSES.includes(to) ? 403 : 422, { error: STATUSES.includes(to) ? "transition_not_allowed" : "invalid_status", from: o.status, to });
   if (kind === "override" && body.override !== true) throw new HttpError(409, { error: "override_confirmation_required", from: o.status, to });
   if (body.expectedStatus && body.expectedStatus !== o.status) throw new HttpError(409, { error: "status_changed", status: o.status });
-  const note = cleanNote(body.note), visibility = body.visibility === "customer" ? "customer" : "internal", t = now();
-  const msg = notifyMessage(to, o.lang, o.order_number) + (visibility === "customer" && note ? " " + note : "");
-  const res = await env.DB.batch([
-    env.DB.prepare("UPDATE orders SET status = ?1, updated_at = ?2 WHERE id = ?3 AND status = ?4").bind(to, t, o.id, o.status),
-    // each insert runs only if the update above changed the row, so a lost race writes nothing
-    env.DB.prepare(`INSERT INTO order_status_history (order_id, previous_status, new_status, changed_by, user_id, note, visibility, ip_address, user_agent, created_at)
-      SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10 WHERE changes() = 1`).bind(o.id, o.status, to, ctx.user.username, ctx.user.id, note, visibility, ctx.ip, (ctx.ua || "").slice(0, 300), t),
-    env.DB.prepare("INSERT INTO notification_outbox (order_id, event, lang, message, created_at) SELECT ?1, ?2, ?3, ?4, ?5 WHERE changes() = 1").bind(o.id, to, o.lang, msg, t),
-    auditStmt(env, ctx, to === "CANCELLED" ? "order_cancelled" : "order_status_changed", "order", o.order_number, { status: o.status }, { status: to, note, visibility, override: kind === "override" })
-  ]);
-  if (!res[0].meta.changes) throw new HttpError(409, { error: "status_changed" });
+  await applyTransition(env, ctx, full, to, { note: cleanNote(body.note), visibility: body.visibility === "customer" ? "customer" : "internal", kind });
   return orderDetail(env, ctx, o.order_number);
 }
 
-/* ---------- status change: many orders (set-based, one transaction) ---------- */
+/* ---------- status change: many orders ----------
+   Each order goes through the same transition as a single change (so stock follows every order exactly as it would one by
+   one); an order that cannot move — wrong status, stock shortage, changed meanwhile — is skipped with its reason. */
 export async function bulkStatus(env, ctx, body) {
   need(ctx, "orders.status.bulk");
   const to = String(body && body.status || "");
@@ -192,30 +236,25 @@ export async function bulkStatus(env, ctx, body) {
   if (numbers.length > BULK_MAX) throw new HttpError(422, { error: "too_many", max: BULK_MAX });
   if (body.expectedCount != null && Number(body.expectedCount) !== numbers.length) throw new HttpError(409, { error: "selection_changed" });
   const override = body.override === true;
-  const fromOk = STATUSES.filter(s => { const k = allowedTransition(ctx.perms, s, to); return k === "normal" || (k === "override" && override); });
-  const note = cleanNote(body.note), visibility = body.visibility === "customer" ? "customer" : "internal", t = now();
-  const bulkId = crypto.randomUUID();
-  const sel = "FROM orders WHERE order_number IN (SELECT value FROM json_each(?1)) AND status IN (SELECT value FROM json_each(?2)) AND anonymized_at IS NULL";
-  const J = JSON.stringify(numbers), F = JSON.stringify(fromOk);
-  const before = (await env.DB.prepare("SELECT order_number, status, anonymized_at FROM orders WHERE order_number IN (SELECT value FROM json_each(?1))").bind(J).all()).results;
-  const res = await env.DB.batch([
-    env.DB.prepare(`INSERT INTO order_status_history (order_id, previous_status, new_status, changed_by, user_id, note, visibility, bulk_id, ip_address, user_agent, created_at)
-      SELECT id, status, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11 ${sel}`).bind(J, F, to, ctx.user.username, ctx.user.id, note, visibility, bulkId, ctx.ip, (ctx.ua || "").slice(0, 300), t),
-    env.DB.prepare(`INSERT INTO notification_outbox (order_id, event, lang, message, created_at)
-      SELECT id, ?3, lang, CASE lang WHEN 'en' THEN ?4 ELSE ?5 END || ' (' || order_number || ')' || ?6, ?7 ${sel}`)
-      .bind(J, F, to, notifyMessage(to, "en", "").replace(/ \(\)$/, ""), notifyMessage(to, "ar", "").replace(/ \(\)$/, ""), visibility === "customer" && note ? " " + note : "", t),
-    env.DB.prepare(`UPDATE orders SET status = ?3, updated_at = ?4 WHERE order_number IN (SELECT value FROM json_each(?1)) AND status IN (SELECT value FROM json_each(?2)) AND anonymized_at IS NULL`).bind(J, F, to, t)
-  ]);
-  const updatedCount = res[2].meta.changes;
-  const updated = before.filter(b => fromOk.includes(b.status) && !b.anonymized_at).map(b => b.order_number);
-  const skipped = numbers.filter(n => !updated.includes(n)).map(n => {
-    const b = before.find(x => x.order_number === n);
-    return { orderNumber: n, reason: !b ? "not_found" : b.anonymized_at ? "anonymized" : b.status === to ? "already" : "transition_not_allowed", status: b && b.status };
-  });
-  await audit(env, ctx, "bulk_status_update", "orders", bulkId, null, { to, note, visibility, override, requested: numbers.length, updated: updatedCount, orders: updated, skipped: skipped.map(s => s.orderNumber) });
-  return { updated: updatedCount, skipped, bulkId };
+  const note = cleanNote(body.note), visibility = body.visibility === "customer" ? "customer" : "internal";
+  const bulkId = crypto.randomUUID(), updated = [], skipped = [];
+  for (const n of numbers) {
+    const full = await loadOrder(env.DB, n);
+    if (!full) { skipped.push({ orderNumber: n, reason: "not_found" }); continue; }
+    const o = full.order;
+    if (o.anonymized_at) { skipped.push({ orderNumber: n, reason: "anonymized", status: o.status }); continue; }
+    if (o.status === to) { skipped.push({ orderNumber: n, reason: "already", status: o.status }); continue; }
+    const kind = allowedTransition(ctx.perms, o.status, to);
+    if (!(kind === "normal" || (kind === "override" && override))) { skipped.push({ orderNumber: n, reason: "transition_not_allowed", status: o.status }); continue; }
+    try { await applyTransition(env, ctx, full, to, { note, visibility, kind, bulkId }); updated.push(n); }
+    catch (e) {
+      if (!(e instanceof HttpError)) throw e;
+      skipped.push({ orderNumber: n, reason: e.body.error, status: o.status, ...(e.body.shortage != null ? { shortage: e.body.shortage } : {}) });
+    }
+  }
+  await audit(env, ctx, "bulk_status_update", "orders", bulkId, null, { to, note, visibility, override, requested: numbers.length, updated: updated.length, orders: updated, skipped: skipped.map(s => s.orderNumber) });
+  return { updated: updated.length, skipped, bulkId };
 }
-
 /* ---------- edit customer / delivery details ---------- */
 const CUSTOMER_FIELDS = { name: ["customer_name", 60, 2], phone: ["customer_phone", 20, 0], city: ["city", 60, 2], district: ["district", 60, 2], address: ["address", 200, 3], notes: ["customer_notes", 500, 0] };
 export async function editCustomer(env, ctx, number, body) {
@@ -291,34 +330,43 @@ export async function editItems(env, ctx, number, body) {
   if (!events.length) return orderDetail(env, ctx, o.order_number);
 
   // Totals: the bundle best-price discount applies to lines at their normal price; overridden prices are taken as given.
+  // A manual discount given when the order was created is kept (never more than what is left to pay for the products).
   const subtotal = lines.reduce((s, l) => s + l.unitPrice * l.quantity, 0);
   const boxes = lines.reduce((s, l) => s + l.boxesPerUnit * l.quantity, 0);
   const normal = lines.filter(l => !l.overridden);
   const normalSum = normal.reduce((s, l) => s + l.unitPrice * l.quantity, 0);
   const normalBoxes = normal.reduce((s, l) => s + l.boxesPerUnit * l.quantity, 0);
-  const discount = normalBoxes ? normalSum - Math.min(normalSum, priceForBoxes(normalBoxes, catalog)) : 0;
+  const bundleDiscount = normalBoxes ? normalSum - Math.min(normalSum, priceForBoxes(normalBoxes, catalog)) : 0;
+  const manual = Math.min(o.manual_discount || 0, subtotal - bundleDiscount);
+  const discount = bundleDiscount + manual;
   const net = subtotal - discount;
   const shipping = catalog.freeShippingFrom && net >= catalog.freeShippingFrom ? 0 : catalog.shippingCost;
   const total = net + shipping, t = now();
 
-  const stmts = [];
-  for (const ex of full.items) if (!keptIds.has(ex.id)) stmts.push(env.DB.prepare("DELETE FROM order_items WHERE id = ?1 AND order_id = ?2").bind(ex.id, o.id));
+  // The order row is updated first and only if nobody changed it meanwhile; every other statement checks that update
+  // happened (same updated_at), so items, totals and the stock reservation change together or not at all.
+  const G = "EXISTS (SELECT 1 FROM orders WHERE id = ? AND updated_at = ?)", gb = [o.id, t];
+  const newItems = lines.map(l => ({ product_id: l.productId, boxes_per_unit: l.boxesPerUnit, quantity: l.quantity }));
+  const inv = await requantityStmts(env.DB, { order: o, oldItems: full.items, newItems, actor: ctx.user.username, userId: ctx.user.id, t, g: { sql: G, binds: gb } });
+  const stmts = [env.DB.prepare(`UPDATE orders SET boxes = ?, subtotal = ?, discount_amount = ?, manual_discount = ?, shipping_amount = ?, total_amount = ?, updated_at = ?
+    WHERE id = ? AND updated_at = ?`).bind(boxes, subtotal, discount, manual, shipping, total, t, o.id, o.updated_at)];
+  for (const ex of full.items) if (!keptIds.has(ex.id)) stmts.push(env.DB.prepare(`DELETE FROM order_items WHERE id = ? AND order_id = ? AND ${G}`).bind(ex.id, o.id, ...gb));
   for (const l of lines) {
-    if (l.ex) stmts.push(env.DB.prepare("UPDATE order_items SET quantity = ?1, unit_price = ?2, price_overridden = ?3, line_total = ?4, updated_at = ?5 WHERE id = ?6 AND order_id = ?7")
-      .bind(l.quantity, l.unitPrice, l.overridden ? 1 : 0, l.unitPrice * l.quantity, t, l.ex.id, o.id));
+    if (l.ex) stmts.push(env.DB.prepare(`UPDATE order_items SET quantity = ?, unit_price = ?, price_overridden = ?, line_total = ?, updated_at = ? WHERE id = ? AND order_id = ? AND ${G}`)
+      .bind(l.quantity, l.unitPrice, l.overridden ? 1 : 0, l.unitPrice * l.quantity, t, l.ex.id, o.id, ...gb));
     else stmts.push(env.DB.prepare(`INSERT INTO order_items (order_id, product_id, product_name_snapshot, product_name_en_snapshot, boxes_per_unit, unit_price, price_overridden, quantity, line_total, created_at, updated_at)
-      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)`).bind(o.id, l.productId, l.name, l.nameEn, l.boxesPerUnit, l.unitPrice, l.overridden ? 1 : 0, l.quantity, l.unitPrice * l.quantity, t));
+      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE ${G}`).bind(o.id, l.productId, l.name, l.nameEn, l.boxesPerUnit, l.unitPrice, l.overridden ? 1 : 0, l.quantity, l.unitPrice * l.quantity, t, t, ...gb));
   }
-  stmts.push(env.DB.prepare("UPDATE orders SET boxes = ?1, subtotal = ?2, discount_amount = ?3, shipping_amount = ?4, total_amount = ?5, updated_at = ?6 WHERE id = ?7")
-    .bind(boxes, subtotal, discount, shipping, total, t, o.id));
+  stmts.push(...inv);
   for (const [action, oldV, newV] of events) stmts.push(auditStmt(env, ctx, action, "order", o.order_number, oldV, newV));
   stmts.push(auditStmt(env, ctx, "order_totals_recalculated", "order", o.order_number,
     { subtotal: o.subtotal, discount: o.discount_amount, shipping: o.shipping_amount, total: o.total_amount },
     { subtotal, discount, shipping, total, reason: reason || undefined, forcedAfter: LOCKED.includes(o.status) ? o.status : undefined }));
-  await env.DB.batch(stmts);
+  const res = await env.DB.batch(stmts);
+  if (!res[0].meta.changes) throw new HttpError(409, { error: "order_changed" });
+  if (inv.length) { try { await checkAlert(env.DB); } catch (e) { console.log("stock alert failed:", e.message); } }
   return orderDetail(env, ctx, o.order_number);
 }
-
 /* ---------- notes, archive, secure link, privacy erase ---------- */
 export async function addNote(env, ctx, number, body) {
   need(ctx, "orders.notes");
@@ -363,6 +411,8 @@ export async function anonymize(env, ctx, number, body) {
     env.DB.prepare(`UPDATE orders SET customer_name = 'محذوف', customer_phone = '966500000000', city = '—', district = '—', address = '—', customer_notes = '',
       location_latitude = NULL, location_longitude = NULL, anonymized_at = ?1, token_version = token_version + 1, updated_at = ?1 WHERE id = ?2`).bind(t, o.id),
     env.DB.prepare("UPDATE order_notes SET note = '[محذوف]' WHERE order_id = ?1").bind(o.id),
+    env.DB.prepare("UPDATE orders SET customer_id = NULL WHERE id = ?1").bind(o.id),
+    env.DB.prepare("DELETE FROM customers WHERE id = ?1 AND NOT EXISTS (SELECT 1 FROM orders WHERE customer_id = ?1)").bind(o.customer_id ?? -1),
     auditStmt(env, ctx, "order_anonymized", "order", o.order_number, null, { reason: clean(body.reason, 200) })
   ]);
   return orderDetail(env, ctx, o.order_number);
@@ -393,7 +443,8 @@ export async function dashboard(env, ctx, params = new URLSearchParams()) {
     env.DB.prepare(`SELECT order_number, customer_name, customer_phone, city, total_amount, currency, payment_method, status, created_at, updated_at, archived_at
       FROM orders WHERE 1${cityClause(sp, "city", 1)} ORDER BY id DESC LIMIT 8`).bind(...cb).all()
   ]);
-  return { today: todayRow.n, byStatus: Object.fromEntries(byStatus.results.map(r => [r.status, r.n])),
+  const inventory = ctx.perms.has("inventory.view") ? await stockSummary(env, ctx) : null;
+  return { today: todayRow.n, byStatus: Object.fromEntries(byStatus.results.map(r => [r.status, r.n])), inventory,
     latest: latest.results.map(r => ({ orderNumber: r.order_number, customerName: r.customer_name, phone: localPhone(r.customer_phone), city: r.city, total: r.total_amount,
       currency: r.currency, paymentMethod: r.payment_method, status: r.status, createdAt: r.created_at, updatedAt: r.updated_at, archived: !!r.archived_at })) };
 }
@@ -601,10 +652,76 @@ export async function disableTwoFactor(env, ctx, body) {
 /* ---------- full backup (Super Admin): business data as JSON, without password hashes or 2FA secrets ---------- */
 export async function backup(env, ctx) {
   need(ctx, "settings.manage");
-  const tables = ["orders", "order_items", "order_status_history", "order_notes", "notification_outbox", "order_counters", "audit_logs", "roles", "permissions", "role_permissions", "catalog_cache"];
-  const out = { exportedAt: now(), exportedBy: ctx.user.username, schema: "0002", tables: {} };
+  const tables = ["orders", "order_items", "order_status_history", "order_notes", "notification_outbox", "order_counters", "audit_logs", "roles", "permissions", "role_permissions", "catalog_cache",
+    "customers", "products", "inventory_settings", "inventory_balances", "inventory_batches", "inventory_reservations", "inventory_consumptions", "inventory_adjustments",
+    "inventory_transactions", "inventory_alerts", "expense_categories", "expenses"];
+  const out = { exportedAt: now(), exportedBy: ctx.user.username, schema: "0003", tables: {} };
   for (const t of tables) out.tables[t] = (await env.DB.prepare(`SELECT * FROM ${t} ORDER BY rowid LIMIT 100000`).all()).results;
   out.tables.users = (await env.DB.prepare("SELECT id, username, display_name, role_id, is_active, created_at, updated_at FROM users ORDER BY id").all()).results;
   await audit(env, ctx, "backup_downloaded", "system", null, null, Object.fromEntries(Object.entries(out.tables).map(([k, v]) => [k, v.length])));
   return out;
+}
+
+/* ---------- orders created by an admin on behalf of a customer ----------
+   Same validation, pricing (website offers / best price), customer record, stock reservation and history as a website
+   order (orders.insertOrder); only source = ADMIN and created_by differ. preview=true returns the totals and the stock
+   impact without writing anything; the order is created only when the admin confirms. */
+const ADMIN_INITIAL = ["RECEIVED", "CONFIRMED"];
+export async function adminOrder(env, ctx, body) {
+  need(ctx, "orders.create");
+  body = body || {};
+  let catalog;
+  try { catalog = await getCatalog(env); } catch (e) { throw new HttpError(503, { error: "catalog_unavailable" }); }
+  const boxes = Number(body.quantity);
+  if (!Number.isInteger(boxes) || boxes < 1) throw new HttpError(422, { error: "validation", fields: { quantity: "invalid" } });
+  if (boxes > catalog.maxBoxesPerOrder) throw new HttpError(422, { error: "validation", fields: { quantity: "max_boxes" }, max: catalog.maxBoxesPerOrder });
+  const items = linesForBoxes(boxes, catalog);
+  if (!items) throw new HttpError(422, { error: "validation", fields: { quantity: "invalid" } });
+  const status = ADMIN_INITIAL.includes(body.status) ? body.status : "RECEIVED";
+  if (status === "CONFIRMED" && !ctx.perms.has("orders.status") && !ctx.perms.has("orders.status.limited")) throw new HttpError(403, { error: "forbidden", permission: "orders.status" });
+  const key = body.preview === true && !body.idempotencyKey ? "preview-" + "0".repeat(16) : String(body.idempotencyKey || "");
+  const v = validateOrderInput({ customer: body.customer, items, paymentMethod: body.paymentMethod || "cod", idempotencyKey: key, lang: body.lang === "en" ? "en" : "ar" }, catalog);
+  if (v.errors) throw new HttpError(422, { error: "validation", fields: v.errors });
+  const o = v.value, q = quote(o.items, catalog);
+
+  // optional manual discount: never above what the products cost after the offer price
+  let manual = 0, manualReason = "";
+  if (body.discount != null && body.discount !== "" && Number(body.discount) !== 0) {
+    need(ctx, "orders.discount");
+    manual = Number(body.discount); manualReason = clean(body.discountReason, 200);
+    if (!Number.isInteger(manual) || manual < 0 || manual > q.subtotal - q.discount) throw new HttpError(422, { error: "validation", fields: { discount: "invalid" } });
+    if (manualReason.length < 3) throw new HttpError(422, { error: "validation", fields: { discountReason: "required" } });
+  }
+  const existing = await env.DB.prepare("SELECT * FROM customers WHERE phone = ?").bind(o.customer.phone).first();
+  const stock = await reservationPreview(env.DB, boxes);
+  const totals = { boxes: q.boxes, lines: q.lines.map(l => ({ name: l.name, quantity: l.quantity, unitPrice: l.unitPrice, lineTotal: l.lineTotal })),
+    subtotal: q.subtotal, offerDiscount: q.discount, manualDiscount: manual, discount: q.discount + manual, shipping: q.shipping, total: q.subtotal - q.discount - manual + q.shipping, currency: q.currency };
+  const customer = existing ? { existing: true, id: existing.id, name: existing.name, city: existing.city, district: existing.district, address: existing.address } : { existing: false };
+  if (body.preview === true) return { preview: true, status, source: "ADMIN", totals, stock, customer };
+
+  if (stock.initialized && stock.shortage > 0 && body.allowShortage !== true)
+    throw new HttpError(409, { error: "insufficient_stock", requested: boxes, available: stock.available, shortage: stock.shortage, toReserve: stock.toReserve });
+  const replay = await findReplay(env, o, await sha256(JSON.stringify(["admin", o.items, o.customer, manual, status])));
+  if (replay) return { replay: true, orderNumber: replay.number };
+  const internalNote = cleanNote(body.internalNote);
+  const created = await insertOrder(env, catalog, o, q, {
+    source: "ADMIN", actor: ctx.user.username, userId: ctx.user.id, status, manualDiscount: manual, manualReason, internalNote,
+    saveProfile: !existing || body.saveProfile === true,
+    auditStmt: auditStmt(env, ctx, "order_created_by_admin", "order", null, null, {
+      idempotencyKey: o.key, customerPhone: localPhone(o.customer.phone), existingCustomer: !!existing, boxes, subtotal: q.subtotal, offerDiscount: q.discount,
+      manualDiscount: manual, manualDiscountReason: manualReason || undefined, total: totals.total, status, stock: stock.initialized ? { available: stock.available, toReserve: stock.toReserve, shortage: stock.shortage } : null })
+  });
+  return { replay: created.replay, orderNumber: created.number, order: await orderDetail(env, ctx, created.number) };
+}
+
+/* Search saved customers by mobile number or name (admin order form). */
+export async function customerLookup(env, ctx, params) {
+  if (!ctx.perms.has("orders.create") && !ctx.perms.has("customers.view")) throw new HttpError(403, { error: "forbidden" });
+  const q = String(params.get("q") || "").trim().slice(0, 60);
+  if (q.length < 2) return { customers: [] };
+  const digits = latinDigits(q).replace(/\D/g, "");
+  const rows = digits.length >= 4
+    ? (await env.DB.prepare("SELECT * FROM customers WHERE phone LIKE ? ORDER BY updated_at DESC LIMIT 10").bind("%" + digits.replace(/^0/, "").replace(/^966/, "") + "%").all()).results
+    : (await env.DB.prepare("SELECT * FROM customers WHERE name LIKE ? ESCAPE '\\' ORDER BY updated_at DESC LIMIT 10").bind("%" + q.replace(/[\\%_]/g, c => "\\" + c) + "%").all()).results;
+  return { customers: rows.map(c => ({ id: c.id, name: c.name, phone: localPhone(c.phone), city: c.city, district: c.district, address: c.address })) };
 }
