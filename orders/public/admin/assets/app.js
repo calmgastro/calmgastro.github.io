@@ -770,13 +770,19 @@ function dataTable(head, rows) {
 }
 async function pageReports() {
   const main = shell("reports");
-  const P = new URLSearchParams(location.search), days = P.get("days") || "30", city = P.get("city") || "";
-  const link = (dd, c) => withCity("/admin/reports?days=" + dd, c);
+  const P = new URLSearchParams(location.search), days = P.get("days") || "30", city = P.get("city") || "", stv = P.get("st") || "valid";
+  const link = (dd, c, s = stv) => withCity("/admin/reports?days=" + dd + (s && s !== "valid" ? "&st=" + s : ""), c);
   const sel = h("select", { "aria-label": "الفترة" }, [["7", "آخر 7 أيام"], ["30", "آخر 30 يوماً"], ["90", "آخر 90 يوماً"]].map(([v, t]) => h("option", { value: v, text: t, selected: v === days })));
   sel.addEventListener("change", () => go(link(sel.value, city)));
-  put(main, h("div", { class: "page-head" }, h("h1", { text: "التقارير" }), h("div", { class: "row" }, citySelect(city, v => go(link(days, v))), sel)),
+  // حالة الطلبات المحسوبة في التقارير: الافتراضي يستبعد الملغاة والمتعذّرة (الطلبات التجريبية الملغاة لا تظهر)
+  const stSel = h("select", { "aria-label": "حالة الطلبات" },
+    h("optgroup", { label: "مجموعات" }, [["valid", "بدون الملغاة والمتعذّرة"], ["delivered", "المُسلَّمة فقط"], ["open", "المفتوحة (قيد التنفيذ)"], ["all", "كل الحالات (مع الملغاة)"]]
+      .map(([v, t]) => h("option", { value: v, text: t, selected: v === stv }))),
+    h("optgroup", { label: "حالة واحدة" }, ORDER.map(s => h("option", { value: s, text: STATUS[s], selected: s === stv }))));
+  stSel.addEventListener("change", () => go(link(days, city, stSel.value)));
+  put(main, h("div", { class: "page-head" }, h("h1", { text: "التقارير" }), h("div", { class: "row" }, stSel, citySelect(city, v => go(link(days, v))), sel)),
     h("p", { class: "muted", text: "جارٍ التحميل…" }));
-  let d; try { d = await api(withCity("/reports?days=" + days, city)); } catch (e) { if (e.message !== "unauthorized") main.lastChild.textContent = errText(e); return; }
+  let d; try { d = await api(withCity("/reports?days=" + days + (stv !== "valid" ? "&st=" + encodeURIComponent(stv) : ""), city)); } catch (e) { if (e.message !== "unauthorized") main.lastChild.textContent = errText(e); return; }
   main.lastChild.remove();
   if (city) {
     const sc = d.cities.find(c => c.key === city);
@@ -785,7 +791,7 @@ async function pageReports() {
   }
   const T = d.totals, tile = (k, n, rev) => h("div", { class: "tile" }, h("span", { class: "k", text: k }), h("div", { class: "v num", text: fmtN(n) }), h("span", { class: "s", text: "الإيرادات: " + money(rev) }));
   put(main, h("div", { class: "tiles" }, tile("كل الطلبات", T.all.n, T.all.revenue), tile("اليوم", T.today.n, T.today.revenue), tile("آخر 7 أيام", T.week.n, T.week.revenue), tile("آخر 30 يوماً", T.month.n, T.month.revenue)),
-    h("p", { class: "muted small", text: "الإيرادات لا تشمل الطلبات الملغاة أو المتعذّرة. المبالغ عند الاستلام (قبل التحصيل الفعلي)." }));
+    h("p", { class: "muted small", text: `معروض: ${(d.statusOptions.find(o => o.key === d.status) || {}).label || STATUS[d.status] || d.status}. الإيرادات لا تشمل الملغاة أو المتعذّرة أبداً. اختر «المُسلَّمة فقط» لإيرادات الطلبات التي تم توصيلها فعلاً (الدفع عند الاستلام).` }));
   const ordersChart = columns(d.series, "orders", { title: "الطلبات يومياً" }), revChart = columns(d.series, "revenue", { title: "الإيرادات يومياً", fmt: money });
   put(main, h("section", { class: "card" }, h("h2", { text: "الطلبات يومياً" }), ordersChart, dataTable(["اليوم", "الطلبات"], d.series.map(s => [s.date, s.orders]))),
     h("section", { class: "card" }, h("h2", { text: "الإيرادات يومياً (ر.س)" }), revChart, dataTable(["اليوم", "الإيرادات"], d.series.map(s => [s.date, money(s.revenue)]))));

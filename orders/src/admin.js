@@ -449,24 +449,39 @@ export async function dashboard(env, ctx, params = new URLSearchParams()) {
       currency: r.currency, paymentMethod: r.payment_method, status: r.status, createdAt: r.created_at, updatedAt: r.updated_at, archived: !!r.archived_at })) };
 }
 
+/* ?st= which orders the reports count (default: everything except cancelled / failed, so cancelled test orders stay out).
+   Revenue never includes cancelled or failed orders, whatever is selected. */
+export const REPORT_STATUS = {
+  valid:     ["بدون الملغاة والمتعذّرة", "status NOT IN ('CANCELLED','FAILED')"],
+  all:       ["كل الحالات (مع الملغاة)", "1"],
+  delivered: ["المُسلَّمة فقط", "status = 'DELIVERED'"],
+  open:      ["المفتوحة (قيد التنفيذ)", "status IN ('RECEIVED','CONFIRMED','PREPARING','SHIPPED','OUT_FOR_DELIVERY','ON_HOLD')"]
+};
+function reportStatus(params, col = "") {
+  const st = params.get("st") || "valid";
+  const sql = REPORT_STATUS[st] ? REPORT_STATUS[st][1] : STATUSES.includes(st) ? `status = '${st}'` : REPORT_STATUS.valid[1];   // whitelisted values only
+  return { st: REPORT_STATUS[st] || STATUSES.includes(st) ? st : "valid", sql: " AND " + (col ? sql.replace(/\bstatus\b/g, col + "status") : sql) };
+}
+
 export async function reports(env, ctx, params) {
   need(ctx, "reports.view");
   const days = [7, 30, 90].includes(Number(params.get("days"))) ? Number(params.get("days")) : 30;
   const since = riyadhMidnight(-(days - 1)).toISOString();
   const sp = await cityFilterFor(env, params), cb = sp || [], C1 = cityClause(sp, "city", 1), C2 = cityClause(sp, "city", 2);
   const REV = "status NOT IN ('CANCELLED','FAILED')";
-  const period = from => env.DB.prepare(`SELECT COUNT(*) n, COALESCE(SUM(CASE WHEN ${REV} THEN total_amount END), 0) revenue FROM orders WHERE created_at >= ?1${C2}`).bind(from, ...cb).first();
+  const S = reportStatus(params), SO = reportStatus(params, "o."), ST = S.sql;
+  const period = from => env.DB.prepare(`SELECT COUNT(*) n, COALESCE(SUM(CASE WHEN ${REV} THEN total_amount END), 0) revenue FROM orders WHERE created_at >= ?1${ST}${C2}`).bind(from, ...cb).first();
   const [all, today, week, month, daily, status, products, cities] = await Promise.all([
-    env.DB.prepare(`SELECT COUNT(*) n, COALESCE(SUM(CASE WHEN ${REV} THEN total_amount END), 0) revenue FROM orders WHERE 1${C1}`).bind(...cb).first(),
+    env.DB.prepare(`SELECT COUNT(*) n, COALESCE(SUM(CASE WHEN ${REV} THEN total_amount END), 0) revenue FROM orders WHERE 1${ST}${C1}`).bind(...cb).first(),
     period(riyadhMidnight(0).toISOString()), period(riyadhMidnight(-6).toISOString()), period(riyadhMidnight(-29).toISOString()),
     env.DB.prepare(`SELECT substr(datetime(created_at, '+3 hours'), 1, 10) d, COUNT(*) n, COALESCE(SUM(CASE WHEN ${REV} THEN total_amount END), 0) revenue
-      FROM orders WHERE created_at >= ?1${C2} GROUP BY d ORDER BY d`).bind(since, ...cb).all(),
-    env.DB.prepare(`SELECT status, COUNT(*) n FROM orders WHERE created_at >= ?1${C2} GROUP BY status`).bind(since, ...cb).all(),
+      FROM orders WHERE created_at >= ?1${ST}${C2} GROUP BY d ORDER BY d`).bind(since, ...cb).all(),
+    env.DB.prepare(`SELECT status, COUNT(*) n FROM orders WHERE created_at >= ?1${ST}${C2} GROUP BY status`).bind(since, ...cb).all(),
     env.DB.prepare(`SELECT i.product_id, MAX(i.product_name_snapshot) name, SUM(i.quantity) qty, SUM(i.boxes_per_unit * i.quantity) boxes, SUM(i.line_total) revenue
-      FROM order_items i JOIN orders o ON o.id = i.order_id WHERE o.created_at >= ?1 AND o.${REV}${cityClause(sp, "o.city", 2)} GROUP BY i.product_id ORDER BY boxes DESC`).bind(since, ...cb).all(),
+      FROM order_items i JOIN orders o ON o.id = i.order_id WHERE o.created_at >= ?1 AND o.${REV}${SO.sql}${cityClause(sp, "o.city", 2)} GROUP BY i.product_id ORDER BY boxes DESC`).bind(since, ...cb).all(),
     // every city in the period (not narrowed by the city filter), so the cities can be compared and one picked
     env.DB.prepare(`SELECT city, COUNT(*) n, COALESCE(SUM(CASE WHEN ${REV} THEN total_amount END), 0) revenue, COALESCE(SUM(CASE WHEN ${REV} THEN boxes END), 0) boxes
-      FROM orders WHERE created_at >= ?1 AND anonymized_at IS NULL GROUP BY city`).bind(since).all()
+      FROM orders WHERE created_at >= ?1 AND anonymized_at IS NULL${ST} GROUP BY city`).bind(since).all()
   ]);
   // fill missing days with zeros so the charts have a continuous axis
   const map = new Map(daily.results.map(r => [r.d, r])), series = [];
@@ -474,7 +489,7 @@ export async function reports(env, ctx, params) {
     const d = new Date(riyadhMidnight(-i).getTime() + 3 * 3600e3).toISOString().slice(0, 10);
     series.push({ date: d, orders: map.get(d) ? map.get(d).n : 0, revenue: map.get(d) ? map.get(d).revenue : 0 });
   }
-  return { days, totals: { all, today, week, month }, series, byStatus: Object.fromEntries(status.results.map(r => [r.status, r.n])),
+  return { days, status: S.st, statusOptions: Object.entries(REPORT_STATUS).map(([k, v]) => ({ key: k, label: v[0] })), totals: { all, today, week, month }, series, byStatus: Object.fromEntries(status.results.map(r => [r.status, r.n])),
     products: products.results.map(p => ({ productId: p.product_id, name: p.name, quantity: p.qty, boxes: p.boxes, revenue: p.revenue })),
     cities: groupCities(cities.results).map(c => ({ key: c.key, name: c.name, orders: c.n, revenue: c.revenue, boxes: c.boxes })) };
 }
