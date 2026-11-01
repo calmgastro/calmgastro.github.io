@@ -184,3 +184,12 @@ details.data summary{cursor:pointer; color:var(--teal); font-size:.88rem; margin
 details summary{cursor:pointer; color:var(--teal-deep); margin-top:8px}
 a.chip{text-decoration:none; color:var(--teal-deep); display:inline-flex; align-items:center}
 .tile .v .u{font:600 .8rem/1 "IBM Plex Sans Arabic","Segoe UI",Tahoma,sans-serif; color:var(--muted); margin-inline-start:2px; white-space:nowrap}
+.grid3{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px}
+@media (max-width:700px){ .grid3{grid-template-columns:1fr} }
+.add-strip{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; border-color:var(--teal)}
+.add-strip h2{margin-bottom:2px}
+.steps-box{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px}
+.steps-box > div{flex:1 1 260px; display:flex; align-items:center; gap:10px; background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:.6em .8em; font-size:.92rem; color:var(--muted)}
+.steps-box > div.on{border-color:var(--teal); color:var(--teal-deep); font-weight:600}
+.steps-box b{display:grid; place-items:center; width:28px; height:28px; border-radius:50%; background:var(--lime); color:var(--teal-deep); flex:none}
+.steps-box .on b{background:var(--teal-deep); color:#fff}

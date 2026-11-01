@@ -67,6 +67,9 @@ export async function inventoryPage(env, ctx, params) {
       ...(fin ? { cost: sar(t.cost_halalas) } : {}) })),
     transactionsTotal: txCount.n, page, per,
     shortages,
+    receipts: batches.results.filter(b => b.source !== "ADJUSTMENT").slice().reverse().slice(0, 30).map(b => ({ id: b.id, batchNo: b.batch_no, source: b.source, receivedAt: b.received_at,
+      quantity: b.quantity_received, remaining: b.quantity_remaining, supplier: b.supplier, reference: b.reference, by: b.created_by, at: b.created_at,
+      ...(fin ? { totalCost: sar(b.total_cost_halalas), unitCost: unitCost(b), costKnown: b.total_cost_halalas != null } : {}) })),
     adjustments: adjustments.results.map(a => ({ id: a.id, quantity: a.quantity, oldOnHand: a.old_on_hand, newOnHand: a.new_on_hand, reason: a.reason, notes: a.notes, by: a.created_by, at: a.created_at })),
     settingOptions: Object.fromEntries(Object.entries(SETTINGS).filter(([, v]) => v.type === "enum").map(([k, v]) => [k, v.values])),
     canManage: ctx.perms.has("inventory.manage"), canSeeCosts: fin
@@ -96,7 +99,8 @@ export async function receiveStock(env, ctx, body) {
   need(ctx, "inventory.manage");
   const db = env.DB, product = DEFAULT_PRODUCT;
   if (!(await getBalance(db, product))) throw new HttpError(409, { error: "not_initialized" });
-  const qty = Number(body.quantity), total = toHalalas(body.totalCost), date = String(body.receivedDate || "");
+  // the cost may be entered later (daily receipts): an empty total stores the batch without cost, settable once afterwards
+  const qty = Number(body.quantity), total = body.totalCost == null || body.totalCost === "" ? null : toHalalas(body.totalCost), date = String(body.receivedDate || "");
   const errors = {};
   if (!Number.isInteger(qty) || qty < 1 || qty > 1000000) errors.quantity = "invalid";
   if (total === undefined) errors.totalCost = "invalid";
@@ -128,7 +132,7 @@ export async function receiveStock(env, ctx, body) {
     throw e;
   }
   await checkAlert(db, product);
-  return { replay: false, quantity: qty, unitCost: sar(total / qty), totalCost: sar(total) };
+  return { replay: false, quantity: qty, unitCost: total == null ? null : sar(total / qty), totalCost: sar(total) };
 }
 
 /* ---------- manual adjustment (never edits a number directly: always a ledger row) ---------- */
