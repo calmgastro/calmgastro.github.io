@@ -193,3 +193,15 @@ a.chip{text-decoration:none; color:var(--teal-deep); display:inline-flex; align-
 .steps-box > div.on{border-color:var(--teal); color:var(--teal-deep); font-weight:600}
 .steps-box b{display:grid; place-items:center; width:28px; height:28px; border-radius:50%; background:var(--lime); color:var(--teal-deep); flex:none}
 .steps-box .on b{background:var(--teal-deep); color:#fff}
+/* لصق الرسائل والإدخال الجماعي */
+.paste-card{border-color:var(--teal)}
+.paste-card textarea, .import-box{width:100%; font:inherit}
+.ok-msg{color:var(--teal-deep); font-weight:600; margin:6px 0 2px}
+.warn-list{margin:4px 0; padding-inline-start:18px; color:var(--warn)}
+input.bad{border-color:var(--danger); background:#FFF8F5}
+.import-table input{min-width:90px; width:100%}
+.import-table .w-addr{min-width:200px} .import-table .w-phone{min-width:120px} .import-table .w-qty{min-width:64px; width:64px}
+.import-table td{vertical-align:top}
+.import-table tr.st-row-done{background:#F1F8EC} .import-table tr.st-row-error{background:#FFF5F2}
+pre.raw{white-space:pre-wrap; font:inherit; font-size:.8rem; color:var(--muted); margin:4px 0 0; max-width:260px}
+.import-table td:nth-child(2) input{min-width:150px}
