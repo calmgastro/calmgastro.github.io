@@ -102,7 +102,7 @@ Admin (`/admin/api/*`, session cookie; POST needs `X-CG-Admin: 1`):
 `GET /orders/{n}` · `POST /orders/{n}/status|customer|items|notes|archive|revoke-link|anonymize` ·
 `GET /customers` · `GET /products` · `GET /audit` · `GET /users` · `POST /users` · `POST /users/{id}` · `GET /backup`.
 
-## Database (migrations `0001`, `0002`, `0003`)
+## Database (migrations `0001` – `0004`)
 
 `orders` (unique `order_number`, unique `idempotency_key`, CHECKs on status/payment/totals, `token_version`,
 `archived_at`, `anonymized_at`; indexes on created/updated/status/phone) · `order_items` (name/price snapshots,
@@ -131,10 +131,11 @@ Delivered → Cancelled is a RETURN (restocks the same batches; or WRITE_OFF per
 RESERVE_NONE) and is flagged SHORTAGE (admin only; the customer sees nothing). It cannot be delivered until an admin
 allocates stock (Inventory → Shortages → «حجز المتوفر»); arriving stock never changes an order by itself.
 
-**Cost.** Every receipt is its own batch (`inventory_batches`, never merged). The admin enters the batch TOTAL; the unit
-cost is computed on the server. FIFO consumption is recorded per batch (`inventory_consumptions`); a batch total that does
-not divide evenly is spread without rounding drift. Costs and expenses are stored in halalas. A batch entered without a
-cost can get its cost once later; the stored COGS of orders that used it is recalculated in that same audited step.
+**Cost.** Every receipt is its own batch (`inventory_batches`, never merged). The admin enters the quantity and the UNIT
+cost; the server stores value = quantity × unit cost (`total_cost_halalas`, which FIFO reads) and database triggers refuse
+any row where the two disagree. (An older batch recorded with an invoice total that does not divide evenly keeps no exact
+unit cost until it is edited.) FIFO consumption is recorded per batch (`inventory_consumptions`). Costs and expenses are
+stored in halalas. A batch entered without a cost gets it later by editing the purchase.
 
 **Idempotency.** Status-change stock statements are guarded by the order's new (status, updated_at); order creation by
 the idempotency key; receipts / adjustments by a per-form request id (`inventory_transactions.idempotency_key` UNIQUE).
@@ -160,9 +161,35 @@ record per mobile number (`customers`), reservation and history as a website ord
 first (totals + stock impact); with insufficient stock the admin must confirm «إنشاء كطلب نقص». Initial status RECEIVED or
 CONFIRMED only. Optional manual discount (`orders.discount`, reason required) is kept when items are edited later.
 
-**Permissions.** `inventory.view` (stock, shortages; no costs) · `inventory.manage` (receipts, adjustments, settings,
-opening balance, allocation) · `finance.view` (costs, COGS, stock value, profit) · `expenses.manage` · `orders.create` ·
-`orders.discount`. Super Admin: all · Order Manager: inventory.view, orders.create · Support Agent: orders.create.
+**Editing purchases and expenses (migration `0004`).** No parallel tables: a purchase IS its batch (source PURCHASE, or
+the OPENING balance) and an expense IS its `expenses` row. Both carry `created_by/at`, `updated_by/at`, a `version`
+(optimistic lock: an edit sent with an old version gets 409 `record_changed`) and soft-delete fields (`voided_at/by`,
+`void_reason`); nothing is deleted. Every edit writes `audit_logs` with the old and new value of each changed field
+(`expense_edited`, `purchase_edited`, `…_voided`), in the same transaction and only if the edit applied.
+· Purchase edit (`POST /inventory/purchases/{id}`): quantity, unit cost, date, supplier, reference, location, invoice
+  quantity, notes. A quantity change moves stock by the difference (ledger ADJUSTMENT, reference `PURCHASE_EDIT`); it can
+  never go below what was already used from the batch nor take units reserved for open orders. A cost change re-costs the
+  units already used (consumptions) and the COGS of delivered orders that used them, with a `COST_UPDATE` ledger row.
+  Changing a cost needs `finance.view` as well. The opening balance stays dated before the first order.
+· Purchase void (`/void`, reason required): only while nothing of it was used and its units are not reserved; the stock
+  leaves with a ledger row (`PURCHASE_VOID`). The opening balance cannot be voided (edit it instead).
+· Expense edit (`POST /expenses/{id}`) / void (`/void`): same validation as creating (amount > 0 and ≤ 1,000,000, a real
+  date not in the future, description, existing order number).
+· Lists with filters: `GET /expenses?range&from&to&category&status=active|voided|all&min&max&q` and
+  `GET /inventory/purchases?range&from&to&supplier&product&status&source&min&max&q`; their sums never include voided rows.
+
+**Spending in the reports.** `GET /finance/summary` returns `spending`: operating expenses (by category), inventory
+purchase value (opening + purchases received in the period, valued quantity × unit cost; purchases without a cost are
+counted and flagged) and total spending = operating + purchases. Admin → التقارير → «المصاريف ومشتريات المخزون» shows the
+three figures for any period. This is cash out; net profit does NOT subtract purchases again (they reach profit through
+COGS when sold). Every figure is computed from the rows at request time; open report pages reload by themselves after any
+add / edit / void (BroadcastChannel `cg-finance`, and on returning to the tab).
+
+**Permissions.** `inventory.view` (stock, shortages, purchases list; no costs) · `inventory.manage` (adjustments, settings,
+opening balance, allocation) · `inventory.purchase.create|edit|void` · `finance.view` (costs, COGS, stock value, profit,
+spending) · `expenses.create|edit|void` · `orders.create` · `orders.discount`. All checked in the API. Super Admin: all ·
+Order Manager: inventory.view, orders.create · Support Agent: orders.create. (`0004` replaced `expenses.manage` with the
+three expense keys and gave the purchase keys to every role that had `inventory.manage`.)
 
 ## Backup and recovery
 

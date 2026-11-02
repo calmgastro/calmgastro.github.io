@@ -54,12 +54,14 @@ export function passwordProblem(password, username) {
 export const validUsername = u => /^[A-Za-z0-9._-]{3,32}$/.test(String(u || ""));
 
 /* ---------- audit ---------- */
-export function auditStmt(env, ctx, action, entityType = null, entityId = null, oldValue = null, newValue = null) {
+// guard = { sql, binds }: the entry is written only if the condition holds when the batch runs (e.g. the edit it describes
+// really applied). Its placeholders are numbered from ?11.
+export function auditStmt(env, ctx, action, entityType = null, entityId = null, oldValue = null, newValue = null, guard = null) {
   const j = v => v == null ? null : typeof v === "string" ? v : JSON.stringify(v);
   return env.DB.prepare(`INSERT INTO audit_logs (user_id, username, action, entity_type, entity_id, old_value, new_value, ip_address, user_agent, created_at)
-    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`)
+    ${guard ? "SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10 WHERE " + guard.sql : "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"}`)
     .bind(ctx.user ? ctx.user.id : null, ctx.user ? ctx.user.username : (ctx.username || null), action, entityType, entityId == null ? null : String(entityId),
-      j(oldValue), j(newValue), ctx.ip || null, (ctx.ua || "").slice(0, 300) || null, new Date().toISOString());
+      j(oldValue), j(newValue), ctx.ip || null, (ctx.ua || "").slice(0, 300) || null, new Date().toISOString(), ...(guard ? guard.binds : []));
 }
 export const audit = (env, ctx, ...a) => auditStmt(env, ctx, ...a).run();
 

@@ -205,3 +205,13 @@ input.bad{border-color:var(--danger); background:#FFF8F5}
 .import-table tr.st-row-done{background:#F1F8EC} .import-table tr.st-row-error{background:#FFF5F2}
 pre.raw{white-space:pre-wrap; font:inherit; font-size:.8rem; color:var(--muted); margin:4px 0 0; max-width:260px}
 .import-table td:nth-child(2) input{min-width:150px}
+/* تعديل المصاريف والمشتريات */
+.edit-card{border-color:var(--teal); box-shadow:0 0 0 2px rgba(0,128,128,.08)}
+.tile-total{border-color:var(--teal)} .tile-total .v{color:var(--teal-deep)}
+tr.row-voided td{color:var(--muted)} tr.row-voided td b{text-decoration:line-through}
+tr.row-editing{background:var(--lime)}
+.w-num{width:110px}
+.row.nowrap{flex-wrap:nowrap}
+.change-list{margin:4px 0 8px; padding-inline-start:18px} .change-list li{margin:3px 0} .change-list .old{color:var(--muted); text-decoration:line-through}
+.big-out{display:block; font-size:1.05rem; font-weight:700; color:var(--teal-deep); padding:.45em 0}
+label.f.narrow{max-width:320px}

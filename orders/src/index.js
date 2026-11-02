@@ -161,6 +161,7 @@ async function adminApi(request, env, url) {
     case "POST /inventory/receipts": return json(await S.receiveStock(env, ctx, body));
     case "POST /inventory/adjustments": return json(await S.adjustStock(env, ctx, body));
     case "POST /inventory/settings": return json(await S.saveSettings(env, ctx, body));
+    case "GET /inventory/purchases": return json(await S.listPurchases(env, ctx, p));
     case "GET /finance/summary": return json(await F.financeSummary(env, ctx, p));
     case "GET /expenses": return json(await F.expenseList(env, ctx, p));
     case "POST /expenses": return json(await F.createExpense(env, ctx, body));
@@ -176,6 +177,10 @@ async function adminApi(request, env, url) {
   if (m && method === "POST") return json(await A.updateUser(env, ctx, m[1], body));
   m = path.match(/^\/expenses\/(\d{1,9})\/void$/);
   if (m && method === "POST") return json(await F.voidExpense(env, ctx, m[1], body));
+  m = path.match(/^\/expenses\/(\d{1,9})$/);
+  if (m && method === "POST") return json(await F.editExpense(env, ctx, m[1], body));
+  m = path.match(/^\/inventory\/purchases\/(\d{1,9})(\/void)?$/);
+  if (m && method === "POST") return json(await (m[2] ? S.voidPurchase : S.editPurchase)(env, ctx, m[1], body));
   m = path.match(/^\/inventory\/alerts\/(\d{1,9})\/ack$/);
   if (m && method === "POST") return json(await S.ackAlert(env, ctx, m[1]));
   m = path.match(/^\/inventory\/batches\/(\d{1,9})\/cost$/);

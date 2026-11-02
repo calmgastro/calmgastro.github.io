@@ -50,7 +50,10 @@ const ERR = {
   delivered_inventory_locked: "لا يمكن تغيير كمية طلب تم تسليمه. أعده أولاً بتغيير استثنائي للحالة.", not_initialized: "سجّل الرصيد الافتتاحي للمخزون أولاً.",
   already_initialized: "الرصيد الافتتاحي مسجّل مسبقاً.", opening_stock_too_small: "الرصيد الافتتاحي أقل من الطلبات المُسلَّمة.",
   adjustment_exceeds_available: "لا يمكن إنقاص أكثر من المتوفر غير المحجوز.", cost_already_set: "تكلفة هذه الدفعة مسجّلة مسبقاً.",
-  no_shortage: "لا يوجد نقص في هذا الطلب.", order_not_open: "الطلب ليس مفتوحاً.", already_voided: "المصروف ملغي مسبقاً.", catalog_unavailable: "تعذّر قراءة أسعار الموقع الآن. حاول بعد قليل."
+  no_shortage: "لا يوجد نقص في هذا الطلب.", order_not_open: "الطلب ليس مفتوحاً.", already_voided: "السجل ملغي مسبقاً.", record_changed: "عدّل شخص آخر هذا السجل للتو. حدّث الصفحة وراجع القيم قبل الحفظ.",
+  expense_voided: "لا يمكن تعديل مصروف ملغي.", purchase_voided: "لا يمكن تعديل شراء ملغي.", not_a_purchase: "هذه الدفعة تسوية وليست شراء؛ صحّحها بتسوية معاكسة.",
+  opening_cannot_void: "لا يُلغى الرصيد الافتتاحي؛ عدّل كميته أو سعره.", purchase_used: "لا يمكن إلغاء شراء استُخدم منه؛ عدّل كميته.",
+  quantity_below_used: "لا يمكن أن تقل الكمية عن المستخدم منها.", edit_exceeds_available: "لا يمكن إنقاص المخزون بهذا القدر: الباقي محجوز لطلبات مفتوحة.", catalog_unavailable: "تعذّر قراءة أسعار الموقع الآن. حاول بعد قليل."
 };
 const errText = e => (e && e.data && e.data.error === "validation" && e.data.fields && e.data.fields.reason) ? "اكتب سبب تغيير السعر."
   : e && e.message === "inventory_shortage" ? `لا يمكن تسليم الطلب: ينقصه ${e.data.shortage} علبة في المخزون. خصّص المخزون أولاً (المخزون ← طلبات النقص).`
@@ -281,7 +284,7 @@ async function pageDashboard() {
       tile("تم التوصيل", s.DELIVERED || 0, "/admin/orders?status=DELIVERED"),
       tile("ملغي", s.CANCELLED || 0, "/admin/orders?status=CANCELLED"),
       tile("معلّق / متعذّر", (s.ON_HOLD || 0) + (s.FAILED || 0), "/admin/orders?status=ON_HOLD")),
-    d.inventory ? h("section", { class: "card" }, h("div", { class: "page-head" }, h("h2", { text: "المخزون" }), h("div", { class: "row" }, can("inventory.manage") && d.inventory.initialized ? h("a", { class: "btn primary sm", href: "/admin/inventory?tab=receive", "data-link": true, text: "+ إضافة مخزون" }) : null,
+    d.inventory ? h("section", { class: "card" }, h("div", { class: "page-head" }, h("h2", { text: "المخزون" }), h("div", { class: "row" }, can("inventory.purchase.create") && d.inventory.initialized ? h("a", { class: "btn primary sm", href: "/admin/inventory?tab=receive", "data-link": true, text: "+ إضافة مخزون" }) : null,
         h("a", { class: "btn ghost sm", href: "/admin/inventory", "data-link": true, text: "إدارة المخزون" }))),
       stockTiles(d.inventory, { onAck: async id => { try { await api(`/inventory/alerts/${id}/ack`, { body: {} }); pageDashboard(); } catch (e) { toast(errText(e), true); } } })) : null,
     h("section", { class: "card" }, h("h2", { text: "أحدث الطلبات" }), orderTable(d.latest, { selectable: false })));
@@ -645,15 +648,21 @@ const AUDIT = {
   order_customer_changed: "تعديل بيانات العميل", order_item_added: "إضافة منتج", order_item_removed: "حذف منتج", order_item_quantity_changed: "تغيير كمية",
   order_item_price_changed: "تغيير سعر", order_totals_recalculated: "إعادة حساب الإجمالي", order_note_added: "ملاحظة داخلية",
   order_archived: "أرشفة طلب", order_unarchived: "إلغاء أرشفة", order_link_revoked: "إلغاء رابط الطلب", order_anonymized: "حذف بيانات شخصية",
-  orders_exported: "تصدير الطلبات", backup_downloaded: "تنزيل نسخة احتياطية"
+  orders_exported: "تصدير الطلبات", backup_downloaded: "تنزيل نسخة احتياطية",
+  order_created_by_admin: "طلب من لوحة التحكم", expense_created: "إضافة مصروف", expense_edited: "تعديل مصروف", expense_voided: "إلغاء مصروف",
+  stock_received: "إضافة مخزون (شراء)", purchase_edited: "تعديل شراء مخزون", purchase_voided: "إلغاء شراء مخزون", batch_cost_set: "إدخال تكلفة دفعة",
+  stock_adjusted: "تسوية مخزون", inventory_initialized: "الرصيد الافتتاحي", inventory_settings_changed: "إعدادات المخزون", shortage_allocated: "حجز لطلب نقص"
 };
 const auditLabel = a => AUDIT[a] || a;
 const KEY_AR = { status: "الحالة", note: "ملاحظة", visibility: "الظهور", override: "استثنائي", field: "الحقل", value: "القيمة", product: "المنتج", quantity: "الكمية",
   unitPrice: "سعر الوحدة", subtotal: "المجموع", discount: "الخصم", shipping: "الشحن", total: "الإجمالي", reason: "السبب", role: "الدور", username: "المستخدم",
   failures: "المحاولات", to: "إلى", requested: "المطلوب", updated: "تم تحديثه", orders: "الطلبات", skipped: "تُخطّي", tokenVersion: "إصدار الرابط", forcedAfter: "بعد حالة",
-  rows: "عدد الصفوف", mfa: "تحقق بخطوتين", active: "نشط", unlocked: "فك القفل", passwordReset: "كلمة مرور مؤقتة", twoFactorReset: "إعادة ضبط التحقق", displayName: "الاسم" };
+  rows: "عدد الصفوف", mfa: "تحقق بخطوتين", active: "نشط", unlocked: "فك القفل", passwordReset: "كلمة مرور مؤقتة", twoFactorReset: "إعادة ضبط التحقق", displayName: "الاسم",
+  amount: "المبلغ", category: "الفئة", date: "التاريخ", description: "الوصف", orderNumber: "الطلب", platform: "المنصة", campaign: "الحملة", reference: "المرجع",
+  paymentMethod: "طريقة الدفع", notes: "ملاحظات", version: "الإصدار", batch: "الدفعة", receivedDate: "تاريخ الشراء", quantityOrdered: "الكمية في الفاتورة",
+  supplier: "المورد", location: "الموقع", unitCost: "سعر الوحدة", totalCost: "الإجمالي (ر.س)", newOnHand: "الموجود بعد", onHand: "الموجود" };
 const FIELD_AR = { name: "الاسم", phone: "الجوال", city: "المدينة", district: "الحي", address: "العنوان", notes: "ملاحظات التوصيل" };
-const VAL_AR = v => STATUS[v] || ROLE[v] || FIELD_AR[v] || { internal: "داخلية", customer: "يراها العميل", true: "نعم", false: "لا" }[String(v)] || v;
+const VAL_AR = v => STATUS[v] || ROLE[v] || FIELD_AR[v] || { DELIVERY: "التوصيل والشحن", ADVERTISING: "الإعلانات", OTHER: "أخرى" }[v] || { internal: "داخلية", customer: "يراها العميل", true: "نعم", false: "لا" }[String(v)] || v;
 function auditDiff(oldV, newV) {
   const p = v => { try { return JSON.parse(v); } catch (_) { return v; } };
   const o = p(oldV), n = p(newV), fmt = v => v == null ? "" : typeof v === "object" ? Object.entries(v).filter(([k, x]) => x !== undefined && x !== null && x !== "" && k !== "filter").map(([k, x]) => `${KEY_AR[k] || k}: ${Array.isArray(x) ? x.map(VAL_AR).join("، ") : typeof x === "object" ? JSON.stringify(x) : VAL_AR(x)}`).join(" · ") : String(v);
@@ -675,7 +684,8 @@ async function pageAudit() {
     box.textContent = "";
     put(box, d.entries.length ? h("div", { class: "table-wrap" }, h("table", null, h("thead", null, h("tr", null, ["الوقت", "المستخدم", "الإجراء", "العنصر", "التفاصيل", "IP"].map(t => h("th", { text: t })))),
       h("tbody", null, d.entries.map(e => h("tr", null, h("td", { text: when(e.at) }), h("td", { text: e.by || "—" }), h("td", { text: auditLabel(e.action) }),
-        h("td", null, e.entityType === "order" && e.entityId ? h("a", { href: "/admin/orders/" + e.entityId, "data-link": true, class: "num", text: e.entityId }) : (e.entityId || "")),
+        h("td", null, e.entityType === "order" && e.entityId ? h("a", { href: "/admin/orders/" + e.entityId, "data-link": true, class: "num", text: e.entityId })
+          : e.entityType === "expense" && e.entityId ? "مصروف #" + e.entityId : e.entityType === "inventory_batch" && e.entityId ? "شراء (دفعة) #" + e.entityId : (e.entityId || "")),
         h("td", { class: "wrap" }, auditDiff(e.old, e.new)), h("td", { class: "num small", text: e.ip || "" })))))) : h("div", { class: "empty", text: "لا توجد سجلات." }));
     const pages = Math.ceil(d.total / d.per); pager.textContent = "";
     put(pager, h("span", { class: "muted", text: `${fmtN(d.total)} سجل` }), h("span", { class: "row" },
@@ -782,7 +792,8 @@ async function pageReports() {
       .map(([v, t]) => h("option", { value: v, text: t, selected: v === stv }))),
     h("optgroup", { label: "حالة واحدة" }, ORDER.map(s => h("option", { value: s, text: STATUS[s], selected: s === stv }))));
   stSel.addEventListener("change", () => go(link(days, city, stSel.value)));
-  put(main, h("div", { class: "page-head" }, h("h1", { text: "التقارير" }), h("div", { class: "row" }, stSel, citySelect(city, v => go(link(days, v))), sel)),
+  put(main, h("div", { class: "page-head" }, h("h1", { text: "التقارير" }), h("div", { class: "row" }, stSel, citySelect(city, v => go(link(days, v))), sel,
+      can("finance.view") ? h("a", { class: "btn ghost sm", href: "#spending", text: "المصاريف والمشتريات ↓", onclick: e => { e.preventDefault(); const t = $("#spending"); if (t) t.scrollIntoView({ behavior: "smooth" }); } }) : null)),
     h("p", { class: "muted", text: "جارٍ التحميل…" }));
   let d; try { d = await api(withCity("/reports?days=" + days + (stv !== "valid" ? "&st=" + encodeURIComponent(stv) : ""), city)); } catch (e) { if (e.message !== "unauthorized") main.lastChild.textContent = errText(e); return; }
   main.lastChild.remove();
@@ -819,6 +830,7 @@ async function pageReports() {
     ] : h("p", { class: "muted", text: "لا توجد طلبات في الفترة." })));
   // عرض الأعمدة الأفقية بعد الإدراج (بدون أنماط مضمّنة في HTML)
   main.querySelectorAll(".fill[data-w]").forEach(f => { f.style.width = (Number(f.dataset.w) * 100) + "%"; });
+  if (can("finance.view")) { spendingSection(main); if (location.hash === "#spending") $("#spending").scrollIntoView(); }
 }
 
 /* ============================================================ المشرفون */
@@ -968,7 +980,7 @@ function stockTiles(s, { onAck } = {}) {
 
 /* قسم الأرباح في لوحة المعلومات */
 function rangePicker(state, onChange) {
-  const r = h("select", { "aria-label": "الفترة" }, [["today", "اليوم"], ["week", "هذا الأسبوع"], ["month", "هذا الشهر"], ["last_month", "الشهر الماضي"], ["year", "هذه السنة"], ["custom", "فترة مخصصة"]]
+  const r = h("select", { "aria-label": "الفترة" }, [["today", "اليوم"], ["week", "هذا الأسبوع"], ["month", "هذا الشهر"], ["last_month", "الشهر الماضي"], ["year", "هذه السنة"], ["all", "كل الفترات"], ["custom", "فترة مخصصة"]]
     .map(([v, t]) => h("option", { value: v, text: t, selected: state.range === v })));
   const f = h("input", { type: "date", value: state.from || "", "aria-label": "من" }), t = h("input", { type: "date", value: state.to || "", "aria-label": "إلى" });
   const custom = h("span", { class: "row" }, "من", f, "إلى", t, h("button", { type: "button", class: "btn ghost sm", text: "عرض", onclick: () => onChange({ range: "custom", from: f.value, to: t.value }) }));
@@ -987,13 +999,14 @@ async function financeSection(box) {
     const F = d.financial, S = d.sales, P = d.product;
     body.textContent = "";
     put(body,
-      h("p", { class: "muted small", text: `الفترة: ${d.period.from} → ${d.period.to} · الإيراد = الطلبات التي تم تسليمها في الفترة (الدفع عند الاستلام). الطلبات الملغاة والمتعذرة لا تُحسب.` }),
+      h("p", { class: "muted small", text: `الفترة: ${d.period.range === "all" ? "كل الفترات" : d.period.from + " → " + d.period.to} · الإيراد = الطلبات التي تم تسليمها في الفترة (الدفع عند الاستلام). الطلبات الملغاة والمتعذرة لا تُحسب.` }),
       h("div", { class: "tiles" },
         tile2("الإيرادات", sarF(F.grossRevenue), `${S.deliveredInPeriod} طلب مُسلَّم`),
         tile2("تكلفة البضاعة المباعة", sarF(F.cogs), F.cogsMissingOrders ? `${F.cogsMissingOrders} طلب بدفعة بلا تكلفة` : "FIFO"),
         tile2("إجمالي الربح", sarF(F.grossProfit), "الإيرادات − التكلفة"),
         tile2("التوصيل", sarF(F.deliveryExpenses)), tile2("الإعلانات", sarF(F.advertisingExpenses)), tile2("مصاريف أخرى", sarF(F.otherExpenses)),
         tile2("المصاريف التشغيلية", sarF(F.operatingExpenses)),
+        d.spending.inventoryPurchases != null ? tile2("قيمة شراء المخزون", sarF(d.spending.inventoryPurchases), "تفاصيلها في التقارير — لا تُطرح من الربح") : null,
         F.stockLosses ? tile2("خسائر المخزون", sarF(F.stockLosses), "تالف / شطب") : null,
         tile2("صافي الربح", sarF(F.netProfit), "إجمالي الربح − المصاريف", F.netProfit < 0 ? "tile-warn" : "tile-good")),
       F.expensesNote ? h("p", { class: "note-box", text: "مع اختيار مصدر واحد تُحسب فقط المصاريف المرتبطة بطلبات هذا المصدر؛ المصاريف العامة تظهر في «كل المصادر»." }) : null,
@@ -1005,7 +1018,9 @@ async function financeSection(box) {
   };
   src.addEventListener("change", () => { state.source = src.value; load(); });
   put(head, h("div", { class: "row" }, rangePicker(state, v => { Object.assign(state, v); load(); }), src));
-  put(box, h("section", { class: "card" }, head, body));
+  const card = h("section", { class: "card" }, head, body);
+  onFinanceChange(card, load);
+  put(box, card);
   load();
 }
 
@@ -1021,7 +1036,7 @@ async function pageInventory() {
   const TABS = [["overview", "نظرة عامة"], ["receive", "إضافة مخزون"], ["batches", "دفعات المخزون"], ["tx", "سجل الحركات"], ["shortages", `طلبات النقص (${d.shortages.length})`], ["adjust", "التسويات"], ["settings", "الإعدادات"]];
   put(main, h("div", { class: "page-head" }, h("h1", { text: "المخزون" }), h("div", { class: "row" },
       h("span", { class: "tag", text: "طريقة التكلفة: " + (SETTING_LABEL[s.costingMethod] || s.costingMethod) }),
-      d.canManage ? h("a", { class: "btn primary", href: "/admin/inventory?tab=receive", "data-link": true, text: "+ إضافة مخزون" }) : null)),
+      d.canCreatePurchase ? h("a", { class: "btn primary", href: "/admin/inventory?tab=receive", "data-link": true, text: "+ إضافة مخزون" }) : null)),
     h("nav", { class: "chips", "aria-label": "أقسام المخزون" }, TABS.map(([k, t]) => h("a", { class: "chip" + (k === tab ? " on" : ""), href: "/admin/inventory?tab=" + k, "data-link": true, "aria-current": k === tab ? "page" : null, text: t }))));
   const box = h("div"); put(main, box);
   if (tab === "overview") {
@@ -1030,7 +1045,7 @@ async function pageInventory() {
     put(box, h("section", { class: "card add-strip" },
       h("div", null, h("h2", { text: "إضافة مخزون جديد" }),
         h("p", { class: "muted small", text: last ? `آخر إضافة: ${fmtN(last.quantity)} علبة بتاريخ ${last.receivedAt} (${last.source === "OPENING" ? "الرصيد الافتتاحي" : "بواسطة " + last.by}).` : "لا توجد إضافات بعد." })),
-      d.canManage ? h("a", { class: "btn primary", href: "/admin/inventory?tab=receive", "data-link": true, text: "+ إضافة مخزون" }) : null));
+      d.canCreatePurchase ? h("a", { class: "btn primary", href: "/admin/inventory?tab=receive", "data-link": true, text: "+ إضافة مخزون" }) : null));
     put(box, h("section", { class: "card" }, h("h2", { text: "كيف تُحسب الأرقام" }),
       h("ul", { class: "small" },
         h("li", { text: "المتوفر = الموجود فعلياً − المحجوز للطلبات المفتوحة. التنبيه يعتمد على المتوفر." }),
@@ -1040,20 +1055,15 @@ async function pageInventory() {
       h("button", { type: "button", class: "btn ghost sm", text: "فحص تطابق الأرصدة", onclick: async e => busy(e.currentTarget, "جارٍ الفحص…", async () => {
         try { const r = await api("/inventory/reconcile"); toast(r.ok ? "الأرصدة متطابقة مع سجل الحركات والدفعات." : "يوجد اختلاف: " + JSON.stringify(r.checks), !r.ok); } catch (x) { toast(errText(x), true); } }) })));
   } else if (tab === "receive") {
-    if (d.canManage) put(box, receiptCard(d));
-    put(box, h("section", { class: "card" }, h("h2", { text: "آخر الإضافات" }),
-      h("p", { class: "muted small", text: "كل إضافة دفعة مستقلة بتاريخها وتكلفتها. الإضافة بلا تكلفة يمكن إكمال تكلفتها من «دفعات المخزون»." }),
-      tbl(["التاريخ", "النوع", "الكمية", "المتبقي منها", ...(d.canSeeCosts ? ["إجمالي التكلفة", "تكلفة الوحدة"] : []), "المورد / المرجع", "بواسطة", "سُجّلت"],
-        d.receipts.map(r => [r.receivedAt, r.source === "OPENING" ? "رصيد افتتاحي" : "إضافة", "+" + fmtN(r.quantity), fmtN(r.remaining),
-          ...(d.canSeeCosts ? [r.costKnown ? sarF(r.totalCost) : "لم تُدخل بعد", r.costKnown ? sarF(r.unitCost) : "—"] : []),
-          [r.supplier, r.reference].filter(Boolean).join(" · ") || "—", r.by, when(r.at)]))));
+    if (d.canCreatePurchase) put(box, receiptCard(d));
+    purchasesSection(box);
   } else if (tab === "batches") {
     put(box, h("section", { class: "card" }, h("h2", { text: "دفعات المخزون" }), h("p", { class: "muted small", text: "كل استلام دفعة مستقلة بتكلفتها؛ لا تُدمج الدفعات. تُصرف الأقدم أولاً." }),
       tbl(["الدفعة", "تاريخ الاستلام", "النوع", "المستلم", "المتبقي", ...(d.canSeeCosts ? ["تكلفة الوحدة", "إجمالي التكلفة", "قيمة المتبقي"] : []), "الحالة", "المورد / المرجع", ""],
         d.batches.map(b => ["#" + b.batchNo, b.receivedAt, { OPENING: "رصيد افتتاحي", PURCHASE: "شراء", ADJUSTMENT: "تسوية" }[b.source] || b.source, fmtN(b.quantityReceived), fmtN(b.quantityRemaining),
           ...(d.canSeeCosts ? [b.costKnown ? sarF(b.unitCost) : "غير مُدخلة", b.costKnown ? sarF(b.totalCost) : "—", b.costKnown ? sarF(b.stockValue) : "—"] : []),
-          { FULL: "كاملة", PARTIAL: "مستخدمة جزئياً", DEPLETED: "نفدت" }[b.status], [b.supplier, b.reference].filter(Boolean).join(" · ") || "—",
-          d.canManage && d.canSeeCosts && !b.costKnown ? h("button", { type: "button", class: "btn ghost sm", text: "إدخال التكلفة", onclick: () => setCost(b) }) : ""]))));
+          { FULL: "كاملة", PARTIAL: "مستخدمة جزئياً", DEPLETED: "نفدت", VOIDED: "ملغاة" }[b.status], [b.supplier, b.reference].filter(Boolean).join(" · ") || "—",
+          d.canEditPurchase && b.source !== "ADJUSTMENT" && b.status !== "VOIDED" ? h("a", { class: "btn ghost sm", href: "/admin/inventory?tab=receive&edit=" + b.id, "data-link": true, text: d.canSeeCosts && !b.costKnown ? "إدخال السعر" : "تعديل" }) : ""]))));
   } else if (tab === "tx") {
     const type = h("select", { "aria-label": "نوع الحركة" }, h("option", { value: "", text: "كل الحركات" }), Object.entries(TX).map(([k, t]) => h("option", { value: k, text: t, selected: P.get("type") === k })));
     const ord = h("input", { type: "search", placeholder: "رقم الطلب", value: P.get("order") || "" });
@@ -1083,48 +1093,6 @@ async function pageInventory() {
     put(box, settingsCard(d));
   }
 
-  async function setCost(b) {
-    const inp = h("input", { inputmode: "decimal", placeholder: "مثال: 1200", "aria-label": "إجمالي تكلفة الدفعة" });
-    if (!(await confirmBox(`تكلفة الدفعة #${b.batchNo}`, [h("p", { text: `أدخل إجمالي ما دُفع لهذه الدفعة (${b.quantityReceived} علبة). تُحسب تكلفة الوحدة تلقائياً، وتُحدَّث تكلفة الطلبات التي سُلِّمت من هذه الدفعة. لا يمكن تغييرها بعد الحفظ.` }), h("label", { class: "f" }, "إجمالي التكلفة (ر.س)", inp)], { okText: "حفظ التكلفة" }))) return;
-    try { const r = await api(`/inventory/batches/${b.id}/cost`, { body: { totalCost: inp.value } }); toast(`تم: تكلفة الوحدة ${sarF(r.unitCost)}${r.ordersRecalculated ? ` · حُدّثت تكلفة ${r.ordersRecalculated} طلب` : ""}.`); pageInventory(); }
-    catch (e) { toast(fieldErr(e), true); }
-  }
-}
-
-function receiptCard() {
-  const id = reqId(), f = {
-    quantity: h("input", { type: "number", min: 1, step: 1, inputmode: "numeric", placeholder: "مثال: 20" }), totalCost: h("input", { inputmode: "decimal", placeholder: "مثال: 1600 (اختياري)" }),
-    receivedDate: h("input", { type: "date", value: todayRiyadh(), max: todayRiyadh() }), quantityOrdered: h("input", { type: "number", min: 1, step: 1 }),
-    supplier: h("input", { maxlength: 120 }), reference: h("input", { maxlength: 120, placeholder: "رقم فاتورة / أمر شراء" }), location: h("input", { maxlength: 120, placeholder: "اختياري" }), notes: h("textarea", { maxlength: 500 })
-  };
-  const unit = h("p", { class: "note-box", text: "أدخل الكمية وإجمالي ما دفعته؛ تكلفة الوحدة تُحسب تلقائياً." }), err = h("p", { class: "err", role: "alert" });
-  const calc = () => { const q = Number(f.quantity.value), t = Number(String(f.totalCost.value).replace(/,/g, ""));
-    unit.textContent = q > 0 && f.totalCost.value !== "" && t >= 0 ? `تكلفة الوحدة: ${sarF(Math.round(t / q * 100) / 100)} (${fmtN(t)} ÷ ${q})`
-      : q > 0 ? "بدون تكلفة الآن: تُضاف الكمية للمخزون، ويمكن إدخال التكلفة لاحقاً من «دفعات المخزون»." : "أدخل الكمية وإجمالي ما دفعته؛ تكلفة الوحدة تُحسب تلقائياً."; };
-  f.quantity.addEventListener("input", calc); f.totalCost.addEventListener("input", calc);
-  const btn = h("button", { type: "button", class: "btn primary", text: "إضافة إلى المخزون" });
-  btn.addEventListener("click", async () => {
-    err.textContent = "";
-    const q = Number(f.quantity.value);
-    if (!Number.isInteger(q) || q < 1) { err.textContent = "أدخل الكمية (عدد صحيح أكبر من صفر)."; return; }
-    if (!(await confirmBox("تأكيد إضافة المخزون", [h("p", { text: `إضافة ${q} علبة بتاريخ ${f.receivedDate.value}` + (f.totalCost.value ? ` بإجمالي ${f.totalCost.value} ر.س.` : " بدون تكلفة الآن.") }), unit.cloneNode(true)], { okText: "إضافة" }))) return;
-    await busy(btn, "جارٍ الإضافة…", async () => {
-      try {
-        const r = await api("/inventory/receipts", { body: { quantity: q, totalCost: f.totalCost.value || null, receivedDate: f.receivedDate.value, quantityOrdered: f.quantityOrdered.value || null,
-          supplier: f.supplier.value, reference: f.reference.value, location: f.location.value, notes: f.notes.value, requestId: id } });
-        toast(r.replay ? "سُجّلت هذه الإضافة مسبقاً." : `تمت إضافة ${r.quantity} علبة` + (r.unitCost != null ? ` · تكلفة الوحدة ${sarF(r.unitCost)}` : "") + ".");
-        go("/admin/inventory?tab=receive", true);
-      } catch (e) { err.textContent = fieldErr(e); }
-    });
-  });
-  return h("section", { class: "card" }, h("h2", { text: "إضافة مخزون" }),
-    h("div", { class: "grid3" }, h("label", { class: "f" }, "الكمية (علبة)", f.quantity), h("label", { class: "f" }, "إجمالي التكلفة (ر.س)", f.totalCost), h("label", { class: "f" }, "تاريخ الاستلام", f.receivedDate)),
-    unit,
-    h("details", null, h("summary", { text: "تفاصيل إضافية (اختياري): المورد، المرجع، المستودع، ملاحظات" }),
-      h("div", { class: "grid2" }, h("label", { class: "f" }, "المورد", f.supplier), h("label", { class: "f" }, "المرجع", f.reference),
-        h("label", { class: "f" }, "الموقع / المستودع", f.location), h("label", { class: "f" }, "الكمية في الفاتورة", f.quantityOrdered)),
-      h("label", { class: "f" }, "ملاحظات", f.notes)),
-    err, h("div", { class: "row" }, btn));
 }
 
 function adjustCard(d) {
@@ -1202,51 +1170,315 @@ function openingWizard(main, s) {
     err, h("div", { class: "row" }, pv)), out);
 }
 
+/* ---------- تحديث تلقائي للتقارير ----------
+   كل حفظ لمصروف أو شراء (إضافة / تعديل / إلغاء) يبلّغ الصفحات المفتوحة في هذا المتصفح، فتعيد قراءة الأرقام من الخادم.
+   الأرقام تُحسب دائماً من السجلات نفسها؛ لا يُخزَّن أي إجمالي في الواجهة. */
+const finChannel = () => typeof BroadcastChannel === "function" ? new BroadcastChannel("cg-finance") : null;
+function financeChanged() { const c = finChannel(); if (c) { c.postMessage(Date.now()); c.close(); } }
+function onFinanceChange(el, fn) {
+  const c = finChannel(); let t = 0, last = Date.now();
+  const stop = () => { if (c) c.close(); window.removeEventListener("focus", onFocus); };
+  const run = () => { if (!el.isConnected) return stop(); clearTimeout(t); t = setTimeout(() => { last = Date.now(); fn(); }, 150); };
+  const onFocus = () => { if (Date.now() - last > 30000) run(); };       // رجوع للصفحة بعد تعديل من جهاز آخر
+  if (c) c.onmessage = run;
+  window.addEventListener("focus", onFocus);
+}
+const FIELD_LABEL = { amount: "المبلغ", date: "التاريخ", description: "الوصف", orderNumber: "رقم الطلب", category: "الفئة", platform: "المنصة", quantity: "الكمية",
+  unitCost: "سعر الوحدة", totalCost: "الإجمالي", receivedDate: "تاريخ الشراء", quantityOrdered: "الكمية في الفاتورة", reason: "السبب", amountRange: "نطاق المبلغ",
+  valueRange: "نطاق القيمة", range: "الفترة" };
+const FIELD_PROBLEM = { invalid: "غير صحيح", required: "مطلوب", not_found: "غير موجود", too_large: "أكبر من الحد المسموح", must_be_before_first_order: "يجب أن يسبق أول طلب" };
+const fieldsText = e => e && e.data && e.data.fields ? "تحقق من: " + Object.entries(e.data.fields).map(([k, v]) => `${FIELD_LABEL[k] || k} (${FIELD_PROBLEM[v] || v})`).join("، ") : errText(e);
+const purchaseErr = e => e && e.message === "quantity_below_used" ? `لا يمكن أن تقل الكمية عن ${e.data.used} علبة — هذا ما استُخدم منها في طلبات أو تسويات.`
+  : e && e.message === "edit_exceeds_available" ? `لا يمكن إنقاص المخزون بهذا القدر: المتوفر غير المحجوز ${e.data && e.data.available != null ? e.data.available : "أقل من المطلوب"} علبة، والباقي محجوز لطلبات مفتوحة.`
+  : e && e.message === "purchase_used" ? `لا يمكن إلغاء شراء استُخدم منه ${e.data.used} علبة. عدّل كميته بدلاً من ذلك.`
+  : fieldsText(e);
+const num = v => Number(String(v ?? "").replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d)).replace(/[,\s]/g, ""));
+// قائمة «قبل ← بعد» لنافذة التأكيد
+const changeList = rows => h("ul", { class: "change-list" }, rows.map(([l, o, n]) => h("li", null, h("b", { text: l + ": " }), h("span", { class: "old", text: o === "" || o == null ? "—" : String(o) }), " ← ", h("span", { text: n === "" || n == null ? "—" : String(n) }))));
+
 /* ---------- صفحة المصاريف ---------- */
 async function pageExpenses() {
-  const P = new URLSearchParams(location.search), state = { range: P.get("range") || "month", from: P.get("from") || "", to: P.get("to") || "", category: P.get("category") || "", voided: P.get("voided") || "" };
+  const P = new URLSearchParams(location.search);
+  const state = Object.fromEntries(["range", "from", "to", "category", "status", "min", "max", "q", "edit"].map(k => [k, P.get(k) || ""]));
+  if (!state.range) state.range = "month";
+  if (P.get("voided") === "1" && !state.status) state.status = "all";
   const main = shell("expenses", h("p", { class: "muted", text: "جارٍ التحميل…" }));
-  const qs = new URLSearchParams(Object.entries(state).filter(([, v]) => v));
-  let d; try { d = await api("/expenses?" + qs); } catch (e) { if (e.message !== "unauthorized") main.lastChild.textContent = errText(e); return; }
+  const qs = new URLSearchParams(Object.entries(state).filter(([k, v]) => v && k !== "edit"));
+  let d; try { d = await api("/expenses?" + qs); } catch (e) { if (e.message !== "unauthorized") main.lastChild.textContent = fieldsText(e); return; }
   main.textContent = "";
-  const nav = v => { const u = new URLSearchParams(Object.entries({ ...state, ...v }).filter(([, x]) => x)); go("/admin/expenses?" + u); };
+  const nav = v => { const u = new URLSearchParams(Object.entries({ ...state, edit: "", ...v }).filter(([, x]) => x)); go("/admin/expenses?" + u); };
   const cat = h("select", { "aria-label": "الفئة" }, h("option", { value: "", text: "كل الفئات" }), d.categories.map(c => h("option", { value: c.id, text: c.name, selected: state.category === c.id })));
-  const vd = h("label", { class: "row small" }, h("input", { type: "checkbox", checked: state.voided === "1", onchange: e => nav({ voided: e.target.checked ? "1" : "" }) }), "إظهار الملغاة");
-  cat.addEventListener("change", () => nav({ category: cat.value }));
-  put(main, h("div", { class: "page-head" }, h("h1", { text: "المصاريف التشغيلية" })),
-    h("div", { class: "filters" }, rangePicker(state, v => nav(v)), cat, vd),
-    h("p", { class: "note-box" }, `${d.total} مصروف في الفترة · الإجمالي `, h("b", { text: sarF(d.sum) })));
-  if (d.canManage) put(main, expenseForm(d));
+  const st = h("select", { "aria-label": "حالة السجل" }, [["", "الفعّالة"], ["voided", "الملغاة"], ["all", "الكل (مع الملغاة)"]].map(([v, t]) => h("option", { value: v, text: t, selected: state.status === v || (v === "" && state.status === "active") })));
+  const min = h("input", { inputmode: "decimal", class: "w-num", placeholder: "من مبلغ", "aria-label": "أقل مبلغ", value: state.min });
+  const max = h("input", { inputmode: "decimal", class: "w-num", placeholder: "إلى مبلغ", "aria-label": "أعلى مبلغ", value: state.max });
+  const q = h("input", { type: "search", placeholder: "بحث في الوصف، المرجع، الملاحظات", "aria-label": "بحث", value: state.q });
+  const filtered = ["category", "status", "min", "max", "q"].some(k => state[k]);
+  put(main, h("div", { class: "page-head" }, h("h1", { text: "المصاريف التشغيلية" }),
+      h("a", { class: "btn ghost sm", href: "/admin/reports#spending", "data-link": true, text: "التقرير: المصاريف ومشتريات المخزون" })),
+    h("form", { class: "filters", onsubmit: ev => { ev.preventDefault(); nav({ category: cat.value, status: st.value, min: min.value.trim(), max: max.value.trim(), q: q.value.trim() }); } },
+      rangePicker(state, v => nav(v)), cat, st, min, max, q, h("button", { type: "submit", class: "btn primary", text: "تطبيق" }),
+      filtered ? h("a", { href: "/admin/expenses?range=" + state.range, "data-link": true, class: "small", text: "مسح الفلاتر" }) : null),
+    h("p", { class: "note-box" }, `${fmtN(d.total)} مصروف · الإجمالي `, h("b", { text: sarF(d.sum) }), d.voidedCount ? ` (لا يشمل ${d.voidedCount} ملغي)` : ""));
+  const formBox = h("div"); put(main, formBox);
+  const editing = state.edit && d.canEdit ? d.expenses.find(x => String(x.id) === state.edit && !x.voided) : null;
+  if (editing) put(formBox, expenseForm(d, editing, nav)); else if (d.canCreate) put(formBox, expenseForm(d, null, nav));
   put(main, h("section", { class: "card" }, h("h2", { text: "السجل" }),
-    tbl(["التاريخ", "الفئة", "المبلغ", "الوصف", "الطلب", "المنصة / الحملة", "المرجع", "بواسطة", ""], d.expenses.map(e => [e.date, e.categoryName, h("b", { text: sarF(e.amount) }),
-      e.description + (e.notes ? " — " + e.notes : ""), e.orderNumber ? h("a", { href: "/admin/orders/" + e.orderNumber, "data-link": true, class: "num", text: e.orderNumber }) : "—",
-      [PLATFORM[e.platform] || "", e.campaign].filter(Boolean).join(" · ") || "—", e.reference || "—", e.createdBy,
-      e.voided ? h("span", { class: "tag", text: "ملغي: " + (e.voidReason || "") }) : d.canManage ? h("button", { type: "button", class: "btn danger sm", text: "إلغاء", onclick: () => voidIt(e) }) : ""]))));
+    d.expenses.length ? h("div", { class: "table-wrap" }, h("table", null,
+      h("thead", null, h("tr", null, ["التاريخ", "الفئة", "المبلغ", "الوصف", "الطلب", "المنصة / الحملة", "المرجع", "السجل", ""].map(t => h("th", { text: t })))),
+      h("tbody", null, d.expenses.map(e => h("tr", { class: e.voided ? "row-voided" : String(e.id) === state.edit ? "row-editing" : null },
+        h("td", { class: "num", text: e.date }), h("td", { text: e.categoryName }), h("td", null, h("b", { text: sarF(e.amount) })),
+        h("td", { class: "wrap" }, e.description, e.notes ? h("div", { class: "muted small", text: e.notes }) : null),
+        h("td", null, e.orderNumber ? h("a", { href: "/admin/orders/" + e.orderNumber, "data-link": true, class: "num", text: e.orderNumber }) : "—"),
+        h("td", { text: [PLATFORM[e.platform] || "", e.campaign].filter(Boolean).join(" · ") || "—" }), h("td", { text: e.reference || "—" }),
+        h("td", { class: "small" }, h("div", { text: "أضافه " + e.createdBy }), e.updatedBy ? h("div", { class: "muted", text: `عدّله ${e.updatedBy} · ${when(e.updatedAt)}` }) : null),
+        h("td", null, e.voided ? h("span", { class: "tag", title: e.voidedBy ? `${e.voidedBy} · ${when(e.voidedAt)}` : null, text: "ملغي: " + (e.voidReason || "") })
+          : h("div", { class: "row nowrap" },
+            d.canEdit ? h("a", { class: "btn ghost sm", href: "/admin/expenses?" + new URLSearchParams(Object.entries({ ...state, edit: e.id }).filter(([, x]) => x)), "data-link": true, text: "تعديل", "aria-label": "تعديل المصروف " + e.id }) : null,
+            d.canVoid ? h("button", { type: "button", class: "btn danger sm", text: "إلغاء", "aria-label": "إلغاء المصروف " + e.id, onclick: () => voidIt(e) }) : null)))))))
+      : h("div", { class: "empty", text: filtered ? "لا توجد مصاريف تطابق الفلاتر." : "لا توجد مصاريف في هذه الفترة." })));
+  if (editing) formBox.scrollIntoView({ block: "start" });
   async function voidIt(e) {
     const r = h("input", { maxlength: 200, placeholder: "مثال: مُسجّل مرتين" });
-    if (!(await confirmBox("إلغاء المصروف", [`${e.categoryName} · ${sarF(e.amount)} · ${e.date}`, h("label", { class: "f" }, "سبب الإلغاء (إلزامي)", r), h("p", { class: "muted small", text: "لا يُحذف المصروف؛ يبقى في السجل مع السبب ويخرج من الحسابات." })], { okText: "إلغاء المصروف", danger: true }))) return;
-    try { await api(`/expenses/${e.id}/void`, { body: { reason: r.value } }); toast("تم إلغاء المصروف."); pageExpenses(); } catch (x) { toast(x.data && x.data.fields ? "اكتب سبب الإلغاء." : errText(x), true); }
+    if (!(await confirmBox("إلغاء المصروف", [`${e.categoryName} · ${sarF(e.amount)} · ${e.date}`, h("label", { class: "f" }, "سبب الإلغاء (إلزامي)", r),
+      h("p", { class: "muted small", text: "لا يُحذف المصروف؛ يبقى في السجل مع السبب ويخرج من كل الإجماليات والتقارير." })], { okText: "إلغاء المصروف", danger: true }))) return;
+    try { await api(`/expenses/${e.id}/void`, { body: { reason: r.value, version: e.version } }); toast("تم إلغاء المصروف وتحدّثت التقارير."); financeChanged(); nav({}); }
+    catch (x) { toast(x.data && x.data.fields ? "اكتب سبب الإلغاء (3 أحرف على الأقل)." : errText(x), true); }
   }
 }
-function expenseForm(d) {
-  const f = { category: h("select", null, d.categories.map(c => h("option", { value: c.id, text: c.name }))), amount: h("input", { inputmode: "decimal", placeholder: "مثال: 1200" }),
-    date: h("input", { type: "date", value: todayRiyadh() }), description: h("input", { maxlength: 200, placeholder: "مثال: فاتورة شركة الشحن — نوفمبر" }),
-    orderNumber: h("input", { placeholder: "اختياري — CG-2026-000123", dir: "ltr" }), platform: h("select", null, h("option", { value: "", text: "—" }), d.platforms.map(p => h("option", { value: p, text: PLATFORM[p] }))),
-    campaign: h("input", { maxlength: 120 }), reference: h("input", { maxlength: 120 }), paymentMethod: h("input", { maxlength: 60, placeholder: "اختياري" }), notes: h("textarea", { maxlength: 500 }) };
+
+/* إضافة مصروف، أو تعديله مع تعبئة القيم الحالية (cur) */
+function expenseForm(d, cur, nav) {
+  const editing = !!cur;
+  const cats = d.categories.slice(); if (editing && !cats.some(c => c.id === cur.category)) cats.push({ id: cur.category, name: cur.categoryName });
+  const f = { category: h("select", null, cats.map(c => h("option", { value: c.id, text: c.name, selected: editing && c.id === cur.category }))),
+    amount: h("input", { inputmode: "decimal", placeholder: "مثال: 1200", value: editing ? cur.amount : "" }),
+    date: h("input", { type: "date", value: editing ? cur.date : todayRiyadh(), max: todayRiyadh() }),
+    description: h("input", { maxlength: 200, placeholder: "مثال: فاتورة شركة الشحن — نوفمبر", value: editing ? cur.description : "" }),
+    orderNumber: h("input", { placeholder: "اختياري — CG-2026-000123", dir: "ltr", value: editing ? cur.orderNumber || "" : "" }),
+    platform: h("select", null, h("option", { value: "", text: "—" }), d.platforms.map(p => h("option", { value: p, text: PLATFORM[p], selected: editing && cur.platform === p }))),
+    campaign: h("input", { maxlength: 120, value: editing ? cur.campaign : "" }), reference: h("input", { maxlength: 120, value: editing ? cur.reference : "" }),
+    paymentMethod: h("input", { maxlength: 60, placeholder: "اختياري", value: editing ? cur.paymentMethod : "" }), notes: h("textarea", { maxlength: 500, value: editing ? cur.notes : "" }) };
   const adsOnly = [h("label", { class: "f" }, "المنصة", f.platform), h("label", { class: "f" }, "اسم الحملة", f.campaign)];
   const orderOnly = h("label", { class: "f" }, "رقم الطلب (لتكلفة توصيل طلب محدد)", f.orderNumber);
   const sync = () => { adsOnly.forEach(x => { x.hidden = f.category.value !== "ADVERTISING"; }); orderOnly.hidden = f.category.value === "ADVERTISING"; };
   f.category.addEventListener("change", sync); sync();
-  const err = h("p", { class: "err", role: "alert" }), btn = h("button", { type: "button", class: "btn primary", text: "إضافة المصروف" });
-  btn.addEventListener("click", () => busy(btn, "جارٍ الحفظ…", async () => {
+  const err = h("p", { class: "err", role: "alert" }), btn = h("button", { type: "button", class: "btn primary", text: editing ? "حفظ التعديل" : "إضافة المصروف" });
+  btn.addEventListener("click", async () => {
     err.textContent = "";
-    try { await api("/expenses", { body: Object.fromEntries(Object.entries(f).map(([k, el]) => [k, el.value])) }); toast("تمت إضافة المصروف."); pageExpenses(); }
-    catch (e) { const L = { amount: "المبلغ", date: "التاريخ", description: "الوصف", orderNumber: "رقم الطلب غير موجود", category: "الفئة" }; err.textContent = e.data && e.data.fields ? "تحقق من: " + Object.keys(e.data.fields).map(k => L[k] || k).join("، ") : errText(e); }
-  }));
-  return h("section", { class: "card" }, h("h2", { text: "إضافة مصروف" }),
+    const body = Object.fromEntries(Object.entries(f).map(([k, el]) => [k, el.value.trim()]));
+    if (!(num(body.amount) > 0)) { err.textContent = "أدخل المبلغ (رقم أكبر من صفر)."; return; }
+    if (!body.date || body.date > todayRiyadh()) { err.textContent = "أدخل تاريخاً صحيحاً لا يتجاوز اليوم."; return; }
+    if (body.description.length < 2) { err.textContent = "اكتب وصف المصروف."; return; }
+    if (editing) {
+      const catName = id => (cats.find(c => c.id === id) || {}).name || id;
+      const rows = [["الفئة", catName(cur.category), catName(body.category), cur.category !== body.category], ["المبلغ", sarF(cur.amount), sarF(num(body.amount)), num(body.amount) !== cur.amount],
+        ["التاريخ", cur.date, body.date], ["الوصف", cur.description, body.description], ["رقم الطلب", cur.orderNumber || "", body.orderNumber.toUpperCase(), (cur.orderNumber || "") !== body.orderNumber.toUpperCase()],
+        ["المنصة", PLATFORM[cur.platform] || "", PLATFORM[body.platform] || ""], ["الحملة", cur.campaign, body.campaign], ["المرجع", cur.reference, body.reference],
+        ["طريقة الدفع", cur.paymentMethod, body.paymentMethod], ["ملاحظات", cur.notes, body.notes]]
+        .filter(r => r.length === 4 ? r[3] : (r[1] || "") !== (r[2] || "")).map(r => r.slice(0, 3));
+      if (!rows.length) { toast("لا توجد تغييرات للحفظ."); return; }
+      if (!(await confirmBox(`تأكيد تعديل المصروف #${cur.id}`, [changeList(rows), h("p", { class: "muted small", text: "القيم السابقة تُحفظ في سجل التدقيق باسمك، وتتحدّث التقارير فوراً." })], { okText: "حفظ التعديل" }))) return;
+    }
+    await busy(btn, "جارٍ الحفظ…", async () => {
+      try {
+        if (editing) await api(`/expenses/${cur.id}`, { body: { ...body, version: cur.version } });
+        else await api("/expenses", { body });
+        toast(editing ? "تم حفظ التعديل وتحدّثت التقارير." : "تمت إضافة المصروف."); financeChanged(); nav({});
+      } catch (e) { err.textContent = e.message === "record_changed" ? "عدّل شخص آخر هذا المصروف للتو. أعد فتحه وراجع القيم قبل الحفظ." : fieldsText(e); }
+    });
+  });
+  return h("section", { class: "card" + (editing ? " edit-card" : "") }, h("h2", { text: editing ? `تعديل مصروف #${cur.id}` : "إضافة مصروف" }),
+    editing ? h("p", { class: "muted small", text: `أضافه ${cur.createdBy} · ${when(cur.createdAt)}` + (cur.updatedBy ? ` · آخر تعديل: ${cur.updatedBy} · ${when(cur.updatedAt)}` : "") }) : null,
     h("div", { class: "grid2" }, h("label", { class: "f" }, "الفئة", f.category), h("label", { class: "f" }, "المبلغ (ر.س)", f.amount), h("label", { class: "f" }, "التاريخ", f.date),
       h("label", { class: "f" }, "الوصف", f.description), orderOnly, ...adsOnly, h("label", { class: "f" }, "المرجع / رقم الفاتورة", f.reference), h("label", { class: "f" }, "طريقة الدفع", f.paymentMethod)),
-    h("label", { class: "f" }, "ملاحظات", f.notes), err, h("div", { class: "row" }, btn));
+    h("label", { class: "f" }, "ملاحظات", f.notes), err,
+    h("div", { class: "row" }, btn, editing ? h("button", { type: "button", class: "btn ghost", text: "إلغاء التعديل", onclick: () => nav({}) }) : null));
+}
+
+/* ---------- إضافة مخزون (شراء): الكمية × سعر الوحدة = الإجمالي (يحسبه النظام) ---------- */
+function receiptCard(d) {
+  const id = reqId(), fin = d.canSeeCosts;
+  const f = { quantity: h("input", { type: "number", min: 1, step: 1, inputmode: "numeric", placeholder: "مثال: 20" }),
+    unitCost: h("input", { inputmode: "decimal", placeholder: "مثال: 35 (اختياري)" }), invoiceTotal: h("input", { inputmode: "decimal", placeholder: "اختياري — يحسب سعر الوحدة" }),
+    receivedDate: h("input", { type: "date", value: todayRiyadh(), max: todayRiyadh() }), quantityOrdered: h("input", { type: "number", min: 1, step: 1 }),
+    supplier: h("input", { maxlength: 120 }), reference: h("input", { maxlength: 120, placeholder: "رقم فاتورة / أمر شراء" }), location: h("input", { maxlength: 120, placeholder: "اختياري" }), notes: h("textarea", { maxlength: 500 }) };
+  const out = h("p", { class: "note-box" }), err = h("p", { class: "err", role: "alert" });
+  const calc = () => {
+    const q = num(f.quantity.value), u = num(f.unitCost.value), t = num(f.invoiceTotal.value);
+    if (!fin) { out.textContent = "تُضاف الكمية للمخزون؛ تكلفة الشراء يدخلها من لديه صلاحية المالية."; return; }
+    if (q > 0 && f.unitCost.value !== "" && u > 0) {
+      const total = Math.round(q * u * 100) / 100;
+      out.textContent = `الإجمالي = ${fmtN(q)} × ${sarF(u)} = ${sarF(total)} (يحسبه النظام)` + (f.invoiceTotal.value !== "" && Math.abs(total - t) >= 0.01 ? ` · يختلف عن إجمالي الفاتورة (${sarF(t)}) بسبب تقريب سعر الوحدة.` : "");
+    } else out.textContent = q > 0 ? "بدون سعر الآن: تُضاف الكمية للمخزون، ويمكن إدخال سعر الوحدة لاحقاً بتعديل الشراء." : "أدخل الكمية وسعر الوحدة؛ الإجمالي يُحسب تلقائياً.";
+  };
+  // من إجمالي الفاتورة إلى سعر الوحدة (مقرّب للهللة)
+  f.invoiceTotal.addEventListener("input", () => { const q = num(f.quantity.value), t = num(f.invoiceTotal.value); if (q > 0 && t > 0) f.unitCost.value = String(Math.round(t / q * 100) / 100); calc(); });
+  f.quantity.addEventListener("input", calc); f.unitCost.addEventListener("input", calc); calc();
+  const btn = h("button", { type: "button", class: "btn primary", text: "إضافة إلى المخزون" });
+  btn.addEventListener("click", async () => {
+    err.textContent = "";
+    const q = num(f.quantity.value);
+    if (!Number.isInteger(q) || q < 1) { err.textContent = "أدخل الكمية (عدد صحيح أكبر من صفر)."; return; }
+    if (f.unitCost.value !== "" && !(num(f.unitCost.value) > 0)) { err.textContent = "سعر الوحدة يجب أن يكون رقماً أكبر من صفر."; return; }
+    if (!(await confirmBox("تأكيد إضافة المخزون", [h("p", { text: `إضافة ${q} علبة بتاريخ ${f.receivedDate.value}.` }), out.cloneNode(true)], { okText: "إضافة" }))) return;
+    await busy(btn, "جارٍ الإضافة…", async () => {
+      try {
+        const r = await api("/inventory/receipts", { body: { quantity: q, unitCost: f.unitCost.value || null, receivedDate: f.receivedDate.value, quantityOrdered: f.quantityOrdered.value || null,
+          supplier: f.supplier.value, reference: f.reference.value, location: f.location.value, notes: f.notes.value, requestId: id } });
+        toast(r.replay ? "سُجّلت هذه الإضافة مسبقاً." : `تمت إضافة ${r.quantity} علبة` + (r.totalCost != null ? ` · القيمة ${sarF(r.totalCost)}` : "") + ".");
+        financeChanged(); go("/admin/inventory?tab=receive", true);
+      } catch (e) { err.textContent = fieldsText(e); }
+    });
+  });
+  return h("section", { class: "card" }, h("h2", { text: "إضافة مخزون (شراء)" }),
+    h("div", { class: "grid3" }, h("label", { class: "f" }, "الكمية (علبة)", f.quantity),
+      fin ? h("label", { class: "f" }, "سعر الوحدة (ر.س)", f.unitCost) : null, h("label", { class: "f" }, "تاريخ الشراء / الاستلام", f.receivedDate)),
+    fin ? h("label", { class: "f narrow" }, "أو إجمالي الفاتورة (ر.س)", f.invoiceTotal) : null,
+    out,
+    h("details", null, h("summary", { text: "تفاصيل إضافية (اختياري): المورد، المرجع، المستودع، ملاحظات" }),
+      h("div", { class: "grid2" }, h("label", { class: "f" }, "المورد", f.supplier), h("label", { class: "f" }, "المرجع / رقم الفاتورة", f.reference),
+        h("label", { class: "f" }, "الموقع / المستودع", f.location), h("label", { class: "f" }, "الكمية في الفاتورة", f.quantityOrdered)),
+      h("label", { class: "f" }, "ملاحظات", f.notes)),
+    err, h("div", { class: "row" }, btn));
+}
+
+/* ---------- سجل المشتريات: بحث وتصفية، تعديل، إلغاء ---------- */
+async function purchasesSection(box) {
+  const P = new URLSearchParams(location.search);
+  const state = Object.fromEntries(["range", "from", "to", "supplier", "product", "status", "source", "min", "max", "q", "edit"].map(k => [k, P.get(k) || ""]));
+  if (!state.range) state.range = "all";
+  const nav = v => { const u = new URLSearchParams(Object.entries({ tab: "receive", ...state, edit: "", ...v }).filter(([, x]) => x)); go("/admin/inventory?" + u); };
+  const editBox = h("div"), card = h("section", { class: "card", id: "purchases" }, h("h2", { text: "سجل المشتريات" }), h("p", { class: "muted", text: "جارٍ التحميل…" }));
+  put(box, editBox, card);
+  const qs = new URLSearchParams(Object.entries(state).filter(([k, v]) => v && k !== "edit"));
+  let d; try { d = await api("/inventory/purchases?" + qs); } catch (e) { if (e.message !== "unauthorized") card.lastChild.textContent = fieldsText(e); return; }
+  card.lastChild.remove();
+  const fin = d.canSeeCosts, sel = (label, key, opts) => h("select", { "aria-label": label }, opts.map(([v, t]) => h("option", { value: v, text: t, selected: state[key] === v })));
+  const supplier = sel("المورد", "supplier", [["", "كل الموردين"], ...d.suppliers.map(s => [s, s])]);
+  const product = sel("المنتج", "product", [["", "كل المنتجات"], ...d.products.map(p => [p.id, p.name])]);
+  const status = sel("حالة السجل", "status", [["", "الفعّالة"], ["voided", "الملغاة"], ["all", "الكل (مع الملغاة)"]]);
+  const source = sel("النوع", "source", [["", "كل الأنواع"], ["PURCHASE", "مشتريات"], ["OPENING", "الرصيد الافتتاحي"]]);
+  const min = h("input", { inputmode: "decimal", class: "w-num", placeholder: "من قيمة", "aria-label": "أقل قيمة", value: state.min });
+  const max = h("input", { inputmode: "decimal", class: "w-num", placeholder: "إلى قيمة", "aria-label": "أعلى قيمة", value: state.max });
+  const q = h("input", { type: "search", placeholder: "بحث: مرجع، مورد، ملاحظات", "aria-label": "بحث في المشتريات", value: state.q });
+  const filtered = ["supplier", "product", "status", "source", "min", "max", "q"].some(k => state[k]) || state.range !== "all";
+  put(card,
+    h("form", { class: "filters", onsubmit: ev => { ev.preventDefault(); nav({ supplier: supplier.value, product: product.value, status: status.value, source: source.value, min: fin ? min.value.trim() : "", max: fin ? max.value.trim() : "", q: q.value.trim() }); } },
+      rangePicker(state, v => nav(v)), source, product, supplier, status, fin ? min : null, fin ? max : null, q, h("button", { type: "submit", class: "btn primary", text: "تطبيق" }),
+      filtered ? h("a", { href: "/admin/inventory?tab=receive", "data-link": true, class: "small", text: "مسح الفلاتر" }) : null),
+    h("p", { class: "note-box" }, `${fmtN(d.total)} عملية · ${fmtN(d.units)} علبة`, fin ? [" · القيمة ", h("b", { text: sarF(d.value) })] : null,
+      fin && d.missingCost ? ` · ${d.missingCost} بلا سعر (غير محسوبة)` : "", " — الملغاة لا تُحسب."),
+    d.purchases.length ? h("div", { class: "table-wrap" }, h("table", null,
+      h("thead", null, h("tr", null, ["التاريخ", "النوع", "المنتج", "الكمية", "استُخدم منها", ...(fin ? ["سعر الوحدة", "الإجمالي"] : []), "المورد", "المرجع", "السجل", ""].map(t => h("th", { text: t })))),
+      h("tbody", null, d.purchases.map(b => h("tr", { class: b.voided ? "row-voided" : String(b.id) === state.edit ? "row-editing" : null },
+        h("td", { class: "num", text: b.receivedAt }), h("td", { text: b.source === "OPENING" ? "رصيد افتتاحي" : "شراء #" + b.batchNo }), h("td", { text: b.productName }),
+        h("td", { class: "num", text: fmtN(b.quantityReceived) }), h("td", { class: "num", text: fmtN(b.used) }),
+        ...(fin ? [h("td", { text: b.costKnown ? sarF(b.unitCost) + (b.unitCostExact ? "" : " تقريباً") : "لم يُدخل" }), h("td", null, h("b", { text: b.costKnown ? sarF(b.totalCost) : "—" }))] : []),
+        h("td", { text: b.supplier || "—" }), h("td", { text: b.reference || "—" }),
+        h("td", { class: "small" }, h("div", { text: "أضافه " + b.createdBy }), b.updatedBy ? h("div", { class: "muted", text: `عدّله ${b.updatedBy} · ${when(b.updatedAt)}` }) : null),
+        h("td", null, b.voided ? h("span", { class: "tag", title: `${b.voidedBy || ""} · ${when(b.voidedAt)}`, text: "ملغي: " + (b.voidReason || "") })
+          : h("div", { class: "row nowrap" },
+            d.canEditPurchase ? h("a", { class: "btn ghost sm", href: "/admin/inventory?" + new URLSearchParams(Object.entries({ tab: "receive", ...state, edit: b.id }).filter(([, x]) => x)), "data-link": true,
+              text: fin && !b.costKnown ? "إدخال السعر" : "تعديل", "aria-label": "تعديل الشراء " + b.id }) : null,
+            d.canVoidPurchase && b.source === "PURCHASE" ? h("button", { type: "button", class: "btn danger sm", text: "إلغاء", "aria-label": "إلغاء الشراء " + b.id, disabled: b.used > 0,
+              title: b.used > 0 ? "استُخدم منه — عدّل الكمية بدلاً من الإلغاء" : null, onclick: () => voidIt(b) }) : null)))))))
+      : h("div", { class: "empty", text: filtered ? "لا توجد مشتريات تطابق الفلاتر." : "لا توجد مشتريات بعد." }));
+  const editing = state.edit && d.canEditPurchase ? d.purchases.find(x => String(x.id) === state.edit && !x.voided) : null;
+  if (editing) { put(editBox, purchaseEditCard(d, editing, nav)); editBox.scrollIntoView({ block: "start" }); }
+  async function voidIt(b) {
+    const r = h("input", { maxlength: 200, placeholder: "مثال: أُدخلت مرتين" });
+    if (!(await confirmBox(`إلغاء الشراء #${b.batchNo}`, [`${fmtN(b.quantityReceived)} علبة بتاريخ ${b.receivedAt}` + (fin && b.costKnown ? ` · ${sarF(b.totalCost)}` : "") + ".",
+      h("label", { class: "f" }, "سبب الإلغاء (إلزامي)", r),
+      h("p", { class: "muted small", text: `تخرج ${b.quantityReceived} علبة من المخزون وتخرج قيمتها من التقارير. لا يُحذف السجل؛ يبقى مع السبب في السجل وفي سجل التدقيق.` })], { okText: "إلغاء الشراء", danger: true }))) return;
+    try { await api(`/inventory/purchases/${b.id}/void`, { body: { reason: r.value, version: b.version } }); toast("تم إلغاء الشراء وتحدّثت التقارير والمخزون."); financeChanged(); nav({}); }
+    catch (x) { toast(x.data && x.data.fields ? "اكتب سبب الإلغاء (3 أحرف على الأقل)." : x.message === "opening_cannot_void" ? "لا يُلغى الرصيد الافتتاحي؛ عدّل كميته." : purchaseErr(x), true); }
+  }
+}
+
+function purchaseEditCard(d, b, nav) {
+  const fin = d.canSeeCosts, initUnit = b.costKnown ? String(b.unitCost) : "";
+  const f = { quantity: h("input", { type: "number", min: Math.max(1, b.used), step: 1, value: b.quantityReceived }), unitCost: h("input", { inputmode: "decimal", value: initUnit, placeholder: "مثال: 35" }),
+    receivedDate: h("input", { type: "date", value: b.receivedAt.slice(0, 10), max: todayRiyadh() }), supplier: h("input", { maxlength: 120, value: b.supplier, list: "cgSuppliers" }),
+    reference: h("input", { maxlength: 120, value: b.reference }), location: h("input", { maxlength: 120, value: b.location }),
+    quantityOrdered: h("input", { type: "number", min: 1, step: 1, value: b.quantityOrdered ?? "" }), notes: h("textarea", { maxlength: 500, value: b.notes }) };
+  const total = h("output", { class: "big-out" }), how = h("small", { class: "muted" }), err = h("p", { class: "err", role: "alert" });
+  const calc = () => { const q = num(f.quantity.value), u = num(f.unitCost.value), ok_ = q > 0 && u > 0;
+    total.textContent = ok_ ? sarF(Math.round(q * u * 100) / 100) : "—"; how.textContent = ok_ ? `الكمية ${fmtN(q)} × سعر الوحدة ${fmtN(u)}` : "الكمية × سعر الوحدة"; };
+  f.quantity.addEventListener("input", calc); f.unitCost.addEventListener("input", calc); calc();
+  const btn = h("button", { type: "button", class: "btn primary", text: "حفظ التعديل" });
+  btn.addEventListener("click", async () => {
+    err.textContent = "";
+    const q = num(f.quantity.value), u = f.unitCost.value.trim();
+    if (!Number.isInteger(q) || q < 1) { err.textContent = "الكمية عدد صحيح أكبر من صفر."; return; }
+    if (q < b.used) { err.textContent = `لا يمكن أن تقل الكمية عن ${b.used} علبة (المستخدم منها).`; return; }
+    if (fin && b.costKnown && u === "") { err.textContent = "سعر الوحدة مطلوب (لا يمكن مسح تكلفة معروفة)."; return; }
+    if (fin && u !== "" && !(num(u) > 0)) { err.textContent = "سعر الوحدة يجب أن يكون رقماً أكبر من صفر."; return; }
+    if (!f.receivedDate.value || f.receivedDate.value > todayRiyadh()) { err.textContent = "التاريخ لا يتجاوز اليوم."; return; }
+    const body = { version: b.version, quantity: q, receivedDate: f.receivedDate.value, supplier: f.supplier.value.trim(), reference: f.reference.value.trim(),
+      location: f.location.value.trim(), quantityOrdered: f.quantityOrdered.value || null, notes: f.notes.value.trim() };
+    const unitChanged = fin && u !== initUnit;
+    if (fin && u !== "" && (unitChanged || q !== b.quantityReceived)) body.unitCost = u;
+    const newTotal = fin && u !== "" ? Math.round(q * num(u) * 100) / 100 : b.totalCost;
+    const rows = [["الكمية", fmtN(b.quantityReceived), fmtN(q), q !== b.quantityReceived], ...(fin ? [["سعر الوحدة", b.costKnown ? sarF(b.unitCost) : "", u ? sarF(num(u)) : "", unitChanged],
+      ["الإجمالي", b.costKnown ? sarF(b.totalCost) : "", newTotal != null ? sarF(newTotal) : "", (newTotal ?? null) !== (b.totalCost ?? null)]] : []),
+      ["التاريخ", b.receivedAt.slice(0, 10), body.receivedDate], ["المورد", b.supplier, body.supplier], ["المرجع", b.reference, body.reference], ["الموقع", b.location, body.location],
+      ["الكمية في الفاتورة", b.quantityOrdered ?? "", body.quantityOrdered ?? ""], ["ملاحظات", b.notes, body.notes]]
+      .filter(r => r.length === 4 ? r[3] : String(r[1] ?? "") !== String(r[2] ?? "")).map(r => r.slice(0, 3));
+    if (!rows.length) { toast("لا توجد تغييرات للحفظ."); return; }
+    const effects = [q !== b.quantityReceived ? `يتغير المخزون الموجود بمقدار ${q > b.quantityReceived ? "+" : ""}${q - b.quantityReceived} علبة (حركة في سجل الحركات).` : null,
+      fin && b.used && (unitChanged || q !== b.quantityReceived) && u ? `تُحدَّث تكلفة ${b.used} علبة مستخدمة من هذا الشراء، وتكلفة الطلبات المُسلَّمة منها.` : null].filter(Boolean);
+    if (!(await confirmBox(`تأكيد تعديل ${b.source === "OPENING" ? "الرصيد الافتتاحي" : "الشراء #" + b.batchNo}`, [changeList(rows), ...effects.map(x => h("p", { class: "small", text: x })),
+      h("p", { class: "muted small", text: "القيم السابقة تُحفظ في سجل التدقيق باسمك، وتتحدّث التقارير فوراً." })], { okText: "حفظ التعديل" }))) return;
+    await busy(btn, "جارٍ الحفظ…", async () => {
+      try { await api(`/inventory/purchases/${b.id}`, { body }); toast("تم حفظ التعديل وتحدّثت التقارير والمخزون."); financeChanged(); nav({}); }
+      catch (e) { err.textContent = e.message === "record_changed" ? "عدّل شخص آخر هذا الشراء للتو. أعد فتحه وراجع القيم قبل الحفظ." : purchaseErr(e); }
+    });
+  });
+  if (!document.getElementById("cgSuppliers")) document.body.append(h("datalist", { id: "cgSuppliers" }, d.suppliers.map(s => h("option", { value: s }))));
+  return h("section", { class: "card edit-card" }, h("h2", { text: b.source === "OPENING" ? "تعديل الرصيد الافتتاحي" : `تعديل الشراء #${b.batchNo}` }),
+    h("p", { class: "muted small", text: `المنتج: ${b.productName} · أضافه ${b.createdBy} · ${when(b.createdAt)}` + (b.updatedBy ? ` · آخر تعديل: ${b.updatedBy} · ${when(b.updatedAt)}` : "") }),
+    b.used ? h("p", { class: "note-box", text: `استُخدم من هذا الشراء ${b.used} علبة (طلبات أو تسويات)، فلا تقل الكمية عن ${b.used}.` }) : null,
+    fin && b.costKnown && !b.unitCostExact ? h("p", { class: "note-box", text: "سُجّل هذا الشراء بإجمالي لا ينقسم بالتساوي على الكمية؛ عند تعديل الكمية أو السعر يُعتمد سعر الوحدة المعروض ويُحسب الإجمالي منه." }) : null,
+    h("div", { class: "grid3" }, h("label", { class: "f" }, "الكمية (علبة)", f.quantity), fin ? h("label", { class: "f" }, "سعر الوحدة (ر.س)", f.unitCost) : null,
+      fin ? h("div", { class: "f" }, h("span", { text: "الإجمالي (يُحسب تلقائياً)" }), total, how) : null),
+    h("div", { class: "grid2" }, h("label", { class: "f" }, "تاريخ الشراء / الاستلام", f.receivedDate), h("label", { class: "f" }, "المورد", f.supplier),
+      h("label", { class: "f" }, "المرجع / رقم الفاتورة", f.reference), h("label", { class: "f" }, "الموقع / المستودع", f.location), h("label", { class: "f" }, "الكمية في الفاتورة", f.quantityOrdered)),
+    h("label", { class: "f" }, "ملاحظات", f.notes), err,
+    h("div", { class: "row" }, btn, h("button", { type: "button", class: "btn ghost", text: "إلغاء التعديل", onclick: () => nav({}) })));
+}
+
+/* ---------- التقارير: المصاريف التشغيلية + قيمة شراء المخزون ---------- */
+function spendingSection(box) {
+  const state = { range: "month" };
+  const body = h("div", null, h("p", { class: "muted", text: "جارٍ التحميل…" }));
+  const card = h("section", { class: "card", id: "spending" },
+    h("div", { class: "page-head" }, h("h2", { text: "المصاريف ومشتريات المخزون" }), h("div", { class: "row" }, rangePicker(state, v => { Object.assign(state, v); load(); }))), body);
+  const load = async () => {
+    const qs = new URLSearchParams({ range: state.range }); if (state.range === "custom") { qs.set("from", state.from || ""); qs.set("to", state.to || ""); }
+    let d; try { d = await api("/finance/summary?" + qs); } catch (e) { if (e.message !== "unauthorized") body.textContent = fieldsText(e); return; }
+    const X = d.spending, P = X.purchases, rq = "?range=" + state.range + (state.range === "custom" ? `&from=${state.from}&to=${state.to}` : "");
+    body.textContent = "";
+    put(body,
+      h("p", { class: "muted small", text: `الفترة: ${d.period.range === "all" ? "كل الفترات" : d.period.from + " → " + d.period.to} · حسب تاريخ المصروف وتاريخ الشراء · السجلات الملغاة لا تُحسب.` }),
+      h("div", { class: "tiles" },
+        tile2("المصاريف التشغيلية", sarF(X.operatingExpenses), `${fmtN(X.operatingCount)} مصروف`),
+        tile2("قيمة شراء المخزون", sarF(X.inventoryPurchases), `${fmtN(P.count)} عملية · ${fmtN(P.units)} علبة`),
+        tile2("إجمالي المصاريف", sarF(X.totalSpending), "التشغيلية + شراء المخزون", "tile-total")),
+      P.missingCost ? h("p", { class: "warn-box", text: `${P.missingCost} عملية شراء بلا سعر وحدة — قيمتها غير محسوبة في الإجمالي. أدخل السعر من «سجل المشتريات».` }) : null,
+      h("div", { class: "o-grid" },
+        h("div", null, h("h3", { text: "المصاريف التشغيلية حسب الفئة" }),
+          tbl(["الفئة", "العدد", "المبلغ"], [...X.byCategory.map(c => [c.name, fmtN(c.count), sarF(c.amount)]), ...(X.byCategory.length ? [[h("b", { text: "الإجمالي" }), fmtN(X.operatingCount), h("b", { text: sarF(X.operatingExpenses) })]] : [])])),
+        h("div", null, h("h3", { text: "قيمة شراء المخزون" }),
+          tbl(["النوع", "العدد", "العلب", "القيمة"], P.count ? [["مشتريات", fmtN(P.purchased.count), fmtN(P.purchased.units), sarF(P.purchased.value)],
+            ...(P.opening.count ? [["الرصيد الافتتاحي", fmtN(P.opening.count), fmtN(P.opening.units), sarF(P.opening.value)]] : []),
+            [h("b", { text: "الإجمالي" }), fmtN(P.count), fmtN(P.units), h("b", { text: sarF(X.inventoryPurchases) })]] : []))),
+      h("p", { class: "muted small", text: "إجمالي المصاريف = المصاريف التشغيلية + قيمة شراء المخزون (ما دُفع في الفترة). صافي الربح في لوحة المعلومات لا يطرح قيمة الشراء مرة ثانية: تكلفة العلب تدخل الربح عند بيعها (الوارد أولاً يُصرف أولاً)." }),
+      h("div", { class: "row" }, h("a", { class: "btn ghost sm", href: "/admin/expenses" + rq, "data-link": true, text: "تفاصيل المصاريف" }),
+        can("inventory.view") ? h("a", { class: "btn ghost sm", href: "/admin/inventory?tab=receive&" + rq.slice(1), "data-link": true, text: "سجل المشتريات" }) : null));
+  };
+  onFinanceChange(card, load);
+  put(box, card);
+  load();
 }
 
 /* ---------- طلب جديد من لوحة التحكم ---------- */

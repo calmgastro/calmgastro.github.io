@@ -4,13 +4,14 @@
 import { HttpError, normalizeOrderNumber } from "./orders.js";
 import { auditStmt } from "./auth.js";
 import { DEFAULT_PRODUCT, SETTINGS, getSettings, getBalance, levelFor, fifoPlan, fifoPieceCost, checkAlert, runWithRetry,
-         initializeInventory, ruleOf, toHalalas, riyadhDay, addDays, NO_GUARD } from "./inventory.js";
+         initializeInventory, ruleOf, toHalalas, riyadhDay, addDays, periodOf, validDay, NO_GUARD } from "./inventory.js";
 
 const need = (ctx, perm) => { if (!ctx.perms.has(perm)) throw new HttpError(403, { error: "forbidden", permission: perm }); };
 const now = () => new Date().toISOString();
 const clean = (v, max) => String(v ?? "").replace(/[\u0000-\u001f\u007f​-‏‪-‮⁦-⁩]/g, " ").replace(/[<>]/g, "").replace(/\s+/g, " ").trim().slice(0, max);
 export const sar = h => h == null ? null : Math.round(h) / 100;
-const unitCost = b => b.total_cost_halalas == null ? null : sar(b.total_cost_halalas / b.quantity_received);
+// exact unit cost when stored; for an older total-only batch, total ÷ quantity
+const unitCost = b => b.unit_cost_halalas != null ? sar(b.unit_cost_halalas) : b.total_cost_halalas == null ? null : sar(b.total_cost_halalas / b.quantity_received);
 // value of the units still in a batch, consistent with how FIFO charges consumed units
 export const remainingValue = b => b.total_cost_halalas == null ? null : b.total_cost_halalas - Math.round(b.total_cost_halalas * (b.quantity_received - b.quantity_remaining) / b.quantity_received);
 
@@ -59,7 +60,7 @@ export async function inventoryPage(env, ctx, params) {
     summary,
     batches: batches.results.map(b => ({ id: b.id, batchNo: b.batch_no, source: b.source, receivedAt: b.received_at, quantityReceived: b.quantity_received,
       quantityRemaining: b.quantity_remaining, supplier: b.supplier, reference: b.reference, location: b.location, notes: b.notes, createdBy: b.created_by, createdAt: b.created_at,
-      status: b.quantity_remaining === 0 ? "DEPLETED" : b.quantity_remaining === b.quantity_received ? "FULL" : "PARTIAL",
+      status: b.voided_at ? "VOIDED" : b.quantity_remaining === 0 ? "DEPLETED" : b.quantity_remaining === b.quantity_received ? "FULL" : "PARTIAL",
       ...(fin ? { unitCost: unitCost(b), totalCost: sar(b.total_cost_halalas), stockValue: sar(remainingValue(b)), costKnown: b.total_cost_halalas != null } : {}) })),
     transactions: tx.results.map(t => ({ id: t.id, at: t.created_at, type: t.type, quantity: t.quantity, orderNumber: t.order_number, batchId: t.batch_id,
       onHandBefore: t.on_hand_before, onHandAfter: t.on_hand_after, reservedBefore: t.reserved_before, reservedAfter: t.reserved_after,
@@ -67,12 +68,10 @@ export async function inventoryPage(env, ctx, params) {
       ...(fin ? { cost: sar(t.cost_halalas) } : {}) })),
     transactionsTotal: txCount.n, page, per,
     shortages,
-    receipts: batches.results.filter(b => b.source !== "ADJUSTMENT").slice().reverse().slice(0, 30).map(b => ({ id: b.id, batchNo: b.batch_no, source: b.source, receivedAt: b.received_at,
-      quantity: b.quantity_received, remaining: b.quantity_remaining, supplier: b.supplier, reference: b.reference, by: b.created_by, at: b.created_at,
-      ...(fin ? { totalCost: sar(b.total_cost_halalas), unitCost: unitCost(b), costKnown: b.total_cost_halalas != null } : {}) })),
+    receipts: batches.results.filter(b => b.source !== "ADJUSTMENT").slice().reverse().slice(0, 30).map(b => ({ ...purchaseRow(b, fin), quantity: b.quantity_received, by: b.created_by, at: b.created_at })),
     adjustments: adjustments.results.map(a => ({ id: a.id, quantity: a.quantity, oldOnHand: a.old_on_hand, newOnHand: a.new_on_hand, reason: a.reason, notes: a.notes, by: a.created_by, at: a.created_at })),
     settingOptions: Object.fromEntries(Object.entries(SETTINGS).filter(([, v]) => v.type === "enum").map(([k, v]) => [k, v.values])),
-    canManage: ctx.perms.has("inventory.manage"), canSeeCosts: fin
+    canManage: ctx.perms.has("inventory.manage"), canSeeCosts: fin, ...purchasePerms(ctx)
   };
 }
 
@@ -96,15 +95,17 @@ export async function initStock(env, ctx, body) {
 
 /* ---------- receipt: a new batch; the unit cost is always computed here from the total ---------- */
 export async function receiveStock(env, ctx, body) {
-  need(ctx, "inventory.manage");
+  need(ctx, "inventory.purchase.create");
   const db = env.DB, product = DEFAULT_PRODUCT;
   if (!(await getBalance(db, product))) throw new HttpError(409, { error: "not_initialized" });
-  // the cost may be entered later (daily receipts): an empty total stores the batch without cost, settable once afterwards
-  const qty = Number(body.quantity), total = body.totalCost == null || body.totalCost === "" ? null : toHalalas(body.totalCost), date = String(body.receivedDate || "");
+  // the cost may be entered later (daily receipts): no unit cost / total stores the batch without cost, added later by editing it
+  const qty = Number(body.quantity), date = String(body.receivedDate || "");
   const errors = {};
-  if (!Number.isInteger(qty) || qty < 1 || qty > 1000000) errors.quantity = "invalid";
-  if (total === undefined) errors.totalCost = "invalid";
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date > riyadhDay(now())) errors.receivedDate = "invalid";
+  if (!Number.isInteger(qty) || qty < 1 || qty > MAX_QTY) errors.quantity = "invalid";
+  const c = receiptCost(body, Number.isInteger(qty) && qty > 0 ? qty : 1);
+  if (c.error) errors[c.error] = "invalid";
+  const total = c.total, unit = c.unit;
+  if (!validDay(date)) errors.receivedDate = "invalid";
   const ordered = body.quantityOrdered == null || body.quantityOrdered === "" ? null : Number(body.quantityOrdered);
   if (ordered != null && (!Number.isInteger(ordered) || ordered < 1)) errors.quantityOrdered = "invalid";
   const key = String(body.requestId || "");
@@ -115,24 +116,25 @@ export async function receiveStock(env, ctx, body) {
   const batchId = "(SELECT MAX(id) FROM inventory_batches WHERE product_id = ?)";
   try {
     await db.batch([
-      db.prepare(`INSERT INTO inventory_batches (product_id, batch_no, source, received_at, quantity_ordered, quantity_received, quantity_remaining, total_cost_halalas,
+      db.prepare(`INSERT INTO inventory_batches (product_id, batch_no, source, received_at, quantity_ordered, quantity_received, quantity_remaining, total_cost_halalas, unit_cost_halalas,
           supplier, reference, location, notes, created_by, user_id, created_at)
-        SELECT ?, COALESCE(MAX(batch_no), 0) + 1, 'PURCHASE', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM inventory_batches WHERE product_id = ?`)
-        .bind(product, date, ordered, qty, qty, total, f.supplier, f.reference, f.location, f.notes, actor, uid, t, product),
+        SELECT ?, COALESCE(MAX(batch_no), 0) + 1, 'PURCHASE', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM inventory_batches WHERE product_id = ?`)
+        .bind(product, date, ordered, qty, qty, total, unit, f.supplier, f.reference, f.location, f.notes, actor, uid, t, product),
       db.prepare("UPDATE inventory_balances SET last_delta = ?, on_hand = on_hand + ?, updated_at = ? WHERE product_id = ?").bind(qty, qty, t, product),
       db.prepare(`INSERT INTO inventory_transactions (product_id, type, quantity, batch_id, on_hand_before, on_hand_after, reserved_before, reserved_after, available_before, available_after,
           cost_halalas, reference, notes, actor, user_id, idempotency_key, created_at)
         SELECT ?, 'PURCHASE_RECEIPT', ?, ${batchId}, b.on_hand - ?, b.on_hand, b.reserved, b.reserved, b.on_hand - ? - b.reserved, b.on_hand - b.reserved, ?, ?, ?, ?, ?, ?, ?
         FROM inventory_balances b WHERE b.product_id = ?`)
         .bind(product, qty, product, qty, qty, total, f.reference, f.notes, actor, uid, "receipt:" + key, t, product),
-      auditStmt(env, ctx, "stock_received", "inventory", product, null, { quantity: qty, totalCostHalalas: total, receivedDate: date, supplier: f.supplier, reference: f.reference })
+      auditStmt(env, ctx, "stock_received", "inventory", product, null, { quantity: qty, unitCost: sar(unit), totalCost: sar(total), receivedDate: date, supplier: f.supplier || undefined, reference: f.reference || undefined })
     ]);
   } catch (e) {
     if (/UNIQUE constraint failed: inventory_transactions\.idempotency_key/i.test(e.message)) return { replay: true };
     throw e;
   }
   await checkAlert(db, product);
-  return { replay: false, quantity: qty, unitCost: total == null ? null : sar(total / qty), totalCost: sar(total) };
+  const b = await db.prepare("SELECT id FROM inventory_batches WHERE product_id = ? AND created_at = ? AND created_by = ? ORDER BY id DESC").bind(product, t, actor).first();
+  return { replay: false, id: b && b.id, quantity: qty, unitCost: total == null ? null : sar(unit != null ? unit : total / qty), totalCost: sar(total) };
 }
 
 /* ---------- manual adjustment (never edits a number directly: always a ledger row) ---------- */
@@ -308,3 +310,214 @@ export async function reconcileStock(env, ctx) {
 }
 
 export { NO_GUARD };
+
+/* ---------- stock purchases: list, edit, void ----------
+   A purchase is its inventory batch (source PURCHASE, or the OPENING balance). Its value = quantity × unit cost: the API
+   takes the unit cost and computes the total (a database trigger refuses any row where they disagree). Only an older
+   batch recorded with an invoice total that does not divide evenly has no exact unit cost; editing it asks for one. */
+const MAX_QTY = 1000000, MAX_UNIT = 10000000;     // 100,000 SAR a unit
+const has = v => v != null && v !== "";
+function receiptCost(body, qty) {
+  if (has(body.unitCost)) {
+    const u = toHalalas(body.unitCost);
+    return u === undefined || u <= 0 || u > MAX_UNIT ? { error: "unitCost" } : { unit: u, total: u * qty };
+  }
+  if (has(body.totalCost)) {                       // older clients: a total; its unit cost is kept exact when it divides evenly
+    const t = toHalalas(body.totalCost);
+    return t === undefined || t > MAX_UNIT * qty ? { error: "totalCost" } : { unit: t > 0 && t % qty === 0 ? t / qty : null, total: t };
+  }
+  return { unit: null, total: null };
+}
+const purchasePerms = ctx => ({ canCreatePurchase: ctx.perms.has("inventory.purchase.create"), canEditPurchase: ctx.perms.has("inventory.purchase.edit"),
+  canVoidPurchase: ctx.perms.has("inventory.purchase.void") });
+function purchaseRow(b, fin) {
+  return { id: b.id, batchNo: b.batch_no, source: b.source, product: b.product_id, productName: b.product_name, receivedAt: b.received_at,
+    quantityReceived: b.quantity_received, remaining: b.quantity_remaining, used: b.voided_at ? 0 : b.quantity_received - b.quantity_remaining, quantityOrdered: b.quantity_ordered,
+    supplier: b.supplier, reference: b.reference, location: b.location, notes: b.notes, createdBy: b.created_by, createdAt: b.created_at,
+    updatedBy: b.updated_by, updatedAt: b.updated_at, version: b.version, voided: !!b.voided_at, voidedAt: b.voided_at, voidedBy: b.voided_by, voidReason: b.void_reason,
+    ...(fin ? { unitCost: unitCost(b), unitCostExact: b.unit_cost_halalas != null, totalCost: sar(b.total_cost_halalas), costKnown: b.total_cost_halalas != null } : {}) };
+}
+
+const PURCHASE_STATUS = { active: "b.voided_at IS NULL", voided: "b.voided_at IS NOT NULL", all: "1" };
+export async function listPurchases(env, ctx, params) {
+  need(ctx, "inventory.view");
+  const db = env.DB, fin = ctx.perms.has("finance.view"), where = ["b.source IN ('OPENING','PURCHASE')"], binds = [];
+  const page = Math.max(1, parseInt(params.get("page"), 10) || 1), per = 50;
+  if (params.get("range")) { const p = periodOf(params); where.push("substr(b.received_at, 1, 10) >= ? AND substr(b.received_at, 1, 10) < ?"); binds.push(p.from, p.to); }
+  const status = PURCHASE_STATUS[params.get("status")] ? params.get("status") : "active";
+  where.push(PURCHASE_STATUS[status]);
+  if (["OPENING", "PURCHASE"].includes(params.get("source"))) { where.push("b.source = ?"); binds.push(params.get("source")); }
+  const product = params.get("product");
+  if (/^[a-z0-9_-]{2,40}$/.test(product || "")) { where.push("b.product_id = ?"); binds.push(product); }
+  const supplier = clean(params.get("supplier"), 120);
+  if (supplier) { where.push("b.supplier = ?"); binds.push(supplier); }
+  const q = clean(params.get("q"), 60);
+  if (q) { const l = "%" + q.replace(/[\\%_]/g, c => "\\" + c) + "%"; where.push("(b.reference LIKE ? ESCAPE '\\' OR b.notes LIKE ? ESCAPE '\\' OR b.supplier LIKE ? ESCAPE '\\')"); binds.push(l, l, l); }
+  if (fin) {                                       // value filters only for admins who may see costs
+    const min = has(params.get("min")) ? toHalalas(params.get("min")) : null, max = has(params.get("max")) ? toHalalas(params.get("max")) : null;
+    if (min === undefined || max === undefined || (min != null && max != null && min > max)) throw new HttpError(422, { error: "validation", fields: { valueRange: "invalid" } });
+    if (min != null) { where.push("b.total_cost_halalas >= ?"); binds.push(min); }
+    if (max != null) { where.push("b.total_cost_halalas <= ?"); binds.push(max); }
+    if (params.get("cost") === "missing") where.push("b.total_cost_halalas IS NULL");
+  }
+  const w = "WHERE " + where.join(" AND ");
+  const [rows, totals, suppliers, products] = await Promise.all([
+    db.prepare(`SELECT b.*, p.name product_name FROM inventory_batches b JOIN products p ON p.id = b.product_id ${w}
+      ORDER BY b.received_at DESC, b.id DESC LIMIT ${per} OFFSET ${(page - 1) * per}`).bind(...binds).all(),
+    db.prepare(`SELECT COUNT(*) n, COALESCE(SUM(CASE WHEN b.voided_at IS NULL THEN b.quantity_received END), 0) units,
+        COALESCE(SUM(CASE WHEN b.voided_at IS NULL THEN b.total_cost_halalas END), 0) value, COALESCE(SUM(b.voided_at IS NULL AND b.total_cost_halalas IS NULL), 0) missing
+      FROM inventory_batches b ${w}`).bind(...binds).first(),
+    db.prepare("SELECT DISTINCT supplier FROM inventory_batches WHERE supplier <> '' ORDER BY supplier").all(),
+    db.prepare("SELECT id, name FROM products ORDER BY name").all()
+  ]);
+  return {
+    purchases: rows.results.map(b => purchaseRow(b, fin)), total: totals.n, units: totals.units,
+    // value = non-voided rows matching the filter; voided rows are listed (status voided / all) but never counted
+    value: fin ? sar(totals.value) : undefined, missingCost: fin ? totals.missing : undefined, status, page, per,
+    suppliers: suppliers.results.map(r => r.supplier), products: products.results, canSeeCosts: fin, ...purchasePerms(ctx)
+  };
+}
+
+/* Edit a purchase. Everything happens in one transaction guarded by the row's version:
+   · quantity: the difference goes into (or out of) stock, with a ledger row (ADJUSTMENT, reference PURCHASE_EDIT). It can
+     never drop below what was already sold / used from the batch, nor take away units reserved for open orders.
+   · unit cost: total = quantity × unit cost; every unit already used from this batch is re-costed (consumptions), the COGS
+     of delivered orders that used it is recomputed, and a COST_UPDATE ledger row records the change.
+   · date / supplier / reference / location / notes / quantity on the invoice: stored, nothing else moves.
+   The audit log keeps the old and new value of each changed field. */
+export async function editPurchase(env, ctx, id, body) {
+  need(ctx, "inventory.purchase.edit");
+  const db = env.DB, fin = ctx.perms.has("finance.view");
+  const b = await db.prepare("SELECT * FROM inventory_batches WHERE id = ?").bind(Number(id)).first();
+  if (!b) throw new HttpError(404, { error: "not_found" });
+  if (!["PURCHASE", "OPENING"].includes(b.source)) throw new HttpError(409, { error: "not_a_purchase" });
+  if (b.voided_at) throw new HttpError(409, { error: "purchase_voided" });
+  if (Number(body && body.version) !== b.version) throw new HttpError(409, { error: "record_changed", version: b.version });
+  const errors = {};
+  const qty = has(body.quantity) ? Number(body.quantity) : b.quantity_received;
+  if (!Number.isInteger(qty) || qty < 1 || qty > MAX_QTY) errors.quantity = "invalid";
+  const date = has(body.receivedDate) ? String(body.receivedDate) : b.received_at;
+  if (date !== b.received_at) {
+    if (!validDay(date)) errors.receivedDate = "invalid";
+    else if (b.source === "OPENING") {                       // the opening balance must stay before the first order
+      const first = await db.prepare("SELECT MIN(created_at) first FROM orders").first();
+      if (first.first && date >= riyadhDay(first.first)) errors.receivedDate = "must_be_before_first_order";
+    }
+  }
+  const ordered = "quantityOrdered" in body ? (has(body.quantityOrdered) ? Number(body.quantityOrdered) : null) : b.quantity_ordered;
+  if (ordered != null && (!Number.isInteger(ordered) || ordered < 1 || ordered > MAX_QTY)) errors.quantityOrdered = "invalid";
+  // cost: unit cost given → total = unit × quantity. Not given → the stored unit cost carries over to the new quantity.
+  let unit = b.unit_cost_halalas, total = b.total_cost_halalas;
+  if ("unitCost" in body) {
+    if (!fin) throw new HttpError(403, { error: "forbidden", permission: "finance.view" });
+    if (has(body.unitCost)) {
+      const u = toHalalas(body.unitCost);
+      if (u === undefined || u <= 0 || u > MAX_UNIT) errors.unitCost = "invalid"; else unit = u;
+    } else if (b.total_cost_halalas != null) errors.unitCost = "required";   // a known cost cannot be erased
+  }
+  if (unit != null) total = unit * qty;
+  else if (total != null && qty !== b.quantity_received) errors.unitCost = "required";  // older total-only batch: say the unit cost
+  const f = Object.fromEntries(["supplier", "reference", "location"].map(k => [k, k in body ? clean(body[k], 120) : b[k]]));
+  f.notes = "notes" in body ? clean(body.notes, 500) : b.notes;
+  if (Object.keys(errors).length) throw new HttpError(422, { error: "validation", fields: errors });
+
+  const used = b.quantity_received - b.quantity_remaining, delta = qty - b.quantity_received;
+  if (qty < used) throw new HttpError(409, { error: "quantity_below_used", used });
+  const bal = await getBalance(db, b.product_id);
+  if (delta < 0 && bal.on_hand - bal.reserved < -delta) throw new HttpError(409, { error: "edit_exceeds_available", available: bal.on_hand - bal.reserved, reserved: bal.reserved });
+
+  const FIELDS = [["quantity", b.quantity_received, qty], ["receivedDate", b.received_at, date], ["quantityOrdered", b.quantity_ordered, ordered],
+    ["supplier", b.supplier, f.supplier], ["reference", b.reference, f.reference], ["location", b.location, f.location], ["notes", b.notes, f.notes],
+    ["unitCost", sar(b.unit_cost_halalas), sar(unit)], ["totalCost", sar(b.total_cost_halalas), sar(total)]];
+  const changed = FIELDS.filter(([, o, n]) => (o ?? null) !== (n ?? null));
+  if (!changed.length) return { ok: true, changed: false, version: b.version };
+
+  const t = now(), v = b.version + 1, actor = ctx.user.username, uid = ctx.user.id, product = b.product_id;
+  const G = { sql: "EXISTS (SELECT 1 FROM inventory_batches WHERE id = ? AND version = ? AND updated_at = ?)", binds: [b.id, v, t] };
+  const stmts = [
+    db.prepare(`UPDATE inventory_batches SET quantity_received = ?, quantity_remaining = quantity_remaining + ?, unit_cost_halalas = ?, total_cost_halalas = ?, received_at = ?,
+        quantity_ordered = ?, supplier = ?, reference = ?, location = ?, notes = ?, updated_at = ?, updated_by = ?, updated_by_user_id = ?, version = ?
+      WHERE id = ? AND version = ? AND voided_at IS NULL`)
+      .bind(qty, delta, unit, total, date, ordered, f.supplier, f.reference, f.location, f.notes, t, actor, uid, v, b.id, b.version)
+  ];
+  if (delta) {
+    stmts.push(db.prepare(`UPDATE inventory_balances SET last_delta = ?, on_hand = on_hand + ?, updated_at = ? WHERE product_id = ? AND ${G.sql}`).bind(delta, delta, t, product, ...G.binds));
+    stmts.push(db.prepare(`INSERT INTO inventory_transactions (product_id, type, quantity, batch_id, on_hand_before, on_hand_after, reserved_before, reserved_after, available_before, available_after,
+        cost_halalas, reference, notes, actor, user_id, idempotency_key, created_at)
+      SELECT ?, 'ADJUSTMENT', ?, ?, b.on_hand - ?, b.on_hand, b.reserved, b.reserved, b.on_hand - ? - b.reserved, b.on_hand - b.reserved, ?, 'PURCHASE_EDIT', ?, ?, ?, ?, ?
+      FROM inventory_balances b WHERE b.product_id = ? AND ${G.sql}`)
+      .bind(product, Math.abs(delta), b.id, delta, delta, unit == null ? null : unit * Math.abs(delta),
+        `${b.source === "OPENING" ? "الرصيد الافتتاحي" : "شراء #" + b.batch_no}: الكمية ${b.quantity_received} → ${qty}`, actor, uid, `purchase-edit:${b.id}:${v}`, t, product, ...G.binds));
+  }
+  const costChanged = total !== b.total_cost_halalas || (unit != null && delta);
+  if (costChanged && unit != null) {
+    // units already used from this batch now cost the new unit cost; delivered orders' COGS follow
+    stmts.push(db.prepare(`UPDATE inventory_consumptions SET cost_halalas = quantity * ? WHERE batch_id = ? AND ${G.sql}`).bind(unit, b.id, ...G.binds));
+    stmts.push(db.prepare(`UPDATE inventory_reservations SET
+        cogs_halalas = (SELECT SUM(c.cost_halalas) FROM inventory_consumptions c WHERE c.order_id = inventory_reservations.order_id AND c.reversed_at IS NULL),
+        cogs_complete = (SELECT COUNT(*) = COUNT(c.cost_halalas) FROM inventory_consumptions c WHERE c.order_id = inventory_reservations.order_id AND c.reversed_at IS NULL),
+        updated_at = ?
+      WHERE status = 'COMMITTED' AND order_id IN (SELECT order_id FROM inventory_consumptions WHERE batch_id = ? AND order_id IS NOT NULL) AND ${G.sql}`).bind(t, b.id, ...G.binds));
+  }
+  if (total !== b.total_cost_halalas) {
+    stmts.push(db.prepare(`INSERT INTO inventory_transactions (product_id, type, quantity, batch_id, on_hand_before, on_hand_after, reserved_before, reserved_after, available_before, available_after,
+        cost_halalas, reference, notes, actor, user_id, idempotency_key, created_at)
+      SELECT product_id, 'COST_UPDATE', 0, ?, on_hand, on_hand, reserved, reserved, on_hand - reserved, on_hand - reserved, ?, 'batch ' || ?, ?, ?, ?, ?, ?
+      FROM inventory_balances WHERE product_id = ? AND ${G.sql}`)
+      .bind(b.id, total, b.batch_no, `تعديل قيمة الشراء: ${b.total_cost_halalas == null ? "بلا تكلفة" : sar(b.total_cost_halalas)} → ${sar(total)} ر.س`, actor, uid, `purchase-cost:${b.id}:${v}`, t, product, ...G.binds));
+  }
+  stmts.push(auditStmt(env, ctx, "purchase_edited", "inventory_batch", b.id,
+    { batch: b.batch_no, ...Object.fromEntries(changed.map(([k, o]) => [k, o])), version: b.version },
+    { batch: b.batch_no, ...Object.fromEntries(changed.map(([k, , n]) => [k, n])), version: v }, { sql: "EXISTS (SELECT 1 FROM inventory_batches WHERE id = ?11 AND version = ?12 AND updated_at = ?13)", binds: G.binds }));
+  let res;
+  try { res = await db.batch(stmts); }
+  catch (e) {
+    if (/CHECK constraint failed/i.test(e.message)) throw new HttpError(409, { error: "edit_exceeds_available" });
+    throw e;
+  }
+  if (!res[0].meta.changes) throw new HttpError(409, { error: "record_changed" });
+  await checkAlert(db, product);
+  return { ok: true, changed: true, version: v, fields: changed.map(([k]) => k), quantity: qty, unitCost: sar(unit), totalCost: sar(total) };
+}
+
+/* Void a purchase entered by mistake: only while none of it has been used (sold or adjusted) and its units are not needed
+   by reservations. Its stock leaves the balance with a ledger row (ADJUSTMENT, reference PURCHASE_VOID); the row stays
+   with who / when / why and no longer counts anywhere. The opening balance cannot be voided (correct it by editing). */
+export async function voidPurchase(env, ctx, id, body) {
+  need(ctx, "inventory.purchase.void");
+  const db = env.DB, reason = clean(body && body.reason, 200);
+  if (reason.length < 3) throw new HttpError(422, { error: "validation", fields: { reason: "required" } });
+  const b = await db.prepare("SELECT * FROM inventory_batches WHERE id = ?").bind(Number(id)).first();
+  if (!b) throw new HttpError(404, { error: "not_found" });
+  if (b.source === "OPENING") throw new HttpError(409, { error: "opening_cannot_void" });
+  if (b.source !== "PURCHASE") throw new HttpError(409, { error: "not_a_purchase" });
+  if (b.voided_at) throw new HttpError(409, { error: "already_voided" });
+  if (body.version != null && Number(body.version) !== b.version) throw new HttpError(409, { error: "record_changed", version: b.version });
+  if (b.quantity_remaining !== b.quantity_received) throw new HttpError(409, { error: "purchase_used", used: b.quantity_received - b.quantity_remaining });
+  const bal = await getBalance(db, b.product_id), qty = b.quantity_received;
+  if (bal.on_hand - bal.reserved < qty) throw new HttpError(409, { error: "edit_exceeds_available", available: bal.on_hand - bal.reserved, reserved: bal.reserved });
+  const t = now(), v = b.version + 1, actor = ctx.user.username, uid = ctx.user.id, product = b.product_id;
+  const G = { sql: "EXISTS (SELECT 1 FROM inventory_batches WHERE id = ? AND version = ? AND voided_at = ?)", binds: [b.id, v, t] };
+  let res;
+  try {
+    res = await db.batch([
+      db.prepare(`UPDATE inventory_batches SET quantity_remaining = 0, voided_at = ?, voided_by = ?, voided_by_user_id = ?, void_reason = ?, version = ?
+        WHERE id = ? AND version = ? AND voided_at IS NULL AND quantity_remaining = quantity_received`).bind(t, actor, uid, reason, v, b.id, b.version),
+      db.prepare(`UPDATE inventory_balances SET last_delta = ?, on_hand = on_hand - ?, updated_at = ? WHERE product_id = ? AND ${G.sql}`).bind(qty, qty, t, product, ...G.binds),
+      db.prepare(`INSERT INTO inventory_transactions (product_id, type, quantity, batch_id, on_hand_before, on_hand_after, reserved_before, reserved_after, available_before, available_after,
+          cost_halalas, reference, notes, actor, user_id, idempotency_key, created_at)
+        SELECT ?, 'ADJUSTMENT', ?, ?, b.on_hand + ?, b.on_hand, b.reserved, b.reserved, b.on_hand + ? - b.reserved, b.on_hand - b.reserved, ?, 'PURCHASE_VOID', ?, ?, ?, ?, ?
+        FROM inventory_balances b WHERE b.product_id = ? AND ${G.sql}`)
+        .bind(product, qty, b.id, qty, qty, b.total_cost_halalas, `إلغاء شراء #${b.batch_no}: ${reason}`, actor, uid, `purchase-void:${b.id}`, t, product, ...G.binds),
+      auditStmt(env, ctx, "purchase_voided", "inventory_batch", b.id,
+        { batch: b.batch_no, quantity: qty, totalCost: sar(b.total_cost_halalas), receivedDate: b.received_at, supplier: b.supplier || undefined }, { reason },
+        { sql: "EXISTS (SELECT 1 FROM inventory_batches WHERE id = ?11 AND version = ?12 AND voided_at = ?13)", binds: G.binds })
+    ]);
+  } catch (e) {
+    if (/CHECK constraint failed/i.test(e.message)) throw new HttpError(409, { error: "edit_exceeds_available" });
+    throw e;
+  }
+  if (!res[0].meta.changes) throw new HttpError(409, { error: "record_changed" });
+  await checkAlert(db, product);
+  return { ok: true };
+}

@@ -354,8 +354,9 @@ export async function initializeInventory(env, ctx, body) {
   const stmts = [
     db.prepare("INSERT INTO inventory_balances (product_id, on_hand, reserved, sold, last_delta, alert_level, initialized_at, updated_at) VALUES (?, ?, ?, ?, 0, 'NONE', ?, ?)")
       .bind(product, onHand, reserved, sold, t, t),
-    db.prepare(`INSERT INTO inventory_batches (product_id, batch_no, source, received_at, quantity_received, quantity_remaining, total_cost_halalas, notes, created_by, user_id, created_at)
-      VALUES (?, 1, 'OPENING', ?, ?, ?, ?, ?, ?, ?, ?)`).bind(product, date, qty, batch.quantity_remaining, totalCost, notes, actor, userId, t)
+    db.prepare(`INSERT INTO inventory_batches (product_id, batch_no, source, received_at, quantity_received, quantity_remaining, total_cost_halalas, unit_cost_halalas, notes, created_by, user_id, created_at)
+      VALUES (?, 1, 'OPENING', ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(product, date, qty, batch.quantity_remaining, totalCost,
+        totalCost > 0 && totalCost % qty === 0 ? totalCost / qty : null, notes, actor, userId, t)
   ];
   const batchId = "(SELECT id FROM inventory_batches WHERE product_id = ? AND batch_no = 1)";
   for (const x of tx) {
@@ -392,3 +393,32 @@ export function toHalalas(v) {
 }
 export const riyadhDay = iso => new Date(Date.parse(iso) + 3 * 3600e3).toISOString().slice(0, 10);
 export const addDays = (day, n) => new Date(Date.parse(day + "T00:00:00Z") + n * 86400000).toISOString().slice(0, 10);
+// a real calendar day (no 2026-02-30), from 2020 up to today in Riyadh
+export function validDay(d) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d || "")) return false;
+  const t = Date.parse(d + "T00:00:00Z");
+  return !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === d && d >= "2020-01-01" && d <= riyadhDay(nowIso());
+}
+
+/* Riyadh calendar periods → [fromDay, toDay) as YYYY-MM-DD; the week starts on Sunday (Saudi working week).
+   Shared by the finance summary, the expenses list and the purchases list so the same period always means the same rows. */
+export function periodOf(params, fallback = "month") {
+  const today = riyadhDay(nowIso()), range = params.get("range") || fallback;
+  const [y, m] = today.split("-").map(Number), pad = n => String(n).padStart(2, "0");
+  const dow = new Date(today + "T00:00:00Z").getUTCDay();
+  const ranges = {
+    today: [today, addDays(today, 1)],
+    week: [addDays(today, -dow), addDays(today, 7 - dow)],
+    month: [`${y}-${pad(m)}-01`, m === 12 ? `${y + 1}-01-01` : `${y}-${pad(m + 1)}-01`],
+    last_month: [m === 1 ? `${y - 1}-12-01` : `${y}-${pad(m - 1)}-01`, `${y}-${pad(m)}-01`],
+    year: [`${y}-01-01`, `${y + 1}-01-01`],
+    all: ["2000-01-01", addDays(today, 1)]
+  };
+  if (range === "custom") {
+    const f = params.get("from"), t = params.get("to");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(f || "") || !/^\d{4}-\d{2}-\d{2}$/.test(t || "") || f > t) throw new HttpError(422, { error: "validation", fields: { range: "invalid" } });
+    return { range, from: f, to: addDays(t, 1) };
+  }
+  if (!ranges[range]) throw new HttpError(422, { error: "validation", fields: { range: "invalid" } });
+  return { range, from: ranges[range][0], to: ranges[range][1] };
+}
