@@ -4,15 +4,18 @@
    Each order then moves to SHIPPED through the normal steps (RECEIVED → CONFIRMED → PREPARING → SHIPPED, each one in its
    history, the customer notified once, for «تم الشحن»), gets a unique shipment reference, and the carrier's own Excel
    template is filled from the batch (downloadable again at any time). Only orders that can really leave are accepted:
-   not cancelled / failed / delivered / already shipped / on hold / anonymized, and not short of stock.
+   not cancelled / failed / delivered / already shipped / on hold / anonymized. A stock shortage does not block the export
+   (the boxes may be physically there before the receipt is recorded) — it is shown and must be confirmed (allowShortage).
 
    Delivery = per batch: confirm all remaining orders, or the selected ones, as Delivered (or Failed) in one action. It is
-   the usual status change, so stock is consumed (FIFO cost), revenue counts and the history records who confirmed. */
+   the usual status change, so stock is consumed (FIFO cost), revenue counts and the history records who confirmed. A
+   shortage order first takes whatever stock is available now; one still short is skipped until the receipt is recorded. */
 import { HttpError, loadOrder, normalizeOrderNumber, localPhone } from "./orders.js";
 import { allowedTransition } from "./statuses.js";
 import { applyTransition, need, BULK_MAX } from "./admin.js";
 import { audit } from "./auth.js";
 import { getBalance, riyadhDay } from "./inventory.js";
+import { allocateShortage } from "./stock_admin.js";
 import { senaWorkbook } from "./xlsx.js";
 import { SENA_ZONES, SENA_PREP, SENA_MAX_ROWS } from "./sena_template.js";
 
@@ -68,10 +71,9 @@ async function examine(env, ctx, numbers) {
     else if (o.status === "DELIVERED") reason = "delivered";
     else if (["CANCELLED", "FAILED"].includes(o.status)) reason = "closed";
     else if (o.status === "ON_HOLD") reason = "on_hold";
-    else if (res) reason = "shortage";
     else if (!steps.every((s, i) => allowedTransition(ctx.perms, i ? steps[i - 1] : o.status, s) === "normal")) reason = "transition_not_allowed";
     rows.push({ orderNumber: o.order_number, customer: o.customer_name, phone: localPhone(o.customer_phone), city: o.city, district: o.district,
-      boxes: o.boxes, amount: o.total_amount, status: o.status, steps, eligible: !reason, reason, shortage: res ? res.shortage_qty : undefined, createdAt: o.created_at });
+      boxes: o.boxes, amount: o.total_amount, status: o.status, steps, eligible: !reason, reason, shortage: res ? res.shortage_qty : 0, createdAt: o.created_at });
   }
   return rows;
 }
@@ -80,17 +82,23 @@ async function stockPicture(db, selectedBoxes) {
   if (!b) return null;
   // boxes of orders already handed to the carrier are still on hand (sold only when delivered) but no longer in the warehouse
   const t = await db.prepare(`SELECT COALESCE(SUM(r.reserved_qty), 0) n FROM inventory_reservations r JOIN orders o ON o.id = r.order_id
-    WHERE r.status = 'RESERVED' AND o.status IN ('SHIPPED','OUT_FOR_DELIVERY')`).first();
+    WHERE r.status IN ('RESERVED','SHORTAGE') AND o.status IN ('SHIPPED','OUT_FOR_DELIVERY')`).first();
   const inWarehouse = b.on_hand - t.n;
   return { onHand: b.on_hand, reserved: b.reserved, available: b.on_hand - b.reserved, withCarrier: t.n, inWarehouse, selected: selectedBoxes, inWarehouseAfter: inWarehouse - selectedBoxes };
 }
-const totals = rows => { const ok = rows.filter(r => r.eligible); return { orders: ok.length, boxes: ok.reduce((a, r) => a + r.boxes, 0), amount: ok.reduce((a, r) => a + r.amount, 0) }; };
+const totals = rows => {
+  const ok = rows.filter(r => r.eligible), short = ok.filter(r => r.shortage > 0);
+  return { orders: ok.length, boxes: ok.reduce((a, r) => a + r.boxes, 0), amount: ok.reduce((a, r) => a + r.amount, 0),
+    shortageOrders: short.length, shortageBoxes: short.reduce((a, r) => a + r.shortage, 0) };
+};
 
 export async function previewShipment(env, ctx, body) {
   need(ctx, "shipments.manage");
   const rows = await examine(env, ctx, readNumbers(body)), tot = totals(rows);
   const d = riyadhDay(now());
-  return { rows, totals: tot, excluded: rows.filter(r => !r.eligible).length, stock: await stockPicture(env.DB, tot.boxes), settings: await getShippingSettings(env.DB),
+  // everything the admin picked, before exclusions («حدّدت 14 طلب بـ 23 علبة»)
+  const selected = { orders: rows.length, boxes: rows.reduce((a, r) => a + (r.boxes || 0), 0) };
+  return { rows, selected, totals: tot, excluded: rows.filter(r => !r.eligible).length, stock: await stockPicture(env.DB, tot.boxes), settings: await getShippingSettings(env.DB),
     suggestedName: `شحنة سينا ${d}`, max: MAX };
 }
 
@@ -109,6 +117,8 @@ export async function createShipment(env, ctx, body) {
   if (bad.length) throw new HttpError(409, { error: "not_eligible", orders: bad.map(r => ({ orderNumber: r.orderNumber, reason: r.reason, status: r.status })) });
   // what the admin confirmed must still be what is exported
   if (Number(body.expectedCount) !== tot.orders || Number(body.expectedBoxes) !== tot.boxes) throw new HttpError(409, { error: "selection_changed", totals: tot });
+  // shipping more boxes than the system holds is allowed, but only knowingly
+  if (tot.shortageOrders && body.allowShortage !== true) throw new HttpError(409, { error: "shortage_confirmation_required", totals: tot });
 
   const year = riyadhDay(now()).slice(0, 4), t = now();
   let batchId = null;
@@ -150,7 +160,7 @@ export async function createShipment(env, ctx, body) {
   }
   if (!shipped.length) await db.prepare("DELETE FROM shipment_batches WHERE id = ? AND NOT EXISTS (SELECT 1 FROM shipment_orders WHERE batch_id = ?)").bind(batchId, batchId).run();
   await audit(env, ctx, "shipment_exported", "shipment", batch.batch_no, null, { name, orders: shipped.length, boxes: tot.boxes, amount: tot.amount,
-    shipped, failed: failed.map(f => f.orderNumber) });
+    shipped, failed: failed.map(f => f.orderNumber), ...(tot.shortageOrders ? { shortageOrders: rows.filter(r => r.shortage > 0).map(r => r.orderNumber), shortageBoxes: tot.shortageBoxes } : {}) });
   return { replay: false, batch: shipped.length ? await batchSummary(db, batchId) : null, shipped, failed };
 }
 
@@ -194,10 +204,12 @@ export async function shipmentDetail(env, ctx, id) {
   const db = env.DB, batch = await batchSummary(db, Number(id));
   if (!batch) throw new HttpError(404, { error: "not_found" });
   const rows = (await db.prepare(`SELECT s.*, o.order_number, o.customer_name, o.customer_phone, o.city, o.district, o.status, o.anonymized_at,
-      (SELECT MAX(h.created_at) FROM order_status_history h WHERE h.order_id = o.id AND h.new_status = o.status) status_at
+      (SELECT MAX(h.created_at) FROM order_status_history h WHERE h.order_id = o.id AND h.new_status = o.status) status_at,
+      (SELECT COALESCE(SUM(r.shortage_qty), 0) FROM inventory_reservations r WHERE r.order_id = o.id AND r.status = 'SHORTAGE') shortage
     FROM shipment_orders s JOIN orders o ON o.id = s.order_id WHERE s.batch_id = ? ORDER BY s.id`).bind(batch.id).all()).results;
   return { batch, orders: rows.map(r => ({ orderNumber: r.order_number, shipmentRef: r.shipment_ref, customer: r.customer_name, phone: localPhone(r.customer_phone),
-      city: r.city, district: r.district, boxes: r.boxes, amount: r.amount, statusBefore: r.status_before, status: r.status, statusAt: r.status_at, anonymized: !!r.anonymized_at })),
+      city: r.city, district: r.district, boxes: r.boxes, amount: r.amount, statusBefore: r.status_before, status: r.status, statusAt: r.status_at, anonymized: !!r.anonymized_at,
+      shortage: r.shortage })),
     canManage: ctx.perms.has("shipments.manage") };
 }
 
@@ -243,7 +255,11 @@ export async function confirmShipment(env, ctx, id, body) {
     if (o.anonymized_at) { skipped.push({ orderNumber: n, reason: "anonymized", status: o.status }); continue; }
     if (!IN_TRANSIT.includes(o.status) || allowedTransition(ctx.perms, o.status, to) !== "normal") { skipped.push({ orderNumber: n, reason: "transition_not_allowed", status: o.status }); continue; }
     try {
-      await applyTransition(env, ctx, full, to, { note: `${label} — ${b.batch_no}` + (note ? `: ${note}` : ""), visibility: "internal", kind: "normal", bulkId: `${b.batch_no}:${to}` });
+      // shipped short of stock: take what has been received since, so delivery can consume it
+      if (to === "DELIVERED" && await db.prepare("SELECT 1 FROM inventory_reservations WHERE order_id = ? AND status = 'SHORTAGE'").bind(o.id).first()) {
+        try { await allocateShortage(env, ctx, o); } catch (e) { if (!(e instanceof HttpError)) throw e; }
+      }
+      await applyTransition(env, ctx, await loadOrder(db, n), to, { note: `${label} — ${b.batch_no}` + (note ? `: ${note}` : ""), visibility: "internal", kind: "normal", bulkId: `${b.batch_no}:${to}` });
       updated.push(n);
     } catch (e) {
       if (!(e instanceof HttpError)) throw e;

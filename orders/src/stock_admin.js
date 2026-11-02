@@ -231,9 +231,14 @@ export async function setBatchCost(env, ctx, id, body) {
 /* ---------- shortage order: reserve what has arrived since (never changes the order status) ---------- */
 export async function allocateOrder(env, ctx, number) {
   need(ctx, "inventory.manage");
-  const db = env.DB, n = normalizeOrderNumber(number);
-  const o = n && await db.prepare("SELECT * FROM orders WHERE order_number = ?").bind(n).first();
+  const n = normalizeOrderNumber(number);
+  const o = n && await env.DB.prepare("SELECT * FROM orders WHERE order_number = ?").bind(n).first();
   if (!o) throw new HttpError(404, { error: "not_found" });
+  return allocateShortage(env, ctx, o);
+}
+/* also used when a shipped shortage order is confirmed as delivered (permission checked by the caller) */
+export async function allocateShortage(env, ctx, o) {
+  const db = env.DB;
   if (ruleOf(o.status) !== "RESERVE") throw new HttpError(409, { error: "order_not_open" });
   const r = await db.prepare("SELECT * FROM inventory_reservations WHERE order_id = ? AND status = 'SHORTAGE'").bind(o.id).first();
   if (!r) throw new HttpError(409, { error: "no_shortage" });

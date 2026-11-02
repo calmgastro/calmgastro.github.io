@@ -226,7 +226,18 @@ label.f.narrow{max-width:320px}
 .good-text{color:var(--teal)}
 /* الشحن */
 .sel-boxes{font-weight:700; color:var(--teal-deep)}
+.bulkbar .sel-boxes{color:inherit; background:rgba(255,255,255,.18); border-radius:999px; padding:.15em .75em}
 .btn.big{padding:.8em 1.6em; font-size:1rem}
 .warn-card{border-color:#E7B4A8; background:#FFF8F5}
 details.card > summary{cursor:pointer; font-weight:700; color:var(--teal-deep)}
 details.card[open] > summary{margin-bottom:10px}
+.sel-summary{font-size:1.05rem; margin:0 0 12px}
+/* أعمدة قابلة لتغيير العرض */
+.col-grip{position:absolute; top:0; bottom:0; inset-inline-end:0; width:10px; cursor:col-resize; touch-action:none; z-index:2}
+.col-grip::after{content:""; position:absolute; top:24%; bottom:24%; inset-inline-end:3px; width:2px; border-radius:2px; background:var(--line)}
+.col-grip:hover::after, .col-grip:focus-visible::after, .col-grip.dragging::after{background:var(--teal-deep); top:8%; bottom:8%}
+.col-grip:focus-visible{outline:none}
+@media (pointer:coarse){ .col-grip{width:18px} }
+table.cols-fixed{table-layout:fixed}
+table.cols-fixed td, table.cols-fixed th{overflow:hidden; text-overflow:ellipsis}
+html.col-resizing, html.col-resizing *{cursor:col-resize !important; user-select:none}

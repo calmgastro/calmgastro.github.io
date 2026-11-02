@@ -193,9 +193,12 @@ three expense keys and gave the purchase keys to every role that had `inventory.
 
 ## Shipping to the carrier (SENA) — migration `0005`, `src/shipments.js`, `src/xlsx.js`
 
-**Export.** Admin → الطلبات: select orders (the bar shows the boxes selected) → «تصدير لشركة الشحن (سينا)» → review page
-(orders that can ship, boxes leaving the warehouse, warehouse before/after, orders excluded and why: cancelled / failed /
-delivered / already shipped / on hold / short of stock) → export name → «هل أنت متأكد؟». Each order then moves to SHIPPED
+**Export.** Admin → الطلبات: select orders (the bar reads «تم تحديد 14 طلب بـ 23 علبة») → «تصدير لشركة الشحن (سينا)» →
+review page («حدّدت … طلب بـ … علبة», orders that can ship, boxes leaving the warehouse, warehouse before/after, orders
+excluded and why: cancelled / failed / delivered / already shipped / on hold) → export name → «هل أنت متأكد؟».
+A stock shortage does **not** exclude an order (the boxes can be physically there before the receipt is recorded): the
+review lists the orders short of stock and by how much, the confirmation names them, and the API refuses the export
+unless `allowShortage: true` is sent (audited with the orders and boxes short). Each order then moves to SHIPPED
 through the normal steps (RECEIVED → CONFIRMED → PREPARING → SHIPPED, each in its history, tagged with the batch number; the
 customer is notified once, at «تم الشحن»), gets a unique shipment reference, and the batch (`shipment_batches`,
 `shipment_orders`, number `SENA-YYYY-NNNN`, one per click via `request_id`) is saved. The whole selection is refused if
@@ -212,7 +215,12 @@ Items sheet: one line per order item, linked by order number. Regenerate the mod
 **Delivery.** Admin → الشحن → a batch: select orders (or paste the numbers / shipment refs from the carrier's report) →
 «تأكيد التوصيل» / «خرج للتوصيل» / «تعذّر التوصيل» with «هل أنت متأكد؟». Same status change as elsewhere: delivered
 consumes the stock (FIFO) and counts as revenue; failed releases it. Only orders of that batch that are with the carrier
-move. Permission `shipments.manage` (Super Admin, Order Manager) plus the normal status permissions.
+move. An order shipped short of stock first takes what is available now (same allocation as «حجز المتوفر», audited as
+`shortage_allocated`); if stock still does not cover it, it is skipped with the boxes missing and stays shipped until the
+receipt is recorded (Inventory → استلام مخزون), then confirmed again.
+
+**Orders table columns** can be resized by dragging the edge of a header (or ←/→ on the focused edge); widths are kept per
+browser (`localStorage` `cg-cols:orders`), double-click an edge to reset. Permission `shipments.manage` (Super Admin, Order Manager) plus the normal status permissions.
 
 ## Backup and recovery
 
