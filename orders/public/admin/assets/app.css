@@ -215,3 +215,12 @@ tr.row-editing{background:var(--lime)}
 .change-list{margin:4px 0 8px; padding-inline-start:18px} .change-list li{margin:3px 0} .change-list .old{color:var(--muted); text-decoration:line-through}
 .big-out{display:block; font-size:1.05rem; font-weight:700; color:var(--teal-deep); padding:.45em 0}
 label.f.narrow{max-width:320px}
+/* الإيرادات مقابل المصروفات */
+.cmp{display:grid; gap:8px; margin:6px 0 14px}
+.cmp-row{display:grid; grid-template-columns:5.5rem 1fr auto; align-items:center; gap:10px}
+.cmp-track{height:14px; background:var(--grid, #EEF2EF); border-radius:8px; overflow:hidden}
+.cmp-fill{display:block; height:100%; border-radius:8px; min-width:2px}
+.cmp-fill.rev{background:var(--teal)} .cmp-fill.exp{background:var(--orange)}
+.cmp-v{font-variant-numeric:tabular-nums; min-width:6.5rem; text-align:end}
+.cmp-note p{margin:.25em 0}
+.good-text{color:var(--teal)}

@@ -14,6 +14,11 @@
                              quantity × unit cost. Batches without a cost are counted and flagged, never guessed.
    Total spending          = operating expenses + inventory purchases.
 
+   Revenue vs expenses (comparison): revenue − total spending = net profit (cash view: what came in minus everything paid,
+   stock bought but not sold yet included). The accrual net profit above and the value of stock still unsold are returned
+   beside it, so the two views reconcile. A monthly breakdown uses the same rules (revenue by delivery month, expenses by
+   expense date, purchases by purchase date).
+
    Every figure is read from the source rows (expenses, inventory_batches, reservations) at request time; nothing is cached.
    All money is computed in halalas and returned in SAR (2 decimals). */
 import { HttpError, normalizeOrderNumber } from "./orders.js";
@@ -36,7 +41,7 @@ export async function financeSummary(env, ctx, params) {
   const db = env.DB, p = periodOf(params), source = ["WEBSITE", "ADMIN"].includes(params.get("source")) ? params.get("source") : null;
   const fromIso = isoAt(p.from), toIso = isoAt(p.to);
   const src = source ? " AND o.source = ?" : "", sb = source ? [source] : [];
-  const [sales, created, exp, losses, batches, purchases, cats] = await Promise.all([
+  const [sales, created, exp, losses, batches, purchases, cats, mRev, mExp, mPur, open] = await Promise.all([
     db.prepare(`WITH d AS (SELECT order_id, MAX(created_at) at FROM order_status_history WHERE new_status = 'DELIVERED' GROUP BY order_id)
       SELECT COUNT(*) n, COALESCE(SUM(o.total_amount), 0) revenue, COALESCE(SUM(o.boxes), 0) units,
         COALESCE(SUM((SELECT SUM(cogs_halalas) FROM inventory_reservations r WHERE r.order_id = o.id AND r.status = 'COMMITTED')), 0) cogs,
@@ -64,7 +69,19 @@ export async function financeSummary(env, ctx, params) {
       db.prepare(`SELECT source, COUNT(*) n, COALESCE(SUM(quantity_received), 0) units, COALESCE(SUM(total_cost_halalas), 0) value, SUM(total_cost_halalas IS NULL) missing
         FROM inventory_batches WHERE voided_at IS NULL AND source IN ('OPENING','PURCHASE') AND substr(received_at, 1, 10) >= ? AND substr(received_at, 1, 10) < ?
         GROUP BY source`).bind(p.from, p.to).all(),
-    db.prepare("SELECT id, name_ar FROM expense_categories ORDER BY sort").all()
+    db.prepare("SELECT id, name_ar FROM expense_categories ORDER BY sort").all(),
+    // monthly breakdown (Riyadh months)
+    db.prepare(`WITH d AS (SELECT order_id, MAX(created_at) at FROM order_status_history WHERE new_status = 'DELIVERED' GROUP BY order_id)
+      SELECT substr(datetime(d.at, '+3 hours'), 1, 7) m, COALESCE(SUM(o.total_amount), 0) revenue, COUNT(*) n
+      FROM orders o JOIN d ON d.order_id = o.id WHERE o.status = 'DELIVERED' AND d.at >= ? AND d.at < ?${src} GROUP BY m`).bind(fromIso, toIso, ...sb).all(),
+    db.prepare(`SELECT substr(e.expense_date, 1, 7) m, COALESCE(SUM(e.amount_halalas), 0) amount FROM expenses e
+      WHERE e.voided_at IS NULL AND e.expense_date >= ? AND e.expense_date < ?${source ? " AND e.order_id IN (SELECT id FROM orders WHERE source = ?)" : ""} GROUP BY m`).bind(p.from, p.to, ...sb).all(),
+    source ? Promise.resolve({ results: [] }) :
+      db.prepare(`SELECT substr(received_at, 1, 7) m, COALESCE(SUM(total_cost_halalas), 0) value FROM inventory_batches
+        WHERE voided_at IS NULL AND source IN ('OPENING','PURCHASE') AND substr(received_at, 1, 10) >= ? AND substr(received_at, 1, 10) < ? GROUP BY m`).bind(p.from, p.to).all(),
+    // open orders created in the period: not revenue until delivered (cash on delivery)
+    db.prepare(`SELECT COUNT(*) n, COALESCE(SUM(total_amount), 0) value FROM orders o
+      WHERE status IN ('RECEIVED','CONFIRMED','PREPARING','SHIPPED','OUT_FOR_DELIVERY','ON_HOLD') AND created_at >= ? AND created_at < ?${src}`).bind(fromIso, toIso, ...sb).first()
   ]);
   const byCat = Object.fromEntries(exp.results.map(r => [r.category_id, r.amount]));
   const nByCat = Object.fromEntries(exp.results.map(r => [r.category_id, r.n]));
@@ -90,9 +107,27 @@ export async function financeSummary(env, ctx, params) {
       totalSpending: sar(opex + (source ? 0 : purchaseValue)),
       note: source ? "purchases_excluded_with_source" : null
     },
+    comparison: comparisonOf({ revenue, opex, purchaseValue: source ? 0 : purchaseValue, accrualNet: gross - opex - loss, unsold: values.reduce((a, v) => a + (v || 0), 0),
+      unsoldComplete: values.every(v => v != null), open, mRev: mRev.results, mExp: mExp.results, mPur: mPur.results, purchasesIncluded: !source }),
     product: { unitsSold: sales.units || 0, averageSellingPrice: sales.units ? sar(revenue / sales.units) : null,
       averageUnitCost: sales.units && !sales.cogs_missing ? sar(cogs / sales.units) : null,
       inventoryValue: sar(values.reduce((a, v) => a + (v || 0), 0)), inventoryValueComplete: values.every(v => v != null) }
+  };
+}
+
+function comparisonOf(c) {
+  const months = new Map(), row = m => months.get(m) || months.set(m, { month: m, revenue: 0, orders: 0, operating: 0, purchases: 0 }).get(m);
+  for (const r of c.mRev) { row(r.m).revenue += r.revenue * 100; row(r.m).orders += r.n; }
+  for (const r of c.mExp) row(r.m).operating += r.amount;
+  for (const r of c.mPur) row(r.m).purchases += r.value;
+  const total = c.opex + c.purchaseValue;
+  return {
+    revenue: sar(c.revenue), operatingExpenses: sar(c.opex), inventoryPurchases: c.purchasesIncluded ? sar(c.purchaseValue) : null, totalExpenses: sar(total),
+    netProfit: sar(c.revenue - total), margin: c.revenue > 0 ? Math.round((c.revenue - total) / c.revenue * 1000) / 10 : null,
+    accrualNetProfit: sar(c.accrualNet), unsoldStockValue: sar(c.unsold), unsoldStockValueComplete: c.unsoldComplete,
+    openOrders: { count: c.open.n || 0, value: c.open.value || 0 },
+    monthly: [...months.values()].sort((a, b) => a.month < b.month ? -1 : 1).map(r => ({ month: r.month, orders: r.orders, revenue: sar(r.revenue), operating: sar(r.operating),
+      purchases: sar(r.purchases), totalExpenses: sar(r.operating + r.purchases), net: sar(r.revenue - r.operating - r.purchases) }))
   };
 }
 

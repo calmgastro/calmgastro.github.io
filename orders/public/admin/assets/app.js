@@ -793,7 +793,7 @@ async function pageReports() {
     h("optgroup", { label: "حالة واحدة" }, ORDER.map(s => h("option", { value: s, text: STATUS[s], selected: s === stv }))));
   stSel.addEventListener("change", () => go(link(days, city, stSel.value)));
   put(main, h("div", { class: "page-head" }, h("h1", { text: "التقارير" }), h("div", { class: "row" }, stSel, citySelect(city, v => go(link(days, v))), sel,
-      can("finance.view") ? h("a", { class: "btn ghost sm", href: "#spending", text: "المصاريف والمشتريات ↓", onclick: e => { e.preventDefault(); const t = $("#spending"); if (t) t.scrollIntoView({ behavior: "smooth" }); } }) : null)),
+      can("finance.view") ? h("a", { class: "btn ghost sm", href: "#spending", text: "الإيرادات والمصروفات والربح ↓", onclick: e => { e.preventDefault(); const t = $("#spending"); if (t) t.scrollIntoView({ behavior: "smooth" }); } }) : null)),
     h("p", { class: "muted", text: "جارٍ التحميل…" }));
   let d; try { d = await api(withCity("/reports?days=" + days + (stv !== "valid" ? "&st=" + encodeURIComponent(stv) : ""), city)); } catch (e) { if (e.message !== "unauthorized") main.lastChild.textContent = errText(e); return; }
   main.lastChild.remove();
@@ -1447,24 +1447,40 @@ function purchaseEditCard(d, b, nav) {
     h("div", { class: "row" }, btn, h("button", { type: "button", class: "btn ghost", text: "إلغاء التعديل", onclick: () => nav({}) })));
 }
 
-/* ---------- التقارير: المصاريف التشغيلية + قيمة شراء المخزون ---------- */
+/* ---------- التقارير: الإيرادات مقابل المصروفات → صافي الربح ---------- */
 function spendingSection(box) {
-  const state = { range: "month" };
+  const state = { range: "all" };                       // منذ البداية: يشمل الرصيد الافتتاحي ولو كان تاريخه في شهر سابق
   const body = h("div", null, h("p", { class: "muted", text: "جارٍ التحميل…" }));
   const card = h("section", { class: "card", id: "spending" },
-    h("div", { class: "page-head" }, h("h2", { text: "المصاريف ومشتريات المخزون" }), h("div", { class: "row" }, rangePicker(state, v => { Object.assign(state, v); load(); }))), body);
+    h("div", { class: "page-head" }, h("h2", { text: "الإيرادات والمصروفات وصافي الربح" }), h("div", { class: "row" }, rangePicker(state, v => { Object.assign(state, v); load(); }))), body);
   const load = async () => {
     const qs = new URLSearchParams({ range: state.range }); if (state.range === "custom") { qs.set("from", state.from || ""); qs.set("to", state.to || ""); }
     let d; try { d = await api("/finance/summary?" + qs); } catch (e) { if (e.message !== "unauthorized") body.textContent = fieldsText(e); return; }
-    const X = d.spending, P = X.purchases, rq = "?range=" + state.range + (state.range === "custom" ? `&from=${state.from}&to=${state.to}` : "");
+    const C = d.comparison, X = d.spending, P = X.purchases, rq = "?range=" + state.range + (state.range === "custom" ? `&from=${state.from}&to=${state.to}` : "");
+    const max = Math.max(1, C.revenue, C.totalExpenses), bar = (label, v, cls) => h("div", { class: "cmp-row" }, h("span", { class: "cmp-l", text: label }),
+      h("span", { class: "cmp-track" }, h("span", { class: "cmp-fill " + cls, "data-w": v / max })), h("b", { class: "cmp-v", text: sarF(v) }));
     body.textContent = "";
     put(body,
-      h("p", { class: "muted small", text: `الفترة: ${d.period.range === "all" ? "كل الفترات" : d.period.from + " → " + d.period.to} · حسب تاريخ المصروف وتاريخ الشراء · السجلات الملغاة لا تُحسب.` }),
+      h("p", { class: "muted small", text: `الفترة: ${d.period.range === "all" ? "كل الفترات (منذ البداية)" : d.period.from + " → " + d.period.to} · الإيرادات = الطلبات المُسلَّمة (الدفع عند الاستلام) · الملغاة لا تُحسب.` }),
+      h("div", { class: "tiles" },
+        tile2("الإيرادات", sarF(C.revenue), `${fmtN(d.sales.deliveredInPeriod)} طلب مُسلَّم`),
+        tile2("إجمالي المصروفات", sarF(C.totalExpenses), "التشغيلية + شراء المخزون"),
+        tile2("صافي الربح", sarF(C.netProfit), C.margin == null ? "الإيرادات − إجمالي المصروفات" : `هامش ${C.margin}% من الإيرادات`, C.netProfit < 0 ? "tile-warn" : "tile-good tile-total")),
+      h("div", { class: "cmp" }, bar("الإيرادات", C.revenue, "rev"), bar("المصروفات", C.totalExpenses, "exp")),
       h("div", { class: "tiles" },
         tile2("المصاريف التشغيلية", sarF(X.operatingExpenses), `${fmtN(X.operatingCount)} مصروف`),
-        tile2("قيمة شراء المخزون", sarF(X.inventoryPurchases), `${fmtN(P.count)} عملية · ${fmtN(P.units)} علبة`),
-        tile2("إجمالي المصاريف", sarF(X.totalSpending), "التشغيلية + شراء المخزون", "tile-total")),
-      P.missingCost ? h("p", { class: "warn-box", text: `${P.missingCost} عملية شراء بلا سعر وحدة — قيمتها غير محسوبة في الإجمالي. أدخل السعر من «سجل المشتريات».` }) : null,
+        tile2("قيمة شراء المخزون", sarF(X.inventoryPurchases), `${fmtN(P.count)} عملية · ${fmtN(P.units)} علبة`)),
+      P.missingCost ? h("p", { class: "warn-box", text: `${P.missingCost} عملية شراء بلا سعر وحدة — قيمتها غير محسوبة في المصروفات. أدخل السعر من «سجل المشتريات».` }) : null,
+      h("div", { class: "note-box cmp-note" },
+        h("p", null, "مخزون اشتريته ولم يُبع بعد: ", h("b", { text: sarF(C.unsoldStockValue) }), " — دُفع ثمنه ضمن المصروفات، ويعود إيراداً عند بيعه."),
+        h("p", null, "صافي الربح المحاسبي (يحسب تكلفة العلب المباعة فقط بدل كل المشتريات): ", h("b", { text: sarF(C.accrualNetProfit) })),
+        C.openOrders.count ? h("p", null, `طلبات مفتوحة لم تُسلَّم بعد: ${fmtN(C.openOrders.count)} طلب بقيمة `, h("b", { text: sarF(C.openOrders.value) }), " — تُضاف للإيرادات عند التسليم.") : null),
+      h("h3", { text: "المقارنة شهرياً" }),
+      tbl(["الشهر", "طلبات مُسلَّمة", "الإيرادات", "المصاريف التشغيلية", "شراء المخزون", "إجمالي المصروفات", "صافي الربح"],
+        C.monthly.length ? [...C.monthly.map(m => [m.month, fmtN(m.orders), sarF(m.revenue), sarF(m.operating), sarF(m.purchases), sarF(m.totalExpenses),
+          h("b", { class: m.net < 0 ? "danger-text" : "good-text", text: sarF(m.net) })]),
+          [h("b", { text: "الإجمالي" }), fmtN(d.sales.deliveredInPeriod), h("b", { text: sarF(C.revenue) }), sarF(C.operatingExpenses), sarF(C.inventoryPurchases), h("b", { text: sarF(C.totalExpenses) }),
+            h("b", { class: C.netProfit < 0 ? "danger-text" : "good-text", text: sarF(C.netProfit) })]] : []),
       h("div", { class: "o-grid" },
         h("div", null, h("h3", { text: "المصاريف التشغيلية حسب الفئة" }),
           tbl(["الفئة", "العدد", "المبلغ"], [...X.byCategory.map(c => [c.name, fmtN(c.count), sarF(c.amount)]), ...(X.byCategory.length ? [[h("b", { text: "الإجمالي" }), fmtN(X.operatingCount), h("b", { text: sarF(X.operatingExpenses) })]] : [])])),
@@ -1472,9 +1488,9 @@ function spendingSection(box) {
           tbl(["النوع", "العدد", "العلب", "القيمة"], P.count ? [["مشتريات", fmtN(P.purchased.count), fmtN(P.purchased.units), sarF(P.purchased.value)],
             ...(P.opening.count ? [["الرصيد الافتتاحي", fmtN(P.opening.count), fmtN(P.opening.units), sarF(P.opening.value)]] : []),
             [h("b", { text: "الإجمالي" }), fmtN(P.count), fmtN(P.units), h("b", { text: sarF(X.inventoryPurchases) })]] : []))),
-      h("p", { class: "muted small", text: "إجمالي المصاريف = المصاريف التشغيلية + قيمة شراء المخزون (ما دُفع في الفترة). صافي الربح في لوحة المعلومات لا يطرح قيمة الشراء مرة ثانية: تكلفة العلب تدخل الربح عند بيعها (الوارد أولاً يُصرف أولاً)." }),
       h("div", { class: "row" }, h("a", { class: "btn ghost sm", href: "/admin/expenses" + rq, "data-link": true, text: "تفاصيل المصاريف" }),
         can("inventory.view") ? h("a", { class: "btn ghost sm", href: "/admin/inventory?tab=receive&" + rq.slice(1), "data-link": true, text: "سجل المشتريات" }) : null));
+    body.querySelectorAll(".cmp-fill[data-w]").forEach(f => { f.style.width = (Number(f.dataset.w) * 100) + "%"; });
   };
   onFinanceChange(card, load);
   put(box, card);
