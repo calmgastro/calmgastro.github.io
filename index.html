@@ -135,6 +135,19 @@
   .hero h1 em{font-style:normal; color:var(--orange); display:block}
   .hero .lede{font-size:clamp(1.05rem,1.6vw,1.2rem); color:var(--muted); margin:1.25rem 0 1.75rem; max-width:34em}
   .hero .lede strong{color:var(--ink)}
+  /* العبارة الجاذبة تحت العنوان: بديل طبيعي لفكرة بالون المعدة */
+  .hero-hook{display:flex; align-items:center; gap:.8rem; margin:1.1rem 0 0; padding:.75rem 1rem; max-width:34em;
+    background:linear-gradient(90deg, rgba(242,148,27,.13), rgba(242,148,27,.04)); border:1.5px solid rgba(242,148,27,.45);
+    border-inline-start:5px solid var(--orange); border-radius:16px; animation:hookIn .7s .15s both}
+  .hero-hook .hook-ic{flex:none; display:grid; place-items:center; width:2.6rem; height:2.6rem; border-radius:50%; background:var(--orange); color:#fff;
+    box-shadow:0 0 0 0 rgba(242,148,27,.5); animation:hookPulse 2.6s 1s ease-out 3}
+  .hero-hook .hook-ic svg{width:1.35rem; height:1.35rem}
+  .hero-hook .hook-txt{display:flex; flex-direction:column; gap:.15rem; min-width:0}
+  .hero-hook b{font-size:clamp(1.12rem, 2vw, 1.4rem); font-weight:800; color:var(--teal-deep); line-height:1.35}
+  .hero-hook small{font-size:.9rem; color:var(--muted); line-height:1.5}
+  @keyframes hookIn{from{opacity:0; transform:translateY(8px)} to{opacity:1; transform:none}}
+  @keyframes hookPulse{0%{box-shadow:0 0 0 0 rgba(242,148,27,.5)} 70%{box-shadow:0 0 0 12px rgba(242,148,27,0)} 100%{box-shadow:0 0 0 0 rgba(242,148,27,0)}}
+  @media (prefers-reduced-motion:reduce){.hero-hook, .hero-hook .hook-ic{animation:none}}
   .cta-row{display:flex; flex-wrap:wrap; gap:.9rem; align-items:center}
   .hero-media{position:relative}
   .hero-card{
@@ -1004,6 +1017,7 @@
     .hero-copy{display:flex; flex-direction:column}
     .hero-copy .eyebrow{align-self:flex-start}
     .hero-copy .lede{order:3; margin:1rem 0 0}
+    .hero-copy .hero-hook{order:2; margin-top:.9rem}
     .hero-copy .cta-row{order:4; margin-top:1.3rem}
     .steps, .timeline, .plan, .idea{grid-template-columns:1fr; gap:16px}
     .tl{padding:0}
@@ -1128,7 +1142,8 @@
     <div class="hero-copy">
       <span class="eyebrow">Slim from inside</span>
       <h1>طفشت <em>من الرجيم؟</em></h1>
-      <p class="lede">تبدأ دايت… وبعد كم يوم يصعب عليك الاستمرار؟<br>يمكن مو محتاج دايت جديد… محتاج طريقة أسهل للالتزام.<br>مع CalmGastro، أضف خطوة بسيطة لروتينك وابدأ رحلتك نحو وزن أخف.<br><strong>لا تبدأ من جديد… ابدأ بطريقة مختلفة.</strong><br>جرّب CalmGastro اليوم.</p>
+      <p class="hero-hook"><span class="hook-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></svg></span><span class="hook-txt"><b>بديل طبيعي لفكرة بالون المعدة</b><small>ألياف كونجاك طبيعية تتمدد مع الماء لتمنحك إحساس الامتلاء · ظرف واحد يومياً</small></span></p>
+      <p class="lede">اكتشف CalmGastro: تركيبة ألياف الكونجاك تدعم الشبع وتساعدك على التحكم بشهيتك في رحلة التنحيف.<br><strong>التنحيف بذكاء… وليس بحرمان.</strong><br>صممنا CalmGastro ليغيّر مفهوم التنحيف.</p>
       <div class="cta-row">
         <a href="#order" class="btn btn-primary">اطلب CalmGastro الآن</a>
         <a href="#" class="btn btn-ghost js-wa">
@@ -1711,7 +1726,7 @@
 }
 </script>
 
-<script src="assets/i18n-en.js?v=20261031a"></script>
+<script src="assets/i18n-en.js?v=20261102a"></script>
 <script src="assets/app.js?v=20261031a"></script>
 <script src="assets/shop.js?v=20261031b"></script>
 <!-- إشعارات عائمة: الإعدادات ← البيانات ← العرض ← الإدارة (assets/notifications/) -->

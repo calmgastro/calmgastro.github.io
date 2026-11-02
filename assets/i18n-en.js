@@ -40,7 +40,7 @@ window.I18N_EN = {
   "الأسئلة الشائعة": "FAQ",
   "اطلب الآن": "Order now",
   "طفشت <em>من الرجيم؟</em>": "Tired of <em>dieting?</em>",
-  "تبدأ دايت… وبعد كم يوم يصعب عليك الاستمرار؟<br>يمكن مو محتاج دايت جديد… محتاج طريقة أسهل للالتزام.<br>مع CalmGastro، أضف خطوة بسيطة لروتينك وابدأ رحلتك نحو وزن أخف.<br><strong>لا تبدأ من جديد… ابدأ بطريقة مختلفة.</strong><br>جرّب CalmGastro اليوم.": "Started a diet… and a few days in it's hard to keep going?<br>Maybe you don't need a new diet… you need an easier way to stick with it.<br>With CalmGastro, add one simple step to your routine and start your journey to a lighter weight.<br><strong>Don't start over… start differently.</strong><br>Try CalmGastro today.",
+  "اكتشف CalmGastro: تركيبة ألياف الكونجاك تدعم الشبع وتساعدك على التحكم بشهيتك في رحلة التنحيف.<br><strong>التنحيف بذكاء… وليس بحرمان.</strong><br>صممنا CalmGastro ليغيّر مفهوم التنحيف.": "Discover CalmGastro: its konjac-fiber formula supports fullness and helps you control your appetite on your slimming journey.<br><strong>Slim smart… not by starving.</strong><br>We designed CalmGastro to change what slimming means.",
   "<b class=\"num\">30</b><span>ظرف تكفي شهراً</span>": "<b class=\"num\">30</b><span>sachets last a month</span>",
   "<b><span class=\"num\">2000</span> ملغ</b><span>ألياف كونجاك بكل ظرف</span>": "<b><span class=\"num\">2000</span> mg</b><span>konjac fiber per sachet</span>",
   "<b>ليمون وفراولة</b><span>نكهة منعشة بلا مرارة</span>": "<b>Lemon &amp; strawberry</b><span>refreshing, never bitter</span>",
@@ -202,6 +202,8 @@ window.I18N_EN = {
   "للطلب بالجملة تواصل عبر الإيميل: <a href=\"mailto:info@vitamik.com?subject=%D8%A7%D8%B3%D8%AA%D9%81%D8%B3%D8%A7%D8%B1%20%D8%B9%D9%86%20%D8%B7%D9%84%D8%A8%20%D8%A8%D8%A7%D9%84%D8%AC%D9%85%D9%84%D8%A9%20-%20CalmGastro\" dir=\"ltr\">info@vitamik.com</a>": "For wholesale orders, email us: <a href=\"mailto:info@vitamik.com?subject=Wholesale%20inquiry%20-%20CalmGastro\" dir=\"ltr\">info@vitamik.com</a>"
  },
  "text": {
+  "بديل طبيعي لفكرة بالون المعدة": "A natural alternative to the gastric-balloon idea",
+  "ألياف كونجاك طبيعية تتمدد مع الماء لتمنحك إحساس الامتلاء · ظرف واحد يومياً": "Natural konjac fiber swells with water to give you a feeling of fullness · one sachet a day",
   "تمثيل توضيحي متحرك. النتائج تختلف من شخص لآخر، مع الاستمرار على نمط غذائي متوازن ونشاط بدني خفيف.": "Illustrative animation. Results vary from person to person, with a steady balanced diet and light physical activity.",
   "شاهد ماذا يحدث لدهونك العنيدة عندما يدخل كالم كاسترو إلى جسمك!": "See what happens to your stubborn fat when CalmGastro enters your body!",
   "الملصق الخلفي للعلبة كما هو": "The box back label, as printed",
