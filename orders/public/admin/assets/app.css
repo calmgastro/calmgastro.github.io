@@ -224,3 +224,9 @@ label.f.narrow{max-width:320px}
 .cmp-v{font-variant-numeric:tabular-nums; min-width:6.5rem; text-align:end}
 .cmp-note p{margin:.25em 0}
 .good-text{color:var(--teal)}
+/* الشحن */
+.sel-boxes{font-weight:700; color:var(--teal-deep)}
+.btn.big{padding:.8em 1.6em; font-size:1rem}
+.warn-card{border-color:#E7B4A8; background:#FFF8F5}
+details.card > summary{cursor:pointer; font-weight:700; color:var(--teal-deep)}
+details.card[open] > summary{margin-bottom:10px}

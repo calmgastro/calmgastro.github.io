@@ -17,7 +17,7 @@ const DAY = 86400000;
 
 /* ---------- navigation for the signed-in admin (sidebar shows only what the role may open) ---------- */
 const NAV = [
-  ["dashboard", "dashboard.view"], ["orders", "orders.view"], ["inventory", "inventory.view"], ["expenses", ["finance.view", "expenses.create", "expenses.edit", "expenses.void"]],
+  ["dashboard", "dashboard.view"], ["orders", "orders.view"], ["shipments", "shipments.manage"], ["inventory", "inventory.view"], ["expenses", ["finance.view", "expenses.create", "expenses.edit", "expenses.void"]],
   ["customers", "customers.view"], ["products", "products.view"], ["reports", "reports.view"], ["audit", "audit.view"], ["users", "users.manage"], ["settings", null]
 ];
 export function me(ctx) {
@@ -53,6 +53,10 @@ function orderFilter(params, spellings = null) {
   const status = params.get("status");
   if (STATUSES.includes(status)) add("o.status = ?", status);
   else if (status === "OPEN") where.push("o.status IN ('RECEIVED','CONFIRMED','PREPARING','SHIPPED','OUT_FOR_DELIVERY','ON_HOLD')");
+  else if (status === "TO_SHIP") where.push("o.status IN ('RECEIVED','CONFIRMED','PREPARING')");
+  else if (status === "WITH_CARRIER") where.push("o.status IN ('SHIPPED','OUT_FOR_DELIVERY')");
+  const shipment = parseInt(params.get("shipment"), 10);
+  if (shipment > 0) add("EXISTS (SELECT 1 FROM shipment_orders so WHERE so.order_id = o.id AND so.batch_id = ?)", shipment);
   const payment = params.get("payment");
   if (payment === "cod") add("o.payment_method = ?", payment);
   const source = params.get("source");
@@ -113,10 +117,10 @@ export async function matchingNumbers(env, ctx, params) {
   need(ctx, "orders.view");
   const f = await filterFor(env, params);
   const [rows, count] = await Promise.all([
-    env.DB.prepare(`SELECT o.order_number FROM orders o ${f.sql} ORDER BY o.id DESC LIMIT ${BULK_MAX}`).bind(...f.binds).all(),
+    env.DB.prepare(`SELECT o.order_number, o.boxes FROM orders o ${f.sql} ORDER BY o.id DESC LIMIT ${BULK_MAX}`).bind(...f.binds).all(),
     env.DB.prepare(`SELECT COUNT(*) AS n FROM orders o ${f.sql}`).bind(...f.binds).first()
   ]);
-  return { numbers: rows.results.map(r => r.order_number), total: count.n, max: BULK_MAX };
+  return { numbers: rows.results.map(r => r.order_number), boxes: Object.fromEntries(rows.results.map(r => [r.order_number, r.boxes])), total: count.n, max: BULK_MAX };
 }
 
 /* ---------- CSV export (respects the filters; formulas neutralised for Excel) ---------- */
@@ -147,13 +151,14 @@ async function getOrderOr404(env, number) {
 export async function orderDetail(env, ctx, number) {
   need(ctx, "orders.view");
   const full = await getOrderOr404(env, number), o = full.order, fin = ctx.perms.has("finance.view");
-  const [notes, auditRows, reservations, invTx] = await Promise.all([
+  const [notes, auditRows, reservations, invTx, shipments] = await Promise.all([
     env.DB.prepare("SELECT note, created_by, created_at FROM order_notes WHERE order_id = ?1 ORDER BY id").bind(o.id).all(),
     ctx.perms.has("audit.view") || ctx.perms.has("orders.edit_customer")
       ? env.DB.prepare("SELECT username, action, old_value, new_value, created_at FROM audit_logs WHERE entity_type = 'order' AND entity_id = ?1 ORDER BY id DESC LIMIT 200").bind(o.order_number).all()
       : Promise.resolve({ results: [] }),
     ctx.perms.has("inventory.view") ? env.DB.prepare("SELECT * FROM inventory_reservations WHERE order_id = ?1").bind(o.id).all() : Promise.resolve({ results: [] }),
-    ctx.perms.has("inventory.view") ? env.DB.prepare("SELECT * FROM inventory_transactions WHERE order_id = ?1 ORDER BY id").bind(o.id).all() : Promise.resolve({ results: [] })
+    ctx.perms.has("inventory.view") ? env.DB.prepare("SELECT * FROM inventory_transactions WHERE order_id = ?1 ORDER BY id").bind(o.id).all() : Promise.resolve({ results: [] }),
+    env.DB.prepare("SELECT s.shipment_ref, s.created_at, b.id, b.batch_no, b.name FROM shipment_orders s JOIN shipment_batches b ON b.id = s.batch_id WHERE s.order_id = ?1 ORDER BY s.id").bind(o.id).all()
   ]);
   const delivered = o.status === "DELIVERED", closed = ["CANCELLED", "FAILED"].includes(o.status);
   return {
@@ -169,6 +174,7 @@ export async function orderDetail(env, ctx, number) {
       unitPrice: i.unit_price, priceOverridden: !!i.price_overridden, quantity: i.quantity, lineTotal: i.line_total })),
     history: full.history.map(h => ({ from: h.previous_status, to: h.new_status, by: h.changed_by, note: h.note, visibility: h.visibility, bulk: !!h.bulk_id, at: h.created_at })),
     notes: notes.results.map(x => ({ note: x.note, by: x.created_by, at: x.created_at })),
+    shipments: shipments.results.map(r => ({ batchId: r.id, batchNo: r.batch_no, name: r.name, shipmentRef: r.shipment_ref, at: r.created_at })),
     audit: auditRows.results.map(a => ({ by: a.username, action: a.action, old: a.old_value, new: a.new_value, at: a.created_at })),
     inventory: ctx.perms.has("inventory.view") ? {
       reservations: reservations.results.map(r => ({ product: r.product_id, status: r.status, requested: r.requested_qty, reserved: r.reserved_qty, shortage: r.shortage_qty,
@@ -187,7 +193,7 @@ export async function orderDetail(env, ctx, number) {
    The order update, its history, the customer notification and every stock movement are one transaction. The stock
    statements are guarded by the new (status, updated_at) the same transaction writes, so a duplicated, retried or
    concurrent request can never reserve, release or consume twice. */
-async function applyTransition(env, ctx, full, to, { note, visibility, kind, bulkId = null }) {
+export async function applyTransition(env, ctx, full, to, { note, visibility, kind, bulkId = null, notify = true }) {
   const o = full.order, db = env.DB;
   const msg = notifyMessage(to, o.lang, o.order_number) + (visibility === "customer" && note ? " " + note : "");
   let t;
@@ -203,7 +209,7 @@ async function applyTransition(env, ctx, full, to, { note, visibility, kind, bul
       // each insert runs only if the update above changed the row, so a lost race writes nothing
       db.prepare(`INSERT INTO order_status_history (order_id, previous_status, new_status, changed_by, user_id, note, visibility, bulk_id, ip_address, user_agent, created_at)
         SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11 WHERE changes() = 1`).bind(o.id, o.status, to, ctx.user.username, ctx.user.id, note, visibility, bulkId, ctx.ip, (ctx.ua || "").slice(0, 300), t),
-      db.prepare("INSERT INTO notification_outbox (order_id, event, lang, message, created_at) SELECT ?1, ?2, ?3, ?4, ?5 WHERE changes() = 1").bind(o.id, to, o.lang, msg, t),
+      ...(notify ? [db.prepare("INSERT INTO notification_outbox (order_id, event, lang, message, created_at) SELECT ?1, ?2, ?3, ?4, ?5 WHERE changes() = 1").bind(o.id, to, o.lang, msg, t)] : []),
       ...inv,
       ...(bulkId ? [] : [auditStmt(env, ctx, to === "CANCELLED" ? "order_cancelled" : "order_status_changed", "order", o.order_number, { status: o.status }, { status: to, note, visibility, override: kind === "override" })])
     ];
@@ -669,8 +675,8 @@ export async function backup(env, ctx) {
   need(ctx, "settings.manage");
   const tables = ["orders", "order_items", "order_status_history", "order_notes", "notification_outbox", "order_counters", "audit_logs", "roles", "permissions", "role_permissions", "catalog_cache",
     "customers", "products", "inventory_settings", "inventory_balances", "inventory_batches", "inventory_reservations", "inventory_consumptions", "inventory_adjustments",
-    "inventory_transactions", "inventory_alerts", "expense_categories", "expenses"];
-  const out = { exportedAt: now(), exportedBy: ctx.user.username, schema: "0004", tables: {} };
+    "inventory_transactions", "inventory_alerts", "expense_categories", "expenses", "shipping_settings", "shipment_batches", "shipment_orders"];
+  const out = { exportedAt: now(), exportedBy: ctx.user.username, schema: "0005", tables: {} };
   for (const t of tables) out.tables[t] = (await env.DB.prepare(`SELECT * FROM ${t} ORDER BY rowid LIMIT 100000`).all()).results;
   out.tables.users = (await env.DB.prepare("SELECT id, username, display_name, role_id, is_active, created_at, updated_at FROM users ORDER BY id").all()).results;
   await audit(env, ctx, "backup_downloaded", "system", null, null, Object.fromEntries(Object.entries(out.tables).map(([k, v]) => [k, v.length])));

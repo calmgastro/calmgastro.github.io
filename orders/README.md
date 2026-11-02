@@ -191,6 +191,29 @@ spending) · `expenses.create|edit|void` · `orders.create` · `orders.discount`
 Order Manager: inventory.view, orders.create · Support Agent: orders.create. (`0004` replaced `expenses.manage` with the
 three expense keys and gave the purchase keys to every role that had `inventory.manage`.)
 
+## Shipping to the carrier (SENA) — migration `0005`, `src/shipments.js`, `src/xlsx.js`
+
+**Export.** Admin → الطلبات: select orders (the bar shows the boxes selected) → «تصدير لشركة الشحن (سينا)» → review page
+(orders that can ship, boxes leaving the warehouse, warehouse before/after, orders excluded and why: cancelled / failed /
+delivered / already shipped / on hold / short of stock) → export name → «هل أنت متأكد؟». Each order then moves to SHIPPED
+through the normal steps (RECEIVED → CONFIRMED → PREPARING → SHIPPED, each in its history, tagged with the batch number; the
+customer is notified once, at «تم الشحن»), gets a unique shipment reference, and the batch (`shipment_batches`,
+`shipment_orders`, number `SENA-YYYY-NNNN`, one per click via `request_id`) is saved. The whole selection is refused if
+anything changed since the review (`expectedCount` / `expectedBoxes`).
+
+**The file** (`GET /shipments/{id}/file.xlsx`, downloadable again any time, counted and audited) is the carrier's own
+template filled: `src/sena_template.js` is generated from their .xlsx by `build_sena_template.py` (all sheets, dropdown
+lists, zones, hidden options sheet and instructions kept; the 2,495 per-cell copies of their 5 validation rules written as
+5 ranges). Columns: name · city · zone (from their list, setting) · address (district, address, delivery note, map link) ·
+mobile 05… (text) · order number · shipment ref · amount to collect · weight (boxes × box weight, setting) · national
+address (detected when the customer wrote a short code like RRRD2929) · «الشحنة مجهزة من التاجر» · 0 bags/bubbles/cartons.
+Items sheet: one line per order item, linked by order number. Regenerate the module if the carrier changes the template.
+
+**Delivery.** Admin → الشحن → a batch: select orders (or paste the numbers / shipment refs from the carrier's report) →
+«تأكيد التوصيل» / «خرج للتوصيل» / «تعذّر التوصيل» with «هل أنت متأكد؟». Same status change as elsewhere: delivered
+consumes the stock (FIFO) and counts as revenue; failed releases it. Only orders of that batch that are with the carrier
+move. Permission `shipments.manage` (Super Admin, Order Manager) plus the normal status permissions.
+
 ## Backup and recovery
 
 - D1 **Time Travel**: restore the database to any minute of the last 7 days (free plan):

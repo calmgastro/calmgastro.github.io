@@ -9,6 +9,7 @@ import { login, completeMfa, loadSession, revokeCurrent, clearCookie, setup, set
 import * as A from "./admin.js";
 import * as S from "./stock_admin.js";
 import * as F from "./finance.js";
+import * as SH from "./shipments.js";
 
 const MAX_BODY = 16 * 1024;
 // browser family only, for diagnosing "works on X, fails on Y" reports
@@ -162,6 +163,11 @@ async function adminApi(request, env, url) {
     case "POST /inventory/adjustments": return json(await S.adjustStock(env, ctx, body));
     case "POST /inventory/settings": return json(await S.saveSettings(env, ctx, body));
     case "GET /inventory/purchases": return json(await S.listPurchases(env, ctx, p));
+    case "GET /shipments": return json(await SH.listShipments(env, ctx, p));
+    case "POST /shipments": return json(await SH.createShipment(env, ctx, body));
+    case "POST /shipments/preview": return json(await SH.previewShipment(env, ctx, body));
+    case "GET /shipments/settings": return json(await SH.shippingSettings(env, ctx));
+    case "POST /shipments/settings": return json(await SH.saveShippingSettings(env, ctx, body));
     case "GET /finance/summary": return json(await F.financeSummary(env, ctx, p));
     case "GET /expenses": return json(await F.expenseList(env, ctx, p));
     case "POST /expenses": return json(await F.createExpense(env, ctx, body));
@@ -179,6 +185,14 @@ async function adminApi(request, env, url) {
   if (m && method === "POST") return json(await F.voidExpense(env, ctx, m[1], body));
   m = path.match(/^\/expenses\/(\d{1,9})$/);
   if (m && method === "POST") return json(await F.editExpense(env, ctx, m[1], body));
+  m = path.match(/^\/shipments\/(\d{1,9})(?:\/(confirm|file\.xlsx))?$/);
+  if (m && method === "GET" && !m[2]) return json(await SH.shipmentDetail(env, ctx, m[1]));
+  if (m && method === "POST" && m[2] === "confirm") return json(await SH.confirmShipment(env, ctx, m[1], body));
+  if (m && method === "GET" && m[2] === "file.xlsx") {
+    const f = await SH.shipmentFile(env, ctx, m[1]);
+    return new Response(f.bytes, { headers: { ...BASE_HEADERS, "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "Content-Disposition": `attachment; filename="${f.fileName}"; filename*=UTF-8''${encodeURIComponent(f.displayName)}` } });
+  }
   m = path.match(/^\/inventory\/purchases\/(\d{1,9})(\/void)?$/);
   if (m && method === "POST") return json(await (m[2] ? S.voidPurchase : S.editPurchase)(env, ctx, m[1], body));
   m = path.match(/^\/inventory\/alerts\/(\d{1,9})\/ack$/);
