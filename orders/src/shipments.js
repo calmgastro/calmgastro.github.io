@@ -11,7 +11,7 @@
    Delivery = per batch: confirm all remaining orders, or the selected ones, as Delivered (or Failed) in one action. It is
    the usual status change, so stock is consumed (FIFO cost), revenue counts and the history records who confirmed. A
    shortage order first takes whatever stock is available now; one still short is skipped until the receipt is recorded. */
-import { HttpError, loadOrder, normalizeOrderNumber, localPhone } from "./orders.js";
+import { HttpError, loadOrder, normalizeOrderNumber, localPhone, normalizeNationalAddress } from "./orders.js";
 import { allowedTransition } from "./statuses.js";
 import { applyTransition, need, BULK_MAX } from "./admin.js";
 import { audit } from "./auth.js";
@@ -31,7 +31,22 @@ const canView = ctx => { if (!ctx.perms.has("shipments.manage") && !ctx.perms.ha
 /* ---------- settings (zone, preparation source, weight of one box) ---------- */
 export async function getShippingSettings(db) {
   const rows = (await db.prepare("SELECT key, value FROM shipping_settings").all()).results, s = Object.fromEntries(rows.map(r => [r.key, r.value]));
-  return { zone: s.sena_zone || SENA_ZONES.find(z => z.code === "KSA").label, prepSource: s.sena_prep_source || SENA_PREP[0], boxWeightKg: Number(s.box_weight_kg || 0.5) };
+  let naFallback = [];
+  try { naFallback = (JSON.parse(s.na_fallback || "[]") || []).filter(r => r && r.names && normalizeNationalAddress(r.code)); } catch (_) {}
+  return { zone: s.sena_zone || SENA_ZONES.find(z => z.code === "KSA").label, prepSource: s.sena_prep_source || SENA_PREP[0], boxWeightKg: Number(s.box_weight_kg || 0.5), naFallback };
+}
+
+/* Approximate national address per city: used in the carrier file only, for an order that has none of its own (the order
+   keeps it empty so the customer's real code can still be added). A row lists the city's spellings («جدة، جده، Jeddah»);
+   the longest spelling found inside the order's city wins («جازان ابو عريش» → the Abu Arish row before the Jazan one). */
+const cityKey = v => String(v || "").toLowerCase().replace(/[\u064B-\u0652\u0640]/g, "").replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي")
+  .replace(/\s+/g, " ").trim();
+export function fallbackFor(city, list) {
+  const c = cityKey(city);
+  let best = null, len = 0;
+  for (const r of list || []) for (const n of String(r.names).split(/[,،]/).map(cityKey).filter(x => x.length >= 3))
+    if (c.includes(n) && n.length > len) { best = r.code; len = n.length; }
+  return best;
 }
 export async function shippingSettings(env, ctx) {
   canView(ctx);
@@ -43,11 +58,18 @@ export async function saveShippingSettings(env, ctx, body) {
   if (!SENA_ZONES.some(z => z.label === body.zone)) errors.zone = "invalid";
   if (!SENA_PREP.includes(body.prepSource)) errors.prepSource = "invalid";
   if (!(w >= 0.01 && w <= 30)) errors.boxWeightKg = "invalid";
+  let fb = null;
+  if (body.naFallback != null) {
+    const list = Array.isArray(body.naFallback) ? body.naFallback.slice(0, 60) : [];
+    fb = list.map(r => ({ names: clean(r && r.names, 120), code: normalizeNationalAddress(r && r.code) })).filter(r => r.names || r.code);
+    if (fb.some(r => r.names.length < 2 || !r.code)) errors.naFallback = "invalid";
+  }
   if (Object.keys(errors).length) throw new HttpError(422, { error: "validation", fields: errors });
   const old = await getShippingSettings(env.DB), t = now(), u = ctx.user.username;
-  await env.DB.batch([["sena_zone", body.zone], ["sena_prep_source", body.prepSource], ["box_weight_kg", String(Math.round(w * 1000) / 1000)]].map(([k, v]) =>
+  await env.DB.batch([["sena_zone", body.zone], ["sena_prep_source", body.prepSource], ["box_weight_kg", String(Math.round(w * 1000) / 1000)],
+    ...(fb ? [["na_fallback", JSON.stringify(fb)]] : [])].map(([k, v]) =>
     env.DB.prepare("INSERT INTO shipping_settings (key, value, updated_by, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_by = excluded.updated_by, updated_at = excluded.updated_at").bind(k, v, u, t)));
-  await audit(env, ctx, "shipping_settings_changed", "shipping", "SENA", old, { zone: body.zone, prepSource: body.prepSource, boxWeightKg: w });
+  await audit(env, ctx, "shipping_settings_changed", "shipping", "SENA", old, { zone: body.zone, prepSource: body.prepSource, boxWeightKg: w, ...(fb ? { naFallback: fb } : {}) });
   return getShippingSettings(env.DB);
 }
 
@@ -59,7 +81,7 @@ function readNumbers(body) {
   return numbers;
 }
 async function examine(env, ctx, numbers) {
-  const rows = [];
+  const rows = [], fb = (await getShippingSettings(env.DB)).naFallback;
   for (const n of numbers) {
     const full = await loadOrder(env.DB, n);
     if (!full) { rows.push({ orderNumber: n, eligible: false, reason: "not_found" }); continue; }
@@ -75,7 +97,7 @@ async function examine(env, ctx, numbers) {
     else if (!steps.every((s, i) => allowedTransition(ctx.perms, i ? steps[i - 1] : o.status, s) === "normal")) reason = "transition_not_allowed";
     rows.push({ orderNumber: o.order_number, customer: o.customer_name, phone: localPhone(o.customer_phone), city: o.city, district: o.district,
       boxes: o.boxes, amount: o.total_amount, status: o.status, steps, eligible: !reason, reason, shortage: res ? res.shortage_qty : 0, allocate: 0,
-      nationalAddress: o.national_address || null, createdAt: o.created_at });
+      nationalAddress: o.national_address || null, naApprox: o.national_address ? null : fallbackFor(o.city, fb), createdAt: o.created_at });
   }
   // a shortage that stock received since the order now covers is reserved at export (in selection order); only the rest is short
   const bal = await getBalance(env.DB);
@@ -105,8 +127,9 @@ export async function previewShipment(env, ctx, body) {
   // everything the admin picked, before exclusions («حدّدت 14 طلب بـ 23 علبة»)
   const selected = { orders: rows.length, boxes: rows.reduce((a, r) => a + (r.boxes || 0), 0) };
   // SENA asks for the national address of every shipment inside Saudi Arabia: missing ones are shown (and can be filled) before export
-  const missingNationalAddress = rows.filter(r => r.eligible && !r.nationalAddress).length;
-  return { rows, selected, totals: tot, missingNationalAddress, excluded: rows.filter(r => !r.eligible).length, stock: await stockPicture(env.DB, tot.boxes), settings: await getShippingSettings(env.DB),
+  const missingNationalAddress = rows.filter(r => r.eligible && !r.nationalAddress && !r.naApprox).length;
+  const approxNationalAddress = rows.filter(r => r.eligible && !r.nationalAddress && r.naApprox).length;
+  return { rows, selected, totals: tot, missingNationalAddress, approxNationalAddress, excluded: rows.filter(r => !r.eligible).length, stock: await stockPicture(env.DB, tot.boxes), settings: await getShippingSettings(env.DB),
     suggestedName: `شحنة سينا ${d}`, max: MAX };
 }
 
@@ -213,7 +236,7 @@ export async function listShipments(env, ctx, params) {
 
 export async function shipmentDetail(env, ctx, id) {
   canView(ctx);
-  const db = env.DB, batch = await batchSummary(db, Number(id));
+  const db = env.DB, batch = await batchSummary(db, Number(id)), fb = (await getShippingSettings(db)).naFallback;
   if (!batch) throw new HttpError(404, { error: "not_found" });
   const rows = (await db.prepare(`SELECT s.*, o.order_number, o.customer_name, o.customer_phone, o.city, o.district, o.status, o.anonymized_at, o.national_address, o.updated_at order_updated_at,
       (SELECT MAX(h.created_at) FROM order_status_history h WHERE h.order_id = o.id AND h.new_status = o.status) status_at,
@@ -221,7 +244,7 @@ export async function shipmentDetail(env, ctx, id) {
     FROM shipment_orders s JOIN orders o ON o.id = s.order_id WHERE s.batch_id = ? ORDER BY s.id`).bind(batch.id).all()).results;
   return { batch, orders: rows.map(r => ({ orderNumber: r.order_number, shipmentRef: r.shipment_ref, customer: r.customer_name, phone: localPhone(r.customer_phone),
       city: r.city, district: r.district, boxes: r.boxes, amount: r.amount, statusBefore: r.status_before, status: r.status, statusAt: r.status_at, anonymized: !!r.anonymized_at,
-      shortage: r.shortage, nationalAddress: r.national_address || null, orderUpdatedAt: r.order_updated_at })),
+      shortage: r.shortage, nationalAddress: r.national_address || null, naApprox: r.national_address ? null : fallbackFor(r.city, fb), orderUpdatedAt: r.order_updated_at })),
     canManage: ctx.perms.has("shipments.manage") };
 }
 
@@ -239,7 +262,7 @@ export async function shipmentFile(env, ctx, id) {
       o.location_latitude != null ? `الموقع: https://maps.google.com/?q=${o.location_latitude},${o.location_longitude}` : ""].filter(Boolean).join("، ");
     // A اسم المستلم · B المدينة · C الزون · D العنوان · E الجوال · F رقم الطلب · G مرجع الشحنة · H القيمة · I الوزن · J العنوان الوطني · K مصدر التجهيز · L–N أكياس/ببلز/كراتين · O رقم الزون
     shipments.push([o.anonymized_at ? "—" : o.customer_name, o.city, s.zone, o.anonymized_at ? "—" : address, o.anonymized_at ? "" : localPhone(o.customer_phone),
-      o.order_number, o.shipment_ref, o.amount, kg(o.sboxes), o.national_address || "", s.prepSource, 0, 0, 0, null]);
+      o.order_number, o.shipment_ref, o.amount, kg(o.sboxes), o.national_address || fallbackFor(o.city, s.naFallback) || "", s.prepSource, 0, 0, 0, null]);
     for (const i of (await db.prepare("SELECT * FROM order_items WHERE order_id = ? ORDER BY id").bind(o.id).all()).results)
       items.push([o.order_number, i.product_name_snapshot, null, null, i.quantity, i.unit_price, `${i.boxes_per_unit} علبة في الوحدة`, kg(i.boxes_per_unit * i.quantity)]);
   }

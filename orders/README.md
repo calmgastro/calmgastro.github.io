@@ -225,6 +225,10 @@ upper case); when it is empty, a short code written in the address or delivery n
 page, the new-order form (filled from the saved customer), or directly in the SENA review / batch rows (missing ones are
 counted; the batch file is regenerated on each download). 0006 back-filled existing orders only where the address starts
 with the code (the form copied from the national address service); nothing is guessed. Cleared by anonymize; in the CSV.
+Editable in place («تعديل» next to it on the order page and in the SENA rows; saving it empty clears it). **Approximate code
+per city** (Shipping → settings, `shipping_settings.na_fallback`): one real code per city (a public place) with the city's
+spellings («جدة، جده، Jeddah»); an order without its own code gets its city's code in column J, shown as «تقريبي», and the
+order itself stays empty so the customer's real code can be added later (the file is regenerated on each download).
 
 **Orders table columns** can be resized by dragging the edge of a header (or ←/→ on the focused edge); widths are kept per
 browser (`localStorage` `cg-cols:orders`), double-click an edge to reset. Permission `shipments.manage` (Super Admin, Order Manager) plus the normal status permissions.

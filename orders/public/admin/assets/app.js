@@ -575,7 +575,8 @@ async function pageOrder(number) {
           h("dt", { text: "الاسم" }), h("dd", { text: c.name }), h("dt", { text: "الجوال" }), h("dd", { class: "num", text: c.phone }),
           h("dt", { text: "المدينة" }), h("dd", { text: c.city }), h("dt", { text: "الحي" }), h("dd", { text: c.district }),
           h("dt", { text: "العنوان" }), h("dd", { text: c.address }),
-          h("dt", { text: "العنوان الوطني" }), h("dd", null, c.nationalAddress ? h("span", { class: "num", text: c.nationalAddress }) : h("span", { class: "danger-text small", text: "غير مسجّل — تطلبه سينا لشحنات السعودية" })),
+          h("dt", { text: "العنوان الوطني" }), h("dd", null, naCell({ orderNumber: o.orderNumber, nationalAddress: c.nationalAddress, anonymized: o.anonymized },
+            async () => refresh(await api("/orders/" + o.orderNumber))), c.nationalAddress ? null : h("small", { class: "muted", text: " تطلبه سينا لشحنات السعودية" })),
           h("dt", { text: "ملاحظات التوصيل" }), h("dd", { text: c.notes || "—" })));
     };
     const edit = () => {
@@ -1779,24 +1780,33 @@ const SHIP_SEL_KEY = "cg-ship-selection";
 const NA_RE = /^[A-Z]{4}\d{4}$/;
 const normNA = v => (window.CGParse ? window.CGParse.digits(v) : String(v)).toUpperCase().replace(/[\s\-_.]/g, "");
 function naCell(o, onChange) {
-  const cell = h("span", { class: "na-cell" });
-  const show = () => {
+  const cell = h("span", { class: "na-cell" }), editable = can("orders.edit_customer") && !o.anonymized;
+  const show = (editing = false) => {
     cell.textContent = "";
-    if (o.nationalAddress) return put(cell, h("span", { class: "num", text: o.nationalAddress }));
-    if (!can("orders.edit_customer") || o.anonymized) return put(cell, h("span", { class: "danger-text small", text: "غير مسجّل" }));
-    const inp = h("input", { class: "na-input", dir: "ltr", maxlength: 12, placeholder: "RRRD2929", "aria-label": "العنوان الوطني للطلب " + o.orderNumber });
+    if (o.nationalAddress && !editing) return put(cell, h("span", { class: "num", text: o.nationalAddress }),
+      editable ? h("button", { type: "button", class: "btn ghost sm", text: "تعديل", "aria-label": "تعديل العنوان الوطني للطلب " + o.orderNumber, onclick: () => show(true) }) : null);
+    // عنوان المدينة البديل (إعدادات الشحن): يدخل ملف سينا فقط، ولا يُحفظ في الطلب
+    const approx = !o.nationalAddress && o.naApprox ? h("span", { class: "tag na-approx", title: "العنوان البديل لمدينة العميل من إعدادات الشحن — يُستخدم في ملف سينا فقط حتى تضيف عنوان العميل", text: "تقريبي " + o.naApprox }) : null;
+    if (!editable) return put(cell, approx || h("span", { class: "danger-text small", text: "غير مسجّل" }));
+    const inp = h("input", { class: "na-input", dir: "ltr", maxlength: 12, value: o.nationalAddress || "", placeholder: "اكتب الرمز", "aria-label": "العنوان الوطني للطلب " + o.orderNumber });
     const btn = h("button", { type: "button", class: "btn ghost sm", text: "حفظ" });
     const save = () => {
       const v = normNA(inp.value);
-      if (!NA_RE.test(v)) { toast("العنوان الوطني المختصر: 4 حروف ثم 4 أرقام، مثل RRRD2929.", true); inp.focus(); return; }
+      if (v === (o.nationalAddress || "")) return show();
+      if (v && !NA_RE.test(v)) { toast("العنوان الوطني المختصر: 4 حروف ثم 4 أرقام، مثل RRRD2929.", true); inp.focus(); return; }
       busy(btn, "…", async () => {
-        try { await api(`/orders/${o.orderNumber}/customer`, { body: { customer: { nationalAddress: v } } }); o.nationalAddress = v; toast(`حُفظ العنوان الوطني للطلب ${o.orderNumber}.`); show(); onChange && onChange(); }
-        catch (e) { if (e.message !== "unauthorized") toast(e.data && e.data.fields && e.data.fields.nationalAddress ? "العنوان الوطني غير صحيح (4 حروف ثم 4 أرقام)." : errText(e), true); }
+        try {
+          await api(`/orders/${o.orderNumber}/customer`, { body: { customer: { nationalAddress: v } } });
+          o.nationalAddress = v || null;
+          toast(v ? `حُفظ العنوان الوطني للطلب ${o.orderNumber}.` : `حُذف العنوان الوطني للطلب ${o.orderNumber}.`);
+          show(); onChange && onChange();
+        } catch (e) { if (e.message !== "unauthorized") toast(e.data && e.data.fields && e.data.fields.nationalAddress ? "العنوان الوطني غير صحيح (4 حروف ثم 4 أرقام)." : errText(e), true); }
       });
     };
     btn.addEventListener("click", save);
-    inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); save(); } });
-    put(cell, inp, btn);
+    inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); save(); } else if (e.key === "Escape" && editing) show(); });
+    put(cell, inp, btn, editing ? h("button", { type: "button", class: "btn ghost sm", text: "إلغاء", onclick: () => show() }) : approx);
+    if (editing) inp.focus();
   };
   show();
   return cell;
@@ -1831,12 +1841,12 @@ async function pageShipments() {
         h("td", null, shipState(b)),
         h("td", null, h("div", { class: "row nowrap" }, h("a", { class: "btn ghost sm", href: "/admin/shipments/" + b.id, "data-link": true, text: "فتح" }),
           d.canManage ? h("a", { class: "btn ghost sm", href: shipFileUrl(b.id), download: "", text: "ملف Excel" }) : null))))))) : h("div", { class: "empty", text: "لا توجد شحنات بعد." })),
-    d.canManage ? shipSettingsCard() : null);
+    d.canManage ? shipSettingsCard(P.get("settings") === "1") : null);
   const pages = Math.ceil(d.total / d.per);
   if (pages > 1) put(main, h("div", { class: "pager" }, Array.from({ length: Math.min(pages, 20) }, (_, i) => h("a", { class: "btn ghost sm" + (i + 1 === d.page ? " on" : ""), href: "/admin/shipments?" + new URLSearchParams(Object.entries({ ...state, page: String(i + 1) }).filter(([, x]) => x)), "data-link": true, text: String(i + 1) }))));
 }
 
-function shipSettingsCard() {
+function shipSettingsCard(open = false) {
   const box = h("div", null, h("p", { class: "muted small", text: "جارٍ التحميل…" }));
   (async () => {
     let d; try { d = await api("/shipments/settings"); } catch (e) { box.textContent = errText(e); return; }
@@ -1844,17 +1854,38 @@ function shipSettingsCard() {
     const prep = h("select", null, d.prepSources.map(p => h("option", { value: p, text: p, selected: p === d.settings.prepSource })));
     const w = h("input", { inputmode: "decimal", value: d.settings.boxWeightKg });
     const err = h("p", { class: "err", role: "alert" }), btn = h("button", { type: "button", class: "btn primary", text: "حفظ" });
+    // العنوان الوطني البديل لكل مدينة (تقريبي): لطلب ليس له عنوان وطني، في ملف سينا فقط
+    const fbRows = h("div", { class: "fb-rows" });
+    const addRow = (r = { names: "", code: "" }) => {
+      const row = h("div", { class: "fb-row" }, h("input", { maxlength: 120, value: r.names, placeholder: "جدة، جده، Jeddah", "aria-label": "المدينة (وأسماؤها الأخرى)" }),
+        h("input", { class: "na-input", dir: "ltr", maxlength: 12, value: r.code, placeholder: "اكتب الرمز", "aria-label": "العنوان الوطني البديل" }),
+        h("button", { type: "button", class: "btn ghost sm", text: "حذف", onclick: () => row.remove() }));
+      fbRows.append(row);
+    };
+    (d.settings.naFallback.length ? d.settings.naFallback : NA_CITY_ROWS.map(names => ({ names, code: "" }))).forEach(r => addRow(r));
+    const fbValue = () => [...fbRows.children].map(r => { const [n, c] = r.querySelectorAll("input"); return { names: n.value.trim(), code: normNA(c.value) }; }).filter(r => r.code);
     btn.addEventListener("click", () => busy(btn, "جارٍ الحفظ…", async () => {
       err.textContent = "";
-      try { await api("/shipments/settings", { body: { zone: zone.value, prepSource: prep.value, boxWeightKg: num(w.value) } }); toast("تم حفظ إعدادات الشحن."); }
-      catch (e) { err.textContent = e.data && e.data.fields && e.data.fields.boxWeightKg ? "وزن العلبة بين 0.01 و 30 كجم." : fieldsText(e); }
+      try {
+        await api("/shipments/settings", { body: { zone: zone.value, prepSource: prep.value, boxWeightKg: num(w.value), naFallback: fbValue() } });
+        let back = false; try { back = JSON.parse(sessionStorage.getItem(SHIP_SEL_KEY) || "[]").length > 0; } catch (_) {}
+        toast("تم حفظ إعدادات الشحن." + (back ? " ارجع لمراجعة التصدير لترى العناوين التقريبية." : ""));
+        if (back) put(err, h("a", { class: "btn primary sm", href: "/admin/shipments/new", "data-link": true, text: "العودة لمراجعة التصدير" }));
+      }
+      catch (e) { const f = e.data && e.data.fields || {}; err.textContent = f.boxWeightKg ? "وزن العلبة بين 0.01 و 30 كجم." : f.naFallback ? "كل عنوان بديل يحتاج اسم المدينة وعنواناً وطنياً صحيحاً (4 حروف و4 أرقام)." : fieldsText(e); }
     }));
     box.textContent = "";
     put(box, h("div", { class: "grid3" }, h("label", { class: "f" }, "المنطقة / الزون (من قائمة سينا)", zone), h("label", { class: "f" }, "مصدر التجهيز", prep),
-      h("label", { class: "f" }, "وزن العلبة الواحدة (كجم)", w, h("small", { text: "يُضرب في عدد العلب لعمود «الوزن كجم»" }))), err, h("div", { class: "row" }, btn));
+      h("label", { class: "f" }, "وزن العلبة الواحدة (كجم)", w, h("small", { text: "يُضرب في عدد العلب لعمود «الوزن كجم»" }))),
+      h("h3", { text: "العنوان الوطني البديل لكل مدينة (تقريبي)" }),
+      h("p", { class: "muted small", text: "يُكتب في ملف سينا للطلب الذي ليس له عنوان وطني، حسب مدينة العميل، ولا يُحفظ في الطلب (فيبقى بإمكانك إضافة عنوان العميل الحقيقي). اختر عنواناً حقيقياً لمكان عام معروف في المدينة (مركز تجاري أو مكتب بريد) من خريطة منصة العنوان الوطني. اكتب أسماء المدينة مفصولة بفواصل كما يكتبها العملاء. المدينة بلا عنوان تُتجاهل." }),
+      fbRows, h("button", { type: "button", class: "btn ghost sm", text: "+ مدينة", onclick: () => addRow() }),
+      err, h("div", { class: "row" }, btn));
   })();
-  return h("details", { class: "card" }, h("summary", { text: "إعدادات ملف سينا (الزون، مصدر التجهيز، وزن العلبة)" }), box);
+  return h("details", { class: "card", id: "ship-settings", open: open || null }, h("summary", { text: "إعدادات ملف سينا (الزون، مصدر التجهيز، وزن العلبة، العنوان الوطني البديل)" }), box);
 }
+const NA_CITY_ROWS = ["جدة، جده، Jeddah", "مكة المكرمة، مكة، مكه، Makkah، Mecca", "الرياض، Riyadh", "الدمام، Dammam", "المدينة المنورة، المدينه، Madinah",
+  "أبو عريش، ابو عريش", "جازان، جيزان، Jazan", "خميس مشيط، Khamis Mushait"];
 
 /* تصدير شحنة جديدة: مراجعة → تأكيد → ملف سينا + «تم الشحن» */
 async function pageShipmentNew() {
@@ -1868,12 +1899,14 @@ async function pageShipmentNew() {
   const name = h("input", { maxlength: 80, value: d.suggestedName, "aria-label": "اسم التصدير" }), notes = h("input", { maxlength: 300, placeholder: "اختياري — مثال: الدفعة الصباحية", "aria-label": "ملاحظة" });
   const err = h("p", { class: "err", role: "alert" });
   const go_ = h("button", { type: "button", class: "btn primary big", text: `تصدير ${fmtN(T.orders)} طلب إلى سينا`, disabled: !T.orders });
-  const naMissing = () => ok.filter(r => !r.nationalAddress).length, naNote = h("div");
+  const naMissing = () => ok.filter(r => !r.nationalAddress && !r.naApprox).length, naApprox = () => ok.filter(r => !r.nationalAddress && r.naApprox).length, naNote = h("div");
   function drawNaNote() {
     naNote.textContent = "";
-    const n = naMissing();
+    const n = naMissing(), a = naApprox();
     if (n) put(naNote, h("section", { class: "card warn-card" }, h("h2", { text: `${fmtN(n)} طلب بدون عنوان وطني` }),
-      h("p", { class: "small", text: "سينا تطلب العنوان الوطني لشحنات السعودية. اكتبه في عمود «العنوان الوطني» أدناه واضغط «حفظ» (يُحفظ في الطلب نفسه). يمكنك أيضاً التصدير الآن وإكماله لاحقاً من صفحة الشحنة ثم إعادة تنزيل الملف." })));
+      h("p", { class: "small" }, "سينا تطلب العنوان الوطني لشحنات السعودية. اكتبه في عمود «العنوان الوطني» أدناه واضغط «حفظ» (يُحفظ في الطلب)، أو ",
+        h("a", { href: "/admin/shipments?settings=1", "data-link": true, text: "أضف عنواناً بديلاً لمدينته" }), " ليُرفع بعنوان تقريبي.")));
+    if (a) put(naNote, h("p", { class: "note-box", text: `${fmtN(a)} طلب سيُرفع بعنوان وطني تقريبي (العنوان البديل لمدينته). يمكنك استبداله بعنوان العميل الحقيقي في أي وقت.` }));
   }
   drawNaNote();
   put(main, h("div", { class: "page-head" }, h("div", null, h("a", { href: "/admin/orders", "data-link": true, class: "small", text: "→ الطلبات" }), h("h1", { text: "تصدير شحنة إلى سينا" })),
@@ -1915,6 +1948,7 @@ async function pageShipmentNew() {
         h("li", { text: "يُبلَّغ كل عميل برسالة «تم تسليم طلبك لشركة الشحن»." }), h("li", { text: "يُنزَّل ملف Excel جاهزاً للرفع في نظام سينا، ويمكن تنزيله مرة أخرى من صفحة الشحنة." })),
       bad.length ? h("p", { class: "muted small", text: `لن يشمل الملف ${bad.length} طلباً مستبعداً.` }) : null,
       naMissing() ? h("p", { class: "warn-box", text: `${fmtN(naMissing())} طلب بدون عنوان وطني — سيبقى عموده فارغاً في الملف.` }) : null,
+      naApprox() ? h("p", { class: "small", text: `${fmtN(naApprox())} طلب بعنوان وطني تقريبي (عنوان مدينته البديل).` }) : null,
       T.shortageOrders ? h("p", { class: "warn-box", text: `${fmtN(T.shortageOrders)} طلب مخزونه ناقص في النظام (${fmtN(T.shortageBoxes)} علبة) — تأكد أن العلب موجودة لديك فعلاً.` }) : null,
       h("p", { class: "warn-box", text: "لا يمكن التراجع عن «تم الشحن» إلا بتغيير استثنائي للحالة." })], { okText: "نعم، صدّر وغيّر الحالة" }))) return;
     await busy(go_, "جارٍ التصدير…", async () => {
@@ -1960,8 +1994,10 @@ async function pageShipment(id) {
   const naBox = h("div");
   function drawNa() {
     naBox.textContent = "";
-    const n = d.orders.filter(o => !o.nationalAddress && !o.anonymized).length;
-    if (n && d.canManage) put(naBox, h("p", { class: "warn-box", text: `${fmtN(n)} طلب بدون عنوان وطني. اكتبه في عموده أدناه ثم أعد «تنزيل ملف سينا» ليظهر في الملف.` }));
+    const n = d.orders.filter(o => !o.nationalAddress && !o.naApprox && !o.anonymized).length, a = d.orders.filter(o => !o.nationalAddress && o.naApprox).length;
+    if (n && d.canManage) put(naBox, h("p", { class: "warn-box" }, `${fmtN(n)} طلب بدون عنوان وطني. اكتبه في عموده أدناه، أو `,
+      h("a", { href: "/admin/shipments?settings=1", "data-link": true, text: "أضف عنواناً بديلاً لمدينته" }), "، ثم أعد «تنزيل ملف سينا»."));
+    if (a && d.canManage) put(naBox, h("p", { class: "note-box", text: `${fmtN(a)} طلب في الملف بعنوان وطني تقريبي (عنوان مدينته البديل).` }));
   }
   drawNa();
   const sum = set => d.orders.filter(o => set.has(o.orderNumber)).reduce((a, o) => ({ n: a.n + 1, boxes: a.boxes + o.boxes, amount: a.amount + o.amount }), { n: 0, boxes: 0, amount: 0 });

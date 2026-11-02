@@ -244,3 +244,7 @@ html.col-resizing, html.col-resizing *{cursor:col-resize !important; user-select
 /* العنوان الوطني في صفحات الشحن */
 .na-cell{display:inline-flex; gap:6px; align-items:center; white-space:nowrap}
 .na-input{width:8.5em; font-family:inherit; text-transform:uppercase; padding:.3em .5em}
+.na-approx{background:#FFF3D6; color:#7A5200; font-family:inherit}
+.fb-rows{display:grid; gap:8px; margin:8px 0}
+.fb-row{display:grid; grid-template-columns:minmax(0,1fr) 9.5em auto; gap:8px; align-items:center}
+@media (max-width:560px){ .fb-row{grid-template-columns:1fr auto} .fb-row input:first-child{grid-column:1 / -1} }
