@@ -1859,7 +1859,8 @@ async function pageShipmentNew() {
         h("b", { class: "danger-text", text: (SHIP_REASON[r.reason] || r.reason) + (r.shortage ? ` (ينقصه ${r.shortage})` : "") })]))) : null,
     h("section", { class: "card" }, h("h2", { text: "الطلبات في الملف" }),
       tbl(["الطلب", "العميل", "الجوال", "المدينة", "العلب", "القيمة", "الحالة الآن", "الخطوات"], ok.map(r => [h("span", { class: "num", text: r.orderNumber }), r.customer, h("span", { class: "num", text: r.phone }),
-        r.city, h("span", null, h("b", { class: "num", text: fmtN(r.boxes) }), r.shortage ? h("span", { class: "inv inv-SHORTAGE", text: `ينقصه ${fmtN(r.shortage)}` }) : null),
+        r.city, h("span", null, h("b", { class: "num", text: fmtN(r.boxes) }), r.shortage ? h("span", { class: "inv inv-SHORTAGE", text: `ينقصه ${fmtN(r.shortage)}` })
+          : r.allocate ? h("span", { class: "inv inv-RESERVED", title: "كان ناقصاً عند الطلب والمخزون الحالي يغطيه؛ يُحجز له عند التصدير", text: "يُحجز من المتوفر" }) : null),
         money(r.amount), badge(r.status), r.steps.map(s => STATUS[s]).join(" ← ")]))),
     h("section", { class: "card" }, h("h2", { text: "اسم التصدير" }),
       h("div", { class: "grid2" }, h("label", { class: "f" }, "اسم الشحنة (يظهر في سجل الشحن واسم الملف)", name), h("label", { class: "f" }, "ملاحظة", notes)),

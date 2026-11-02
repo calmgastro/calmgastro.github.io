@@ -4,7 +4,8 @@
    Each order then moves to SHIPPED through the normal steps (RECEIVED → CONFIRMED → PREPARING → SHIPPED, each one in its
    history, the customer notified once, for «تم الشحن»), gets a unique shipment reference, and the carrier's own Excel
    template is filled from the batch (downloadable again at any time). Only orders that can really leave are accepted:
-   not cancelled / failed / delivered / already shipped / on hold / anonymized. A stock shortage does not block the export
+   not cancelled / failed / delivered / already shipped / on hold / anonymized. A shortage that stock received since the
+   order covers is simply reserved at export. A remaining stock shortage does not block the export either
    (the boxes may be physically there before the receipt is recorded) — it is shown and must be confirmed (allowShortage).
 
    Delivery = per batch: confirm all remaining orders, or the selected ones, as Delivered (or Failed) in one action. It is
@@ -73,8 +74,12 @@ async function examine(env, ctx, numbers) {
     else if (o.status === "ON_HOLD") reason = "on_hold";
     else if (!steps.every((s, i) => allowedTransition(ctx.perms, i ? steps[i - 1] : o.status, s) === "normal")) reason = "transition_not_allowed";
     rows.push({ orderNumber: o.order_number, customer: o.customer_name, phone: localPhone(o.customer_phone), city: o.city, district: o.district,
-      boxes: o.boxes, amount: o.total_amount, status: o.status, steps, eligible: !reason, reason, shortage: res ? res.shortage_qty : 0, createdAt: o.created_at });
+      boxes: o.boxes, amount: o.total_amount, status: o.status, steps, eligible: !reason, reason, shortage: res ? res.shortage_qty : 0, allocate: 0, createdAt: o.created_at });
   }
+  // a shortage that stock received since the order now covers is reserved at export (in selection order); only the rest is short
+  const bal = await getBalance(env.DB);
+  let free = bal ? Math.max(0, bal.on_hand - bal.reserved) : 0;
+  for (const r of rows) if (r.eligible && r.shortage > 0 && free > 0) { const take = Math.min(r.shortage, free); free -= take; r.allocate = take; r.shortage -= take; }
   return rows;
 }
 async function stockPicture(db, selectedBoxes) {
@@ -143,6 +148,10 @@ export async function createShipment(env, ctx, body) {
   for (const r of rows) {
     let full = await loadOrder(db, r.orderNumber), reached = full.order.status;
     try {
+      if (r.allocate) {
+        try { await allocateShortage(env, ctx, full.order); } catch (e) { if (!(e instanceof HttpError)) throw e; }
+        full = await loadOrder(db, r.orderNumber);
+      }
       for (const step of PATH[full.order.status] || []) {
         await applyTransition(env, ctx, full, step, { note, visibility: "internal", kind: "normal", bulkId: batch.batch_no, notify: step === "SHIPPED" });
         reached = step;
