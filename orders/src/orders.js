@@ -47,7 +47,8 @@ export function normalizeOrderNumber(v) {
 }
 
 /* Returns { value } or { errors: { field: code } } */
-export function validateOrderInput(body, catalog) {
+/* opts.requireNationalAddress (website checkout): the national address, or the customer's map location when they do not have it */
+export function validateOrderInput(body, catalog, opts = {}) {
   const errors = {};
   const c = body && typeof body.customer === "object" && body.customer ? body.customer : {};
   const name = clean(c.name, 60), city = clean(c.city, 60), district = clean(c.district, 60);
@@ -58,7 +59,7 @@ export function validateOrderInput(body, catalog) {
   if (city.length < 2) errors.city = "required";
   if (district.length < 2) errors.district = "required";
   if (address.length < 3) errors.address = "required";
-  // optional at checkout; when left empty, a short code the customer wrote in the address or notes is used
+  // when left empty, a short code the customer wrote in the address or notes is used
   const naRaw = clean(c.nationalAddress, 20), nationalAddress = naRaw ? normalizeNationalAddress(naRaw) : findNationalAddress(address, notes);
   if (naRaw && !nationalAddress) errors.nationalAddress = "invalid";
 
@@ -90,6 +91,8 @@ export function validateOrderInput(body, catalog) {
   if (!catalog.paymentMethods.includes(payment)) errors.paymentMethod = "unsupported";
   const key = String(body && body.idempotencyKey || "");
   if (!/^[A-Za-z0-9_-]{16,64}$/.test(key)) errors.idempotencyKey = "invalid";
+
+  if (opts.requireNationalAddress && !nationalAddress && !location && !errors.nationalAddress && !errors.location) errors.nationalAddress = "required";
 
   if (Object.keys(errors).length) return { errors };
   return { value: { key, items, payment, location, lang: body.lang === "en" ? "en" : "ar",
@@ -127,7 +130,7 @@ export async function createOrder(env, body) {
   catch (e) { throw new HttpError(503, { error: "catalog_unavailable" }); }
   if (!catalog.inStock) throw new HttpError(409, { error: "out_of_stock" });
 
-  const v = validateOrderInput(body, catalog);
+  const v = validateOrderInput(body, catalog, { requireNationalAddress: true });
   if (v.errors) throw new HttpError(422, { error: "validation", fields: v.errors });
   const o = v.value;
   const q = quote(o.items, catalog);

@@ -220,8 +220,10 @@ move. An order shipped short of stock first takes what is available now (same al
 receipt is recorded (Inventory → استلام مخزون), then confirmed again.
 
 **National address** (migration `0006`): the Saudi short code (4 letters + 4 digits, e.g. RRRD2929) on `orders` and
-`customers` (CHECK on the shape). Checkout has an optional field (Arabic digits, lower case and spaces accepted, stored
-upper case); when it is empty, a short code written in the address or delivery notes is used. Admins set it on the order
+`customers` (CHECK on the shape). Checkout requires it **or** the customer's map location («تحديد موقعي تلقائياً»; `requireNationalAddress` on website
+orders only, 422 `nationalAddress: required`); Arabic digits, lower case and spaces accepted, stored upper case; when the
+field is empty, a short code written in the address or delivery notes is used. Turning a location into a code needs the
+Saudi Post (SPL) API key — not wired yet. Admins set it on the order
 page, the new-order form (filled from the saved customer), or directly in the SENA review / batch rows (missing ones are
 counted; the batch file is regenerated on each download). 0006 back-filled existing orders only where the address starts
 with the code (the form copied from the national address service); nothing is guessed. Cleared by anonymize; in the CSV.

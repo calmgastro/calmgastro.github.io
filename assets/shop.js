@@ -424,7 +424,8 @@
     city:     v => v === OTHER ? cityOther.value.trim().length >= 2 || t("يرجى كتابة المدينة") : !!v || t("يرجى اختيار المدينة"),
     district: v => v.trim().length >= 2 || t("يرجى كتابة الحي"),
     address:  v => v.trim().length >= 3 || t("يرجى كتابة عنوان التوصيل"),
-    nationalAddress: v => !v.trim() || !!normNA(v) || t("اكتب العنوان الوطني المختصر: 4 حروف ثم 4 أرقام، مثل RRRD2929")
+    // مطلوب: العنوان الوطني، أو موقع العميل على الخريطة إن لم يكن لديه عنوان وطني
+    nationalAddress: v => v.trim() ? !!normNA(v) || t("اكتب العنوان الوطني المختصر: 4 حروف ثم 4 أرقام، مثل RRRD2929") : !!loc || t("اكتب عنوانك الوطني المختصر، وإن لم يكن لديك فاضغط «تحديد موقعي تلقائياً» بالأسفل")
   };
   function check(name){
     const input = form.elements[name], res = rules[name](input.value), ok = res === true;
@@ -549,6 +550,8 @@
         if (form.elements.city.value) check("city");
         if (form.elements.district.value) check("district");
         const lines = [t("✓ تم تحديد موقعك")];
+        // الموقع يغني عن العنوان الوطني لمن لا يعرفه
+        if (!form.elements.nationalAddress.value.trim()){ lines.push(t("لا بأس إن لم يكن لديك عنوان وطني؛ سنعتمد موقعك على الخريطة.")); if (form.elements.nationalAddress.getAttribute("aria-invalid") === "true") check("nationalAddress"); }
         if (place && (place.city || place.district)){
           lines.push(t("المدينة: {city} — الحي: {district}", { city: place.city || "—", district: place.district || "—" }));
           lines.push(t("يمكنك تعديل المدينة والحي إذا لم تكن دقيقة."));
@@ -600,7 +603,8 @@
     }
     if (res && res.status === 422 && data && data.fields){
       const f = data.fields;
-      const fieldMsgs = { phone: t("يرجى إدخال رقم جوال سعودي صحيح"), name: t("يرجى كتابة الاسم الكامل"), city: t("يرجى كتابة المدينة"), district: t("يرجى كتابة الحي"), address: t("يرجى كتابة عنوان التوصيل"), nationalAddress: t("اكتب العنوان الوطني المختصر: 4 حروف ثم 4 أرقام، مثل RRRD2929") };
+      const fieldMsgs = { phone: t("يرجى إدخال رقم جوال سعودي صحيح"), name: t("يرجى كتابة الاسم الكامل"), city: t("يرجى كتابة المدينة"), district: t("يرجى كتابة الحي"), address: t("يرجى كتابة عنوان التوصيل"),
+        nationalAddress: f.nationalAddress === "required" ? t("اكتب عنوانك الوطني المختصر، وإن لم يكن لديك فاضغط «تحديد موقعي تلقائياً» بالأسفل") : t("اكتب العنوان الوطني المختصر: 4 حروف ثم 4 أرقام، مثل RRRD2929") };
       const fields = Object.keys(fieldMsgs).filter(k => f[k]);
       if (fields.length){ fields.forEach(k => setFieldError(k, fieldMsgs[k])); form.elements[fields[0]].focus(); return; }
       if (f.items){ showError(f.items === "max_boxes" || f.items === "qty_limit" ? limitMsg() : t("يوجد منتج غير متاح في سلتك. حدّث السلة ثم حاول مرة أخرى.")); return; }

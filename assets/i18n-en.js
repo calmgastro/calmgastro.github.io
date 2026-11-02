@@ -139,7 +139,7 @@ window.I18N_EN = {
   "المدينة<span class=\"req\" aria-hidden=\"true\">*</span>": "City<span class=\"req\" aria-hidden=\"true\">*</span>",
   "الحي<span class=\"req\" aria-hidden=\"true\">*</span>": "District<span class=\"req\" aria-hidden=\"true\">*</span>",
   "تحديد موقعي تلقائياً": "Locate me automatically",
-  "اختياري — يساعدنا على تحديد المدينة والحي وموقع التوصيل بدقة.": "Optional: helps us pinpoint your city, district and delivery location.",
+  "مطلوب إن لم تكتب العنوان الوطني، ويساعدنا على تحديد المدينة والحي وموقع التوصيل بدقة.": "Required if you don’t enter a national address; it also pinpoints your city, district and delivery location.",
   "أكّد الطلب": "Confirm order",
   "قبل الاستخدام": "Before use",
   "الالتزام وطريقة الاستخدام": "Commitment and how to use",
@@ -264,7 +264,7 @@ window.I18N_EN = {
   "نسيت رقم الطلب؟": "Forgot your order number?",
   "رقم الطلب يظهر في صفحة تأكيد الطلب، وفي «رابط طلبك الآمن» إذا حفظته بعد الطلب.": "Your order number is shown on the order confirmation page and in your “secure order link” if you saved it.",
   "العنوان الوطني المختصر": "Short national address",
-  "4 حروف و4 أرقام، تجده في تطبيق «العنوان الوطني» أو في «أبشر». يساعد شركة الشحن على الوصول إليك أسرع.": "4 letters and 4 digits, found in the National Address app or Absher. It helps the courier reach you faster.",
+  "4 حروف و4 أرقام، تجده في تطبيق «العنوان الوطني» أو في «أبشر». ليس لديك عنوان وطني؟ اضغط «تحديد موقعي تلقائياً» بالأسفل.": "4 letters and 4 digits, found in the National Address app or Absher. Don't have one? Tap “Locate me automatically” below.",
   "لم تجده؟ فريقنا يساعدك بعد التحقق من هويتك.": "Can't find it? Our team will help after verifying your identity."
  },
  "attr": {
@@ -492,6 +492,8 @@ window.I18N_EN = {
   "طلباتك المحفوظة على هذا الجهاز:": "Orders saved on this device:",
   "مرحباً، أحتاج المساعدة في استرجاع رقم طلبي.": "Hello, I need help finding my order number.",
   "اكتب العنوان الوطني المختصر: 4 حروف ثم 4 أرقام، مثل RRRD2929": "Enter the short national address: 4 letters then 4 digits, e.g. RRRD2929",
-  "العنوان الوطني": "National address"
+  "العنوان الوطني": "National address",
+  "اكتب عنوانك الوطني المختصر، وإن لم يكن لديك فاضغط «تحديد موقعي تلقائياً» بالأسفل": "Enter your short national address, or if you don't have one, tap “Locate me automatically” below.",
+  "لا بأس إن لم يكن لديك عنوان وطني؛ سنعتمد موقعك على الخريطة.": "No national address? That's fine, we'll use your map location."
  }
 };
