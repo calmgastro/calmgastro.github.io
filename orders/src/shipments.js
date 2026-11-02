@@ -74,7 +74,8 @@ async function examine(env, ctx, numbers) {
     else if (o.status === "ON_HOLD") reason = "on_hold";
     else if (!steps.every((s, i) => allowedTransition(ctx.perms, i ? steps[i - 1] : o.status, s) === "normal")) reason = "transition_not_allowed";
     rows.push({ orderNumber: o.order_number, customer: o.customer_name, phone: localPhone(o.customer_phone), city: o.city, district: o.district,
-      boxes: o.boxes, amount: o.total_amount, status: o.status, steps, eligible: !reason, reason, shortage: res ? res.shortage_qty : 0, allocate: 0, createdAt: o.created_at });
+      boxes: o.boxes, amount: o.total_amount, status: o.status, steps, eligible: !reason, reason, shortage: res ? res.shortage_qty : 0, allocate: 0,
+      nationalAddress: o.national_address || null, createdAt: o.created_at });
   }
   // a shortage that stock received since the order now covers is reserved at export (in selection order); only the rest is short
   const bal = await getBalance(env.DB);
@@ -103,7 +104,9 @@ export async function previewShipment(env, ctx, body) {
   const d = riyadhDay(now());
   // everything the admin picked, before exclusions («حدّدت 14 طلب بـ 23 علبة»)
   const selected = { orders: rows.length, boxes: rows.reduce((a, r) => a + (r.boxes || 0), 0) };
-  return { rows, selected, totals: tot, excluded: rows.filter(r => !r.eligible).length, stock: await stockPicture(env.DB, tot.boxes), settings: await getShippingSettings(env.DB),
+  // SENA asks for the national address of every shipment inside Saudi Arabia: missing ones are shown (and can be filled) before export
+  const missingNationalAddress = rows.filter(r => r.eligible && !r.nationalAddress).length;
+  return { rows, selected, totals: tot, missingNationalAddress, excluded: rows.filter(r => !r.eligible).length, stock: await stockPicture(env.DB, tot.boxes), settings: await getShippingSettings(env.DB),
     suggestedName: `شحنة سينا ${d}`, max: MAX };
 }
 
@@ -212,13 +215,13 @@ export async function shipmentDetail(env, ctx, id) {
   canView(ctx);
   const db = env.DB, batch = await batchSummary(db, Number(id));
   if (!batch) throw new HttpError(404, { error: "not_found" });
-  const rows = (await db.prepare(`SELECT s.*, o.order_number, o.customer_name, o.customer_phone, o.city, o.district, o.status, o.anonymized_at,
+  const rows = (await db.prepare(`SELECT s.*, o.order_number, o.customer_name, o.customer_phone, o.city, o.district, o.status, o.anonymized_at, o.national_address, o.updated_at order_updated_at,
       (SELECT MAX(h.created_at) FROM order_status_history h WHERE h.order_id = o.id AND h.new_status = o.status) status_at,
       (SELECT COALESCE(SUM(r.shortage_qty), 0) FROM inventory_reservations r WHERE r.order_id = o.id AND r.status = 'SHORTAGE') shortage
     FROM shipment_orders s JOIN orders o ON o.id = s.order_id WHERE s.batch_id = ? ORDER BY s.id`).bind(batch.id).all()).results;
   return { batch, orders: rows.map(r => ({ orderNumber: r.order_number, shipmentRef: r.shipment_ref, customer: r.customer_name, phone: localPhone(r.customer_phone),
       city: r.city, district: r.district, boxes: r.boxes, amount: r.amount, statusBefore: r.status_before, status: r.status, statusAt: r.status_at, anonymized: !!r.anonymized_at,
-      shortage: r.shortage })),
+      shortage: r.shortage, nationalAddress: r.national_address || null, orderUpdatedAt: r.order_updated_at })),
     canManage: ctx.perms.has("shipments.manage") };
 }
 
@@ -234,9 +237,9 @@ export async function shipmentFile(env, ctx, id) {
   for (const o of rows) {
     const address = [o.district ? "حي " + o.district.replace(/^حي\s+/, "") : "", o.address, o.customer_notes ? "ملاحظة: " + o.customer_notes : "",
       o.location_latitude != null ? `الموقع: https://maps.google.com/?q=${o.location_latitude},${o.location_longitude}` : ""].filter(Boolean).join("، ");
-    // A اسم المستلم · B المدينة · C الزون · D العنوان · E الجوال · F رقم الطلب · G مرجع الشحنة · H القيمة · I الوزن · J العنوان الوطني (فارغ حالياً) · K مصدر التجهيز · L–N أكياس/ببلز/كراتين · O رقم الزون
+    // A اسم المستلم · B المدينة · C الزون · D العنوان · E الجوال · F رقم الطلب · G مرجع الشحنة · H القيمة · I الوزن · J العنوان الوطني · K مصدر التجهيز · L–N أكياس/ببلز/كراتين · O رقم الزون
     shipments.push([o.anonymized_at ? "—" : o.customer_name, o.city, s.zone, o.anonymized_at ? "—" : address, o.anonymized_at ? "" : localPhone(o.customer_phone),
-      o.order_number, o.shipment_ref, o.amount, kg(o.sboxes), "", s.prepSource, 0, 0, 0, null]);
+      o.order_number, o.shipment_ref, o.amount, kg(o.sboxes), o.national_address || "", s.prepSource, 0, 0, 0, null]);
     for (const i of (await db.prepare("SELECT * FROM order_items WHERE order_id = ? ORDER BY id").bind(o.id).all()).results)
       items.push([o.order_number, i.product_name_snapshot, null, null, i.quantity, i.unit_price, `${i.boxes_per_unit} علبة في الوحدة`, kg(i.boxes_per_unit * i.quantity)]);
   }

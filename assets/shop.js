@@ -375,6 +375,8 @@
   let serverQuote = null;         // آخر أسعار من الخادم إن اختلفت
 
   const toLatin = v => String(v).replace(/[٠-٩]/g, d => d.charCodeAt(0) - 0x0660).replace(/[۰-۹]/g, d => d.charCodeAt(0) - 0x06F0);
+  // العنوان الوطني المختصر (نفس قاعدة الخادم): 4 حروف + 4 أرقام، مع قبول الأرقام العربية والمسافات والحروف الصغيرة
+  const normNA = v => { const s = toLatin(v).toUpperCase().replace(/[\s\-_.]/g, ""); return /^[A-Z]{4}\d{4}$/.test(s) ? s : null; };
   // نفس قاعدة الخادم: 05XXXXXXXX و +9665XXXXXXXX و 009665… و 5XXXXXXXX
   function normPhone(v){
     let d = toLatin(v).replace(/[\s\-().]/g, "");
@@ -421,7 +423,8 @@
     phone:    v => !!normPhone(v) || t("يرجى إدخال رقم جوال سعودي صحيح"),
     city:     v => v === OTHER ? cityOther.value.trim().length >= 2 || t("يرجى كتابة المدينة") : !!v || t("يرجى اختيار المدينة"),
     district: v => v.trim().length >= 2 || t("يرجى كتابة الحي"),
-    address:  v => v.trim().length >= 3 || t("يرجى كتابة عنوان التوصيل")
+    address:  v => v.trim().length >= 3 || t("يرجى كتابة عنوان التوصيل"),
+    nationalAddress: v => !v.trim() || !!normNA(v) || t("اكتب العنوان الوطني المختصر: 4 حروف ثم 4 أرقام، مثل RRRD2929")
   };
   function check(name){
     const input = form.elements[name], res = rules[name](input.value), ok = res === true;
@@ -437,6 +440,7 @@
     el.addEventListener("input", () => el.getAttribute("aria-invalid") === "true" && check(n));
   });
   form.elements.phone.addEventListener("blur", () => { const p = normPhone(form.elements.phone.value); if (p) form.elements.phone.value = p; });
+  form.elements.nationalAddress.addEventListener("blur", () => { const n = normNA(form.elements.nationalAddress.value); if (n) form.elements.nationalAddress.value = n; });
 
   // طرق الدفع من الإعدادات المركزية (الدفع عند الاستلام الآن، ويمكن إضافة غيرها لاحقاً)
   const payBox = $("#payMethods");
@@ -449,7 +453,8 @@
   const customer = () => ({
     name: form.elements.name.value.trim(), phone: normPhone(form.elements.phone.value) || form.elements.phone.value.trim(),
     city: cityValue(), district: form.elements.district.value.trim(),
-    address: form.elements.address.value.trim(), notes: form.elements.notes.value.trim()
+    address: form.elements.address.value.trim(), notes: form.elements.notes.value.trim(),
+    nationalAddress: normNA(form.elements.nationalAddress.value) || form.elements.nationalAddress.value.trim()
   });
   const paymentId = () => (form.elements.payment && form.elements.payment.value) || "cod";
 
@@ -595,7 +600,7 @@
     }
     if (res && res.status === 422 && data && data.fields){
       const f = data.fields;
-      const fieldMsgs = { phone: t("يرجى إدخال رقم جوال سعودي صحيح"), name: t("يرجى كتابة الاسم الكامل"), city: t("يرجى كتابة المدينة"), district: t("يرجى كتابة الحي"), address: t("يرجى كتابة عنوان التوصيل") };
+      const fieldMsgs = { phone: t("يرجى إدخال رقم جوال سعودي صحيح"), name: t("يرجى كتابة الاسم الكامل"), city: t("يرجى كتابة المدينة"), district: t("يرجى كتابة الحي"), address: t("يرجى كتابة عنوان التوصيل"), nationalAddress: t("اكتب العنوان الوطني المختصر: 4 حروف ثم 4 أرقام، مثل RRRD2929") };
       const fields = Object.keys(fieldMsgs).filter(k => f[k]);
       if (fields.length){ fields.forEach(k => setFieldError(k, fieldMsgs[k])); form.elements[fields[0]].focus(); return; }
       if (f.items){ showError(f.items === "max_boxes" || f.items === "qty_limit" ? limitMsg() : t("يوجد منتج غير متاح في سلتك. حدّث السلة ثم حاول مرة أخرى.")); return; }
@@ -725,6 +730,7 @@
           h("dt", { text: t("المدينة") }), h("dd", { text: d.city }),
           h("dt", { text: t("الحي") }), h("dd", { text: d.district }),
           d.address ? [h("dt", { text: t("العنوان") }), h("dd", { text: d.address })] : null,
+          d.nationalAddress ? [h("dt", { text: t("العنوان الوطني") }), h("dd", { class: "num", text: d.nationalAddress })] : null,
           d.notes ? [h("dt", { text: t("ملاحظات") }), h("dd", { text: d.notes })] : null)),
       h("div", { class: "ogrid" },
         h("section", { class: "obox" }, h("h2", { text: t("طريقة الدفع") }), h("p", { text: (PAYMENTS.find(p => p.id === o.paymentMethod) || PAYMENTS[0]).label }), h("small", { text: (PAYMENTS.find(p => p.id === o.paymentMethod) || PAYMENTS[0]).note || "" })),

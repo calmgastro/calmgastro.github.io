@@ -241,3 +241,6 @@ details.card[open] > summary{margin-bottom:10px}
 table.cols-fixed{table-layout:fixed}
 table.cols-fixed td, table.cols-fixed th{overflow:hidden; text-overflow:ellipsis}
 html.col-resizing, html.col-resizing *{cursor:col-resize !important; user-select:none}
+/* العنوان الوطني في صفحات الشحن */
+.na-cell{display:inline-flex; gap:6px; align-items:center; white-space:nowrap}
+.na-input{width:8.5em; font-family:inherit; text-transform:uppercase; padding:.3em .5em}

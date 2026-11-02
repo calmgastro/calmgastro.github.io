@@ -263,6 +263,8 @@ window.I18N_EN = {
   "يبدأ من": "From",
   "نسيت رقم الطلب؟": "Forgot your order number?",
   "رقم الطلب يظهر في صفحة تأكيد الطلب، وفي «رابط طلبك الآمن» إذا حفظته بعد الطلب.": "Your order number is shown on the order confirmation page and in your “secure order link” if you saved it.",
+  "العنوان الوطني المختصر": "Short national address",
+  "4 حروف و4 أرقام، تجده في تطبيق «العنوان الوطني» أو في «أبشر». يساعد شركة الشحن على الوصول إليك أسرع.": "4 letters and 4 digits, found in the National Address app or Absher. It helps the courier reach you faster.",
   "لم تجده؟ فريقنا يساعدك بعد التحقق من هويتك.": "Can't find it? Our team will help after verifying your identity."
  },
  "attr": {
@@ -289,6 +291,7 @@ window.I18N_EN = {
   "مراحل الطلب": "Checkout steps",
   "الشارع، رقم المبنى أو أقرب معلم": "Street, building number or nearest landmark",
   "مثلاً: وقت مناسب للتوصيل": "e.g. a good time for delivery",
+  "مثال: RRRD2929": "e.g. RRRD2929",
   "إغلاق السلة": "Close cart"
  },
  "ui": {
@@ -487,6 +490,8 @@ window.I18N_EN = {
   "احفظ هذا الرابط لفتح طلبك في أي وقت ومن أي جهاز دون إدخال رقم الجوال. لا تشاركه مع أحد.": "Save this link to open your order any time, on any device, without entering your mobile number. Don't share it with anyone.",
   "للاستفسار تواصل معنا عبر واتساب.": "For questions, contact us on WhatsApp.",
   "طلباتك المحفوظة على هذا الجهاز:": "Orders saved on this device:",
-  "مرحباً، أحتاج المساعدة في استرجاع رقم طلبي.": "Hello, I need help finding my order number."
+  "مرحباً، أحتاج المساعدة في استرجاع رقم طلبي.": "Hello, I need help finding my order number.",
+  "اكتب العنوان الوطني المختصر: 4 حروف ثم 4 أرقام، مثل RRRD2929": "Enter the short national address: 4 letters then 4 digits, e.g. RRRD2929",
+  "العنوان الوطني": "National address"
  }
 };

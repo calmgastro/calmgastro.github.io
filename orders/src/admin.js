@@ -1,7 +1,7 @@
 /* Admin API: every handler receives ctx = { user, perms, session, ip, ua } from an authenticated session.
    Permissions are checked here, on the server, for every action. */
 import { STATUSES, FLOW, LABELS, LOCKED, allowedTransition, nextOptions, notifyMessage } from "./statuses.js";
-import { loadOrder, localPhone, normalizeOrderNumber, normalizePhone, latinDigits, HttpError, validateOrderInput, findReplay, insertOrder, linesForBoxes, sha256 } from "./orders.js";
+import { loadOrder, localPhone, normalizeOrderNumber, normalizePhone, normalizeNationalAddress, latinDigits, HttpError, validateOrderInput, findReplay, insertOrder, linesForBoxes, sha256 } from "./orders.js";
 import { getCatalog, priceForBoxes, quote } from "./catalog.js";
 import { transitionStmts, requantityStmts, runWithRetry, checkAlert, orderGuard, reservationPreview, ruleOf, isInitialized } from "./inventory.js";
 import { stockSummary, sar } from "./stock_admin.js";
@@ -131,9 +131,9 @@ export async function exportCsv(env, ctx, params) {
       (SELECT SUM(i.quantity) FROM order_items i WHERE i.order_id = o.id) qty
     FROM orders o ${f.sql} ORDER BY o.id DESC LIMIT 10000`).bind(...f.binds).all()).results;
   const cell = v => { let s = v == null ? "" : String(v); if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
-  const head = ["Order Number", "Date", "Customer Name", "Mobile", "City", "District", "Address", "Products", "Quantity", "Subtotal", "Discount", "Shipping", "Total", "Payment Method", "Status", "Created At", "Updated At"];
+  const head = ["Order Number", "Date", "Customer Name", "Mobile", "City", "District", "Address", "National Address", "Products", "Quantity", "Subtotal", "Discount", "Shipping", "Total", "Payment Method", "Status", "Created At", "Updated At"];
   const fmt = iso => new Date(Date.parse(iso) + 3 * 3600e3).toISOString().replace("T", " ").slice(0, 16);
-  const lines = [head.join(",")].concat(rows.map(o => [o.order_number, fmt(o.created_at).slice(0, 10), o.customer_name, localPhone(o.customer_phone), o.city, o.district, o.address,
+  const lines = [head.join(",")].concat(rows.map(o => [o.order_number, fmt(o.created_at).slice(0, 10), o.customer_name, localPhone(o.customer_phone), o.city, o.district, o.address, o.national_address || "",
     o.products, o.qty, o.subtotal, o.discount_amount, o.shipping_amount, o.total_amount, o.payment_method === "cod" ? "Cash on delivery" : o.payment_method,
     LABELS[o.status] ? LABELS[o.status].en : o.status, fmt(o.created_at), fmt(o.updated_at)].map(cell).join(",")));
   await audit(env, ctx, "orders_exported", "orders", null, null, { filter: Object.fromEntries(params), rows: rows.length });
@@ -169,7 +169,7 @@ export async function orderDetail(env, ctx, number) {
     // cash on delivery: collected when the order is delivered; nothing is owed on a cancelled / failed order
     payment: { status: delivered ? "COLLECTED" : closed ? "NONE" : "PENDING", collected: delivered ? o.total_amount : 0, outstanding: delivered || closed ? 0 : o.total_amount },
     customer: { name: o.customer_name, phone: localPhone(o.customer_phone), phoneIntl: o.customer_phone, city: o.city, district: o.district,
-      address: o.address, notes: o.customer_notes, location: o.location_latitude != null ? { lat: o.location_latitude, lng: o.location_longitude } : null },
+      address: o.address, notes: o.customer_notes, nationalAddress: o.national_address || null, location: o.location_latitude != null ? { lat: o.location_latitude, lng: o.location_longitude } : null },
     items: full.items.map(i => ({ id: i.id, productId: i.product_id, name: i.product_name_snapshot, boxesPerUnit: i.boxes_per_unit,
       unitPrice: i.unit_price, priceOverridden: !!i.price_overridden, quantity: i.quantity, lineTotal: i.line_total })),
     history: full.history.map(h => ({ from: h.previous_status, to: h.new_status, by: h.changed_by, note: h.note, visibility: h.visibility, bulk: !!h.bulk_id, at: h.created_at })),
@@ -262,7 +262,8 @@ export async function bulkStatus(env, ctx, body) {
   return { updated: updated.length, skipped, bulkId };
 }
 /* ---------- edit customer / delivery details ---------- */
-const CUSTOMER_FIELDS = { name: ["customer_name", 60, 2], phone: ["customer_phone", 20, 0], city: ["city", 60, 2], district: ["district", 60, 2], address: ["address", 200, 3], notes: ["customer_notes", 500, 0] };
+const CUSTOMER_FIELDS = { name: ["customer_name", 60, 2], phone: ["customer_phone", 20, 0], city: ["city", 60, 2], district: ["district", 60, 2], address: ["address", 200, 3], notes: ["customer_notes", 500, 0],
+  nationalAddress: ["national_address", 20, 0] };
 export async function editCustomer(env, ctx, number, body) {
   need(ctx, "orders.edit_customer");
   const full = await getOrderOr404(env, number), o = full.order;
@@ -271,6 +272,12 @@ export async function editCustomer(env, ctx, number, body) {
   const changes = [], errors = {};
   for (const [key, [col, max, min]] of Object.entries(CUSTOMER_FIELDS)) {
     if (!(key in (body.customer || {}))) continue;
+    if (key === "nationalAddress") {                      // short code or empty (cleared)
+      const raw = clean(body.customer.nationalAddress, max), v = raw ? normalizeNationalAddress(raw) : null;
+      if (raw && !v) { errors.nationalAddress = "invalid"; continue; }
+      if (v !== (o.national_address || null)) changes.push({ key, col, old: o.national_address || null, new: v });
+      continue;
+    }
     let v = key === "phone" ? normalizePhone(body.customer.phone) : clean(body.customer[key], max);
     if (key === "phone" && !v) { errors.phone = "invalid_phone"; continue; }
     if (key === "name" && !/\p{L}/u.test(v)) { errors.name = "required"; continue; }
@@ -414,7 +421,7 @@ export async function anonymize(env, ctx, number, body) {
   if (!body || body.confirm !== o.order_number) throw new HttpError(422, { error: "confirmation_required" });
   const t = now();
   await env.DB.batch([
-    env.DB.prepare(`UPDATE orders SET customer_name = 'محذوف', customer_phone = '966500000000', city = '—', district = '—', address = '—', customer_notes = '',
+    env.DB.prepare(`UPDATE orders SET customer_name = 'محذوف', customer_phone = '966500000000', city = '—', district = '—', address = '—', customer_notes = '', national_address = NULL,
       location_latitude = NULL, location_longitude = NULL, anonymized_at = ?1, token_version = token_version + 1, updated_at = ?1 WHERE id = ?2`).bind(t, o.id),
     env.DB.prepare("UPDATE order_notes SET note = '[محذوف]' WHERE order_id = ?1").bind(o.id),
     env.DB.prepare("UPDATE orders SET customer_id = NULL WHERE id = ?1").bind(o.id),
@@ -676,7 +683,7 @@ export async function backup(env, ctx) {
   const tables = ["orders", "order_items", "order_status_history", "order_notes", "notification_outbox", "order_counters", "audit_logs", "roles", "permissions", "role_permissions", "catalog_cache",
     "customers", "products", "inventory_settings", "inventory_balances", "inventory_batches", "inventory_reservations", "inventory_consumptions", "inventory_adjustments",
     "inventory_transactions", "inventory_alerts", "expense_categories", "expenses", "shipping_settings", "shipment_batches", "shipment_orders"];
-  const out = { exportedAt: now(), exportedBy: ctx.user.username, schema: "0005", tables: {} };
+  const out = { exportedAt: now(), exportedBy: ctx.user.username, schema: "0006", tables: {} };
   for (const t of tables) out.tables[t] = (await env.DB.prepare(`SELECT * FROM ${t} ORDER BY rowid LIMIT 100000`).all()).results;
   out.tables.users = (await env.DB.prepare("SELECT id, username, display_name, role_id, is_active, created_at, updated_at FROM users ORDER BY id").all()).results;
   await audit(env, ctx, "backup_downloaded", "system", null, null, Object.fromEntries(Object.entries(out.tables).map(([k, v]) => [k, v.length])));
@@ -717,7 +724,7 @@ export async function adminOrder(env, ctx, body) {
   const stock = await reservationPreview(env.DB, boxes);
   const totals = { boxes: q.boxes, lines: q.lines.map(l => ({ name: l.name, quantity: l.quantity, unitPrice: l.unitPrice, lineTotal: l.lineTotal })),
     subtotal: q.subtotal, offerDiscount: q.discount, manualDiscount: manual, discount: q.discount + manual, shipping: q.shipping, total: q.subtotal - q.discount - manual + q.shipping, currency: q.currency };
-  const customer = existing ? { existing: true, id: existing.id, name: existing.name, city: existing.city, district: existing.district, address: existing.address } : { existing: false };
+  const customer = existing ? { existing: true, id: existing.id, name: existing.name, city: existing.city, district: existing.district, address: existing.address, nationalAddress: existing.national_address || null } : { existing: false };
   if (body.preview === true) return { preview: true, status, source: "ADMIN", totals, stock, customer };
 
   if (stock.initialized && stock.shortage > 0 && body.allowShortage !== true)
@@ -744,5 +751,5 @@ export async function customerLookup(env, ctx, params) {
   const rows = digits.length >= 4
     ? (await env.DB.prepare("SELECT * FROM customers WHERE phone LIKE ? ORDER BY updated_at DESC LIMIT 10").bind("%" + digits.replace(/^0/, "").replace(/^966/, "") + "%").all()).results
     : (await env.DB.prepare("SELECT * FROM customers WHERE name LIKE ? ESCAPE '\\' ORDER BY updated_at DESC LIMIT 10").bind("%" + q.replace(/[\\%_]/g, c => "\\" + c) + "%").all()).results;
-  return { customers: rows.map(c => ({ id: c.id, name: c.name, phone: localPhone(c.phone), city: c.city, district: c.district, address: c.address })) };
+  return { customers: rows.map(c => ({ id: c.id, name: c.name, phone: localPhone(c.phone), city: c.city, district: c.district, address: c.address, nationalAddress: c.national_address || null })) };
 }

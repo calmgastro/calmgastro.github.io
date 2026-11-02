@@ -209,7 +209,7 @@ template filled: `src/sena_template.js` is generated from their .xlsx by `build_
 lists, zones, hidden options sheet and instructions kept; the 2,495 per-cell copies of their 5 validation rules written as
 5 ranges). Columns: name · city · zone (from their list, setting) · address (district, address, delivery note, map link) ·
 mobile 05… (text) · order number · shipment ref · amount to collect · weight (boxes × box weight, setting) · national
-address (left empty for now) · «الشحنة مجهزة من التاجر» · 0 bags/bubbles/cartons.
+address (`orders.national_address`, see below) · «الشحنة مجهزة من التاجر» · 0 bags/bubbles/cartons.
 Items sheet: one line per order item, linked by order number. Regenerate the module if the carrier changes the template.
 
 **Delivery.** Admin → الشحن → a batch: select orders (or paste the numbers / shipment refs from the carrier's report) →
@@ -218,6 +218,13 @@ consumes the stock (FIFO) and counts as revenue; failed releases it. Only orders
 move. An order shipped short of stock first takes what is available now (same allocation as «حجز المتوفر», audited as
 `shortage_allocated`); if stock still does not cover it, it is skipped with the boxes missing and stays shipped until the
 receipt is recorded (Inventory → استلام مخزون), then confirmed again.
+
+**National address** (migration `0006`): the Saudi short code (4 letters + 4 digits, e.g. RRRD2929) on `orders` and
+`customers` (CHECK on the shape). Checkout has an optional field (Arabic digits, lower case and spaces accepted, stored
+upper case); when it is empty, a short code written in the address or delivery notes is used. Admins set it on the order
+page, the new-order form (filled from the saved customer), or directly in the SENA review / batch rows (missing ones are
+counted; the batch file is regenerated on each download). 0006 back-filled existing orders only where the address starts
+with the code (the form copied from the national address service); nothing is guessed. Cleared by anonymize; in the CSV.
 
 **Orders table columns** can be resized by dragging the edge of a header (or ←/→ on the focused edge); widths are kept per
 browser (`localStorage` `cg-cols:orders`), double-click an edge to reset. Permission `shipments.manage` (Super Admin, Order Manager) plus the normal status permissions.

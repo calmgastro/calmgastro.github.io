@@ -25,6 +25,21 @@ const clean = (v, max) => String(v ?? "")
   .replace(/[<>]/g, "")
   .replace(/\s+/g, " ").trim().slice(0, max);
 
+/* Saudi national address, short form: 4 letters + 4 digits (e.g. RRRD2929). Arabic digits, lower case, spaces and dashes accepted. */
+const NA = /^[A-Z]{4}\d{4}$/;
+export function normalizeNationalAddress(v) {
+  const s = latinDigits(v).toUpperCase().replace(/[\s\-_.]/g, "");
+  return NA.test(s) ? s : null;
+}
+// a short code written inside a free-text address or note ("EHAC6670، 6670 سعد الكندي…", "العنوان الوطني: rrrd 2929")
+export function findNationalAddress(...texts) {
+  for (const t of texts) {
+    const m = latinDigits(t).toUpperCase().match(/(?:^|[^A-Z0-9])([A-Z]{4})[\s-]?(\d{4})(?![0-9])/);
+    if (m) return m[1] + m[2];
+  }
+  return null;
+}
+
 export function normalizeOrderNumber(v) {
   const s = latinDigits(v).toUpperCase().replace(/\s+/g, "");
   const m = s.match(/^([A-Z]{2,4})-?(\d{4})-?(\d{1,6})$/);
@@ -43,6 +58,9 @@ export function validateOrderInput(body, catalog) {
   if (city.length < 2) errors.city = "required";
   if (district.length < 2) errors.district = "required";
   if (address.length < 3) errors.address = "required";
+  // optional at checkout; when left empty, a short code the customer wrote in the address or notes is used
+  const naRaw = clean(c.nationalAddress, 20), nationalAddress = naRaw ? normalizeNationalAddress(naRaw) : findNationalAddress(address, notes);
+  if (naRaw && !nationalAddress) errors.nationalAddress = "invalid";
 
   let location = null;
   if (body && body.location != null) {
@@ -75,7 +93,7 @@ export function validateOrderInput(body, catalog) {
 
   if (Object.keys(errors).length) return { errors };
   return { value: { key, items, payment, location, lang: body.lang === "en" ? "en" : "ar",
-    customer: { name, phone, city, district, address, notes },
+    customer: { name, phone, city, district, address, notes, nationalAddress: nationalAddress || null },
     expectedTotal: Number.isInteger(body.expectedTotal) ? body.expectedTotal : null } };
 }
 
@@ -142,24 +160,27 @@ export async function insertOrder(env, catalog, o, q, opts) {
   const orderId = "(SELECT id FROM orders WHERE idempotency_key = ?1)";
   // customer record per mobile number: website orders never overwrite it; an admin may choose to update it
   const customerSql = opts.saveProfile
-    ? `INSERT INTO customers (phone, name, city, district, address, created_by, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)
-       ON CONFLICT (phone) DO UPDATE SET name = excluded.name, city = excluded.city, district = excluded.district, address = excluded.address, updated_at = excluded.updated_at`
-    : "INSERT INTO customers (phone, name, city, district, address, created_by, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7) ON CONFLICT (phone) DO NOTHING";
+    ? `INSERT INTO customers (phone, name, city, district, address, created_by, created_at, updated_at, national_address) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8)
+       ON CONFLICT (phone) DO UPDATE SET name = excluded.name, city = excluded.city, district = excluded.district, address = excluded.address,
+         national_address = COALESCE(excluded.national_address, customers.national_address), updated_at = excluded.updated_at`
+    // website orders never overwrite the record; they only fill a national address it does not have yet
+    : `INSERT INTO customers (phone, name, city, district, address, created_by, created_at, updated_at, national_address) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8)
+       ON CONFLICT (phone) DO UPDATE SET national_address = COALESCE(customers.national_address, excluded.national_address)`;
   const inv = await creationStmts(db, { items: q.lines.map(l => ({ productId: l.productId, boxesPerUnit: l.boxesPerUnit, quantity: l.quantity })),
     oid: { sql: "(SELECT id FROM orders WHERE idempotency_key = ?)", binds: [o.key] }, actor: opts.actor, userId: opts.userId, t: now, key: o.key,
     label: opts.source === "ADMIN" ? "admin_order" : "website_order" });
   const stmts = [
     db.prepare("INSERT INTO order_counters (year, last_value) VALUES (?1, 1) ON CONFLICT(year) DO UPDATE SET last_value = last_value + 1").bind(year),
-    db.prepare(customerSql).bind(o.customer.phone, o.customer.name, o.customer.city, o.customer.district, o.customer.address, opts.actor, now),
+    db.prepare(customerSql).bind(o.customer.phone, o.customer.name, o.customer.city, o.customer.district, o.customer.address, opts.actor, now, o.customer.nationalAddress),
     db.prepare(`INSERT INTO orders (order_number, idempotency_key, request_hash, customer_name, customer_phone, city, district, address,
         location_latitude, location_longitude, customer_notes, boxes, subtotal, discount_amount, shipping_amount, total_amount,
-        currency, payment_method, status, lang, created_at, updated_at, source, created_by, created_by_user_id, customer_id, manual_discount, manual_discount_reason)
+        currency, payment_method, status, lang, created_at, updated_at, source, created_by, created_by_user_id, customer_id, manual_discount, manual_discount_reason, national_address)
       VALUES (?1 || '-' || ?2 || '-' || printf('%06d', (SELECT last_value FROM order_counters WHERE year = ?2)),
-        ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?22, ?23, ?24, ?25, (SELECT id FROM customers WHERE phone = ?6), ?26, ?27)`)
+        ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?22, ?23, ?24, ?25, (SELECT id FROM customers WHERE phone = ?6), ?26, ?27, ?28)`)
       .bind(catalog.orderPrefix, year, o.key, o.requestHash, o.customer.name, o.customer.phone, o.customer.city, o.customer.district,
         o.customer.address, o.location ? o.location.lat : null, o.location ? o.location.lng : null, o.customer.notes,
         q.boxes, q.subtotal, discount, q.shipping, total, q.currency, o.payment, status, o.lang, now,
-        opts.source, opts.actor, opts.userId ?? null, manual, opts.manualReason || ""),
+        opts.source, opts.actor, opts.userId ?? null, manual, opts.manualReason || "", o.customer.nationalAddress),
     ...q.lines.map(l => db.prepare(`INSERT INTO order_items (order_id, product_id, product_name_snapshot, product_name_en_snapshot,
         boxes_per_unit, unit_price, quantity, line_total, created_at, updated_at) VALUES (${orderId}, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)`)
       .bind(o.key, l.productId, l.name, l.nameEn, l.boxesPerUnit, l.unitPrice, l.quantity, l.lineTotal, now)),
@@ -227,7 +248,7 @@ export function customerView(full) {
     boxes: o.boxes, subtotal: o.subtotal, discount: o.discount_amount, shipping: o.shipping_amount, total: o.total_amount,
     currency: o.currency, paymentMethod: o.payment_method,
     delivery: anonymized ? { name: "—", city: "—", district: "—", address: "—" }
-      : { name: o.customer_name, phone: mask(o.customer_phone), city: o.city, district: o.district, address: o.address, notes: o.customer_notes, hasLocation: o.location_latitude != null },
+      : { name: o.customer_name, phone: mask(o.customer_phone), city: o.city, district: o.district, address: o.address, notes: o.customer_notes, nationalAddress: o.national_address || null, hasLocation: o.location_latitude != null },
     // status changes with time; a note is shown only when the admin marked it customer-visible
     history: history.map(h => ({ status: h.new_status, at: h.created_at, note: h.visibility === "customer" ? h.note : "" }))
   };

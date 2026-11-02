@@ -1329,6 +1329,12 @@
               <input id="f-address" name="address" autocomplete="address-line1" maxlength="200" required placeholder="الشارع، رقم المبنى أو أقرب معلم" aria-describedby="e-address">
               <span class="err" id="e-address"></span>
             </div>
+            <div class="field">
+              <label for="f-na">العنوان الوطني المختصر <span class="opt">(اختياري)</span></label>
+              <input id="f-na" name="nationalAddress" dir="ltr" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="مثال: RRRD2929" aria-describedby="h-na e-nationalAddress">
+              <span class="hint" id="h-na">4 حروف و4 أرقام، تجده في تطبيق «العنوان الوطني» أو في «أبشر». يساعد شركة الشحن على الوصول إليك أسرع.</span>
+              <span class="err" id="e-nationalAddress"></span>
+            </div>
             <div class="loc">
               <button type="button" class="loc-btn" id="locBtn">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 21s-7-6.1-7-11.5A7 7 0 0 1 19 9.5C19 14.9 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.5"/></svg>
@@ -1726,9 +1732,9 @@
 }
 </script>
 
-<script src="assets/i18n-en.js?v=20261102a"></script>
+<script src="assets/i18n-en.js?v=20261103a"></script>
 <script src="assets/app.js?v=20261031a"></script>
-<script src="assets/shop.js?v=20261031b"></script>
+<script src="assets/shop.js?v=20261103a"></script>
 <!-- إشعارات عائمة: الإعدادات ← البيانات ← العرض ← الإدارة (assets/notifications/) -->
 <script src="assets/notifications/config/notificationConfig.js?v=20261031c"></script>
 <script src="assets/notifications/data/testimonials.js?v=20261031c"></script>

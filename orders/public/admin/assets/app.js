@@ -574,25 +574,27 @@ async function pageOrder(number) {
         h("dl", { class: "kv" },
           h("dt", { text: "الاسم" }), h("dd", { text: c.name }), h("dt", { text: "الجوال" }), h("dd", { class: "num", text: c.phone }),
           h("dt", { text: "المدينة" }), h("dd", { text: c.city }), h("dt", { text: "الحي" }), h("dd", { text: c.district }),
-          h("dt", { text: "العنوان" }), h("dd", { text: c.address }), h("dt", { text: "ملاحظات التوصيل" }), h("dd", { text: c.notes || "—" })));
+          h("dt", { text: "العنوان" }), h("dd", { text: c.address }),
+          h("dt", { text: "العنوان الوطني" }), h("dd", null, c.nationalAddress ? h("span", { class: "num", text: c.nationalAddress }) : h("span", { class: "danger-text small", text: "غير مسجّل — تطلبه سينا لشحنات السعودية" })),
+          h("dt", { text: "ملاحظات التوصيل" }), h("dd", { text: c.notes || "—" })));
     };
     const edit = () => {
-      const f = {}, mk = (k, label, attrs) => { f[k] = h(k === "notes" ? "textarea" : "input", { value: c[k] || "", maxlength: k === "address" ? 200 : k === "notes" ? 500 : 60, ...attrs }); return h("label", { class: "f" }, label, f[k]); };
+      const f = {}, mk = (k, label, attrs) => { f[k] = h(k === "notes" ? "textarea" : "input", { value: c[k] || "", maxlength: k === "address" ? 200 : k === "notes" ? 500 : k === "nationalAddress" ? 12 : 60, ...attrs }); return h("label", { class: "f" }, label, f[k]); };
       const err = h("p", { class: "err", role: "alert" });
       const save = h("button", { type: "button", class: "btn primary", text: "حفظ" });
       card.textContent = "";
       put(card, h("h2", { text: "تعديل بيانات العميل" }), h("div", { class: "grid2" }, mk("name", "الاسم"), mk("phone", "الجوال", { dir: "ltr", inputmode: "tel" }), mk("city", "المدينة"), mk("district", "الحي")),
-        mk("address", "العنوان"), mk("notes", "ملاحظات التوصيل"), err, h("div", { class: "row" }, save, h("button", { type: "button", class: "btn ghost", text: "إلغاء", onclick: view })));
+        mk("address", "العنوان"), mk("nationalAddress", "العنوان الوطني المختصر (4 حروف و4 أرقام، مثل RRRD2929)", { dir: "ltr", placeholder: "RRRD2929" }), mk("notes", "ملاحظات التوصيل"), err, h("div", { class: "row" }, save, h("button", { type: "button", class: "btn ghost", text: "إلغاء", onclick: view })));
       save.addEventListener("click", async () => {
         const changed = Object.keys(f).filter(k => f[k].value.trim() !== String(c[k] || "").trim());
         if (!changed.length) return view();
-        const labels = { name: "الاسم", phone: "الجوال", city: "المدينة", district: "الحي", address: "العنوان", notes: "ملاحظات التوصيل" };
+        const labels = { name: "الاسم", phone: "الجوال", city: "المدينة", district: "الحي", address: "العنوان", nationalAddress: "العنوان الوطني", notes: "ملاحظات التوصيل" };
         const lines = changed.map(k => h("p", { class: "small" }, h("b", { text: labels[k] + ": " }), `${c[k] || "—"} ← ${f[k].value.trim() || "—"}`));
         if (changed.some(k => k === "phone" || k === "address")) lines.unshift(h("p", { class: "warn-box", text: "تعديل الجوال أو العنوان يغيّر بيانات التوصيل والتحقق في تتبع الطلب." }));
         if (!(await confirmBox("هل أنت متأكد من حفظ التعديلات؟", lines, { okText: "حفظ التعديلات" }))) return;
         await busy(save, "جاري الحفظ…", async () => {
           try { refresh(await api(`/orders/${o.orderNumber}/customer`, { body: { customer: Object.fromEntries(changed.map(k => [k, f[k].value])), expectedUpdatedAt: o.updatedAt } })); toast("تم حفظ التعديلات."); }
-          catch (e) { if (e.message === "unauthorized") return; err.textContent = e.data && e.data.fields ? Object.entries(e.data.fields).map(([k, v]) => `${labels[k] || k}: ${v === "invalid_phone" ? "رقم جوال سعودي غير صحيح" : "مطلوب"}`).join(" · ") : errText(e); if (e.message === "order_changed") refresh(await api("/orders/" + o.orderNumber)); }
+          catch (e) { if (e.message === "unauthorized") return; err.textContent = e.data && e.data.fields ? Object.entries(e.data.fields).map(([k, v]) => `${labels[k] || k}: ${v === "invalid_phone" ? "رقم جوال سعودي غير صحيح" : k === "nationalAddress" ? "4 حروف ثم 4 أرقام، مثل RRRD2929" : "مطلوب"}`).join(" · ") : errText(e); if (e.message === "order_changed") refresh(await api("/orders/" + o.orderNumber)); }
         });
       });
     };
@@ -719,7 +721,7 @@ const KEY_AR = { status: "الحالة", note: "ملاحظة", visibility: "ال
   amount: "المبلغ", category: "الفئة", date: "التاريخ", description: "الوصف", orderNumber: "الطلب", platform: "المنصة", campaign: "الحملة", reference: "المرجع",
   paymentMethod: "طريقة الدفع", notes: "ملاحظات", version: "الإصدار", batch: "الدفعة", receivedDate: "تاريخ الشراء", quantityOrdered: "الكمية في الفاتورة",
   supplier: "المورد", location: "الموقع", unitCost: "سعر الوحدة", totalCost: "الإجمالي (ر.س)", newOnHand: "الموجود بعد", onHand: "الموجود" };
-const FIELD_AR = { name: "الاسم", phone: "الجوال", city: "المدينة", district: "الحي", address: "العنوان", notes: "ملاحظات التوصيل" };
+const FIELD_AR = { name: "الاسم", phone: "الجوال", city: "المدينة", district: "الحي", address: "العنوان", nationalAddress: "العنوان الوطني", notes: "ملاحظات التوصيل" };
 const VAL_AR = v => STATUS[v] || ROLE[v] || FIELD_AR[v] || { DELIVERY: "التوصيل والشحن", ADVERTISING: "الإعلانات", OTHER: "أخرى" }[v] || { internal: "داخلية", customer: "يراها العميل", true: "نعم", false: "لا" }[String(v)] || v;
 function auditDiff(oldV, newV) {
   const p = v => { try { return JSON.parse(v); } catch (_) { return v; } };
@@ -1561,7 +1563,7 @@ async function pageNewOrder() {
   const main = shell("orders");
   const key = "admin-" + reqId();
   const f = { name: h("input", { maxlength: 60, required: true }), phone: h("input", { dir: "ltr", inputmode: "tel", placeholder: "05XXXXXXXX", required: true }), city: h("input", { maxlength: 60 }),
-    district: h("input", { maxlength: 60 }), address: h("input", { maxlength: 200 }), notes: h("textarea", { maxlength: 500, placeholder: "ملاحظات التوصيل (يراها فريق التوصيل)" }) };
+    district: h("input", { maxlength: 60 }), address: h("input", { maxlength: 200 }), nationalAddress: h("input", { maxlength: 12, dir: "ltr", placeholder: "RRRD2929" }), notes: h("textarea", { maxlength: 500, placeholder: "ملاحظات التوصيل (يراها فريق التوصيل)" }) };
   f.city.setAttribute("list", cityList());
   const qty = h("input", { type: "number", min: 1, step: 1, value: 1, inputmode: "numeric", "aria-label": "عدد العلب" });
   const status = h("select", null, h("option", { value: "RECEIVED", text: STATUS.RECEIVED }), (can("orders.status") || can("orders.status.limited")) ? h("option", { value: "CONFIRMED", text: STATUS.CONFIRMED }) : null);
@@ -1575,14 +1577,14 @@ async function pageNewOrder() {
     if (search.value.trim().length < 2) return;
     try { const r = await api("/customers/search?q=" + encodeURIComponent(search.value.trim()));
       put(results, r.customers.length ? r.customers.map(c => h("button", { type: "button", class: "btn ghost sm", text: `${c.name} · ${c.phone} · ${c.city}`, onclick: () => {
-        f.name.value = c.name; f.phone.value = c.phone; f.city.value = c.city; f.district.value = c.district; f.address.value = c.address; results.textContent = ""; save.hidden = false; toast("تم ملء بيانات العميل المحفوظة."); } }))
+        f.name.value = c.name; f.phone.value = c.phone; f.city.value = c.city; f.district.value = c.district; f.address.value = c.address; f.nationalAddress.value = c.nationalAddress || ""; results.textContent = ""; save.hidden = false; toast("تم ملء بيانات العميل المحفوظة."); } }))
         : h("span", { class: "muted small", text: "لا يوجد عميل مطابق — أدخل بياناته وسيُنشأ له سجل." }));
     } catch (_) {}
   }, 300); });
   const out = h("div"), err = h("p", { class: "err", role: "alert" }), pv = h("button", { type: "button", class: "btn primary", text: "مراجعة الطلب" });
   const body = extra => ({ quantity: Number(qty.value), status: status.value, customer: Object.fromEntries(Object.entries(f).map(([k, el]) => [k, el.value])),
     discount: can("orders.discount") ? Number(disc.value || 0) : 0, discountReason: discReason.value, internalNote: note.value, saveProfile: save.querySelector("input").checked, idempotencyKey: key, ...extra });
-  const L = { name: "الاسم", phone: "رقم الجوال", city: "المدينة", district: "الحي", address: "العنوان", quantity: "الكمية", discount: "الخصم", discountReason: "سبب الخصم" };
+  const L = { name: "الاسم", phone: "رقم الجوال", city: "المدينة", district: "الحي", address: "العنوان", nationalAddress: "العنوان الوطني (4 حروف و4 أرقام)", quantity: "الكمية", discount: "الخصم", discountReason: "سبب الخصم" };
   pv.addEventListener("click", () => busy(pv, "جارٍ الحساب…", async () => {
     err.textContent = ""; out.textContent = "";
     let r; try { r = await api("/orders/new", { body: body({ preview: true }) }); } catch (e) { err.textContent = e.data && e.data.fields ? "تحقق من: " + Object.keys(e.data.fields).map(k => L[k] || k).join("، ") : errText(e); return; }
@@ -1617,7 +1619,9 @@ async function pageNewOrder() {
         h("section", { class: "card" }, h("h2", { text: "العميل" }), search, results,
           h("div", { class: "grid2" }, h("label", { class: "f" }, "الاسم الكامل", f.name), h("label", { class: "f" }, "رقم الجوال", f.phone)), save),
         h("section", { class: "card" }, h("h2", { text: "التوصيل" }),
-          h("div", { class: "grid2" }, h("label", { class: "f" }, "المدينة", f.city), h("label", { class: "f" }, "الحي", f.district)), h("label", { class: "f" }, "العنوان الكامل", f.address), h("label", { class: "f" }, "ملاحظات التوصيل", f.notes))),
+          h("div", { class: "grid2" }, h("label", { class: "f" }, "المدينة", f.city), h("label", { class: "f" }, "الحي", f.district)), h("label", { class: "f" }, "العنوان الكامل", f.address),
+          h("label", { class: "f" }, "العنوان الوطني المختصر", f.nationalAddress, h("small", { text: "4 حروف و4 أرقام (مثل RRRD2929) — تطلبه سينا لشحنات السعودية؛ يُقرأ تلقائياً إن كُتب داخل العنوان." })),
+          h("label", { class: "f" }, "ملاحظات التوصيل", f.notes))),
       h("div", null,
         h("section", { class: "card" }, h("h2", { text: "المنتج والطلب" }),
           h("div", { class: "grid2" }, h("label", { class: "f" }, "المنتج", h("input", { value: "CalmGastro", disabled: true })), h("label", { class: "f" }, "الكمية (علبة)", qty, h("small", { text: "السعر حسب عروض الموقع الحالية" })),
@@ -1771,6 +1775,32 @@ const SHIP_REASON = { not_found: "غير موجود", anonymized: "بيانات 
   on_hold: "معلّق — راجعه أولاً", shortage: "نقص مخزون", transition_not_allowed: "لا تملك صلاحية نقله", status_changed: "تغيّر من جهاز آخر", not_in_batch: "ليس في هذه الشحنة",
   already: "في هذه الحالة مسبقاً", inventory_shortage: "مخزون ناقص — سجّل استلام المخزون ثم أكّد التوصيل" };
 const SHIP_SEL_KEY = "cg-ship-selection";
+/* العنوان الوطني في صفحات الشحن: يظهر، أو يُكتب ويُحفظ في الطلب مباشرة (يدخل ملف سينا عند تنزيله) */
+const NA_RE = /^[A-Z]{4}\d{4}$/;
+const normNA = v => (window.CGParse ? window.CGParse.digits(v) : String(v)).toUpperCase().replace(/[\s\-_.]/g, "");
+function naCell(o, onChange) {
+  const cell = h("span", { class: "na-cell" });
+  const show = () => {
+    cell.textContent = "";
+    if (o.nationalAddress) return put(cell, h("span", { class: "num", text: o.nationalAddress }));
+    if (!can("orders.edit_customer") || o.anonymized) return put(cell, h("span", { class: "danger-text small", text: "غير مسجّل" }));
+    const inp = h("input", { class: "na-input", dir: "ltr", maxlength: 12, placeholder: "RRRD2929", "aria-label": "العنوان الوطني للطلب " + o.orderNumber });
+    const btn = h("button", { type: "button", class: "btn ghost sm", text: "حفظ" });
+    const save = () => {
+      const v = normNA(inp.value);
+      if (!NA_RE.test(v)) { toast("العنوان الوطني المختصر: 4 حروف ثم 4 أرقام، مثل RRRD2929.", true); inp.focus(); return; }
+      busy(btn, "…", async () => {
+        try { await api(`/orders/${o.orderNumber}/customer`, { body: { customer: { nationalAddress: v } } }); o.nationalAddress = v; toast(`حُفظ العنوان الوطني للطلب ${o.orderNumber}.`); show(); onChange && onChange(); }
+        catch (e) { if (e.message !== "unauthorized") toast(e.data && e.data.fields && e.data.fields.nationalAddress ? "العنوان الوطني غير صحيح (4 حروف ثم 4 أرقام)." : errText(e), true); }
+      });
+    };
+    btn.addEventListener("click", save);
+    inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); save(); } });
+    put(cell, inp, btn);
+  };
+  show();
+  return cell;
+}
 const shipFileUrl = id => `/admin/api/shipments/${id}/file.xlsx`;
 function downloadShipFile(id) { const a = h("a", { href: shipFileUrl(id), download: "" }); document.body.append(a); a.click(); a.remove(); }
 const shipState = b => b.inTransit ? h("span", { class: "st st-SHIPPED", text: `لدى شركة الشحن: ${b.inTransit}` }) : h("span", { class: "st st-DELIVERED", text: "مكتملة" });
@@ -1838,6 +1868,14 @@ async function pageShipmentNew() {
   const name = h("input", { maxlength: 80, value: d.suggestedName, "aria-label": "اسم التصدير" }), notes = h("input", { maxlength: 300, placeholder: "اختياري — مثال: الدفعة الصباحية", "aria-label": "ملاحظة" });
   const err = h("p", { class: "err", role: "alert" });
   const go_ = h("button", { type: "button", class: "btn primary big", text: `تصدير ${fmtN(T.orders)} طلب إلى سينا`, disabled: !T.orders });
+  const naMissing = () => ok.filter(r => !r.nationalAddress).length, naNote = h("div");
+  function drawNaNote() {
+    naNote.textContent = "";
+    const n = naMissing();
+    if (n) put(naNote, h("section", { class: "card warn-card" }, h("h2", { text: `${fmtN(n)} طلب بدون عنوان وطني` }),
+      h("p", { class: "small", text: "سينا تطلب العنوان الوطني لشحنات السعودية. اكتبه في عمود «العنوان الوطني» أدناه واضغط «حفظ» (يُحفظ في الطلب نفسه). يمكنك أيضاً التصدير الآن وإكماله لاحقاً من صفحة الشحنة ثم إعادة تنزيل الملف." })));
+  }
+  drawNaNote();
   put(main, h("div", { class: "page-head" }, h("div", null, h("a", { href: "/admin/orders", "data-link": true, class: "small", text: "→ الطلبات" }), h("h1", { text: "تصدير شحنة إلى سينا" })),
       h("span", { class: "tag", text: "ملف استيراد شحنات سينا" })),
     h("p", { class: "sel-summary" }, "حدّدت ", h("b", { text: `${fmtN(d.selected.orders)} طلب` }), " بـ ", h("b", { text: `${fmtN(d.selected.boxes)} علبة` }),
@@ -1857,9 +1895,11 @@ async function pageShipmentNew() {
       h("p", { class: "muted small", text: "هذه الطلبات لا يمكن شحنها الآن وتُستبعد تلقائياً من الملف؛ لا يتغير فيها شيء." }),
       tbl(["الطلب", "العميل", "الحالة", "السبب"], bad.map(r => [h("a", { href: "/admin/orders/" + r.orderNumber, "data-link": true, class: "num", text: r.orderNumber }), r.customer || "—", r.status ? badge(r.status) : "—",
         h("b", { class: "danger-text", text: (SHIP_REASON[r.reason] || r.reason) + (r.shortage ? ` (ينقصه ${r.shortage})` : "") })]))) : null,
+    naNote,
     h("section", { class: "card" }, h("h2", { text: "الطلبات في الملف" }),
-      tbl(["الطلب", "العميل", "الجوال", "المدينة", "العلب", "القيمة", "الحالة الآن", "الخطوات"], ok.map(r => [h("span", { class: "num", text: r.orderNumber }), r.customer, h("span", { class: "num", text: r.phone }),
-        r.city, h("span", null, h("b", { class: "num", text: fmtN(r.boxes) }), r.shortage ? h("span", { class: "inv inv-SHORTAGE", text: `ينقصه ${fmtN(r.shortage)}` })
+      tbl(["الطلب", "العميل", "الجوال", "المدينة", "العنوان الوطني", "العلب", "القيمة", "الحالة الآن", "الخطوات"], ok.map(r => [h("span", { class: "num", text: r.orderNumber }), r.customer, h("span", { class: "num", text: r.phone }),
+        r.city, naCell(r, drawNaNote),
+        h("span", null, h("b", { class: "num", text: fmtN(r.boxes) }), r.shortage ? h("span", { class: "inv inv-SHORTAGE", text: `ينقصه ${fmtN(r.shortage)}` })
           : r.allocate ? h("span", { class: "inv inv-RESERVED", title: "كان ناقصاً عند الطلب والمخزون الحالي يغطيه؛ يُحجز له عند التصدير", text: "يُحجز من المتوفر" }) : null),
         money(r.amount), badge(r.status), r.steps.map(s => STATUS[s]).join(" ← ")]))),
     h("section", { class: "card" }, h("h2", { text: "اسم التصدير" }),
@@ -1874,6 +1914,7 @@ async function pageShipmentNew() {
       h("ul", { class: "change-list" }, h("li", { text: "تتغير حالة هذه الطلبات إلى «تم الشحن» (مع تسجيل خطوات التأكيد والتجهيز في سجل كل طلب)." }),
         h("li", { text: "يُبلَّغ كل عميل برسالة «تم تسليم طلبك لشركة الشحن»." }), h("li", { text: "يُنزَّل ملف Excel جاهزاً للرفع في نظام سينا، ويمكن تنزيله مرة أخرى من صفحة الشحنة." })),
       bad.length ? h("p", { class: "muted small", text: `لن يشمل الملف ${bad.length} طلباً مستبعداً.` }) : null,
+      naMissing() ? h("p", { class: "warn-box", text: `${fmtN(naMissing())} طلب بدون عنوان وطني — سيبقى عموده فارغاً في الملف.` }) : null,
       T.shortageOrders ? h("p", { class: "warn-box", text: `${fmtN(T.shortageOrders)} طلب مخزونه ناقص في النظام (${fmtN(T.shortageBoxes)} علبة) — تأكد أن العلب موجودة لديك فعلاً.` }) : null,
       h("p", { class: "warn-box", text: "لا يمكن التراجع عن «تم الشحن» إلا بتغيير استثنائي للحالة." })], { okText: "نعم، صدّر وغيّر الحالة" }))) return;
     await busy(go_, "جارٍ التصدير…", async () => {
@@ -1911,10 +1952,18 @@ async function pageShipment(id) {
       if (cb) cb.addEventListener("change", () => { cb.checked ? pick.add(o.orderNumber) : pick.delete(o.orderNumber); drawBar(); });
       body.append(h("tr", { class: pick.has(o.orderNumber) ? "row-editing" : null }, h("td", { class: "sel" }, cb),
         h("td", null, h("a", { href: "/admin/orders/" + o.orderNumber, "data-link": true, class: "num", text: o.orderNumber })), h("td", { class: "num small", text: o.shipmentRef }),
+        h("td", null, naCell(o, drawNa)),
         h("td", { text: o.customer }), h("td", { class: "num", text: o.phone }), h("td", { text: o.city }), h("td", { class: "num", text: fmtN(o.boxes) }), h("td", { text: money(o.amount) }),
         h("td", null, badge(o.status), o.shortage && open.includes(o) ? h("span", { class: "inv inv-SHORTAGE", text: `مخزون ناقص ${fmtN(o.shortage)}` }) : null), h("td", { class: "small", text: when(o.statusAt) })));
     });
   };
+  const naBox = h("div");
+  function drawNa() {
+    naBox.textContent = "";
+    const n = d.orders.filter(o => !o.nationalAddress && !o.anonymized).length;
+    if (n && d.canManage) put(naBox, h("p", { class: "warn-box", text: `${fmtN(n)} طلب بدون عنوان وطني. اكتبه في عموده أدناه ثم أعد «تنزيل ملف سينا» ليظهر في الملف.` }));
+  }
+  drawNa();
   const sum = set => d.orders.filter(o => set.has(o.orderNumber)).reduce((a, o) => ({ n: a.n + 1, boxes: a.boxes + o.boxes, amount: a.amount + o.amount }), { n: 0, boxes: 0, amount: 0 });
   const drawBar = () => {
     bar.textContent = "";
@@ -1961,13 +2010,13 @@ async function pageShipment(id) {
     h("p", { class: "muted small", text: `صدّرها ${B.createdBy} · ${when(B.createdAt)}` + (B.notes ? ` · ${B.notes}` : "") + ` · نُزّل الملف ${fmtN(B.downloads)} مرة` + (B.lastDownloadAt ? ` (آخرها ${when(B.lastDownloadAt)})` : "") }),
     h("div", { class: "tiles" }, tile2("الطلبات", fmtN(B.orders)), tile2("العلب", fmtN(B.boxes) + " علبة"), tile2("القيمة", money(B.amount)),
       tile2("تم التوصيل", fmtN(B.delivered), money(B.deliveredAmount), B.delivered === B.orders ? "tile-good" : ""), tile2("لدى شركة الشحن", fmtN(B.inTransit), money(B.transitAmount), B.inTransit ? "tile-total" : ""),
-      B.failed ? tile2("تعذّر التوصيل", fmtN(B.failed), null, "tile-warn") : null),
+      B.failed ? tile2("تعذّر التوصيل", fmtN(B.failed), null, "tile-warn") : null), naBox,
     d.canManage && open.length ? h("section", { class: "card" }, h("h2", { text: "تأكيد التوصيل" }),
       h("p", { class: "muted small", text: "حدّد الطلبات التي وصلت (أو الصق أرقامها من كشف سينا)، ثم «تأكيد التوصيل». تتحول إلى «تم التوصيل» دفعة واحدة وتُحسب إيراداتها ومخزونها." }),
       paste, h("div", { class: "row" }, h("button", { type: "button", class: "btn ghost sm", text: "تحديد الأرقام الملصقة", onclick: matchPaste }))) : null,
     bar,
     h("section", { class: "card" }, h("div", { class: "table-wrap" }, h("table", null,
-      h("thead", null, h("tr", null, h("th", { class: "sel" }), ["الطلب", "مرجع الشحنة", "العميل", "الجوال", "المدينة", "العلب", "القيمة", "الحالة", "منذ"].map(t => h("th", { text: t })))), body))));
+      h("thead", null, h("tr", null, h("th", { class: "sel" }), ["الطلب", "مرجع الشحنة", "العنوان الوطني", "العميل", "الجوال", "المدينة", "العلب", "القيمة", "الحالة", "منذ"].map(t => h("th", { text: t })))), body))));
   drawRows(); drawBar();
 }
 
