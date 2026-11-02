@@ -202,7 +202,6 @@ export async function shipmentDetail(env, ctx, id) {
 }
 
 /* ---------- the carrier file (their template, filled) ---------- */
-const NATIONAL_ADDRESS = /\b([A-Z]{4}\d{4})\b/i;               // Saudi short national address, e.g. RRRD2929
 export async function shipmentFile(env, ctx, id) {
   need(ctx, "shipments.manage");
   const db = env.DB, b = await db.prepare("SELECT * FROM shipment_batches WHERE id = ?").bind(Number(id)).first();
@@ -212,12 +211,11 @@ export async function shipmentFile(env, ctx, id) {
   const kg = n => Math.round(n * s.boxWeightKg * 100) / 100;
   const shipments = [], items = [];
   for (const o of rows) {
-    const na = (o.address.match(NATIONAL_ADDRESS) || [])[1];
     const address = [o.district ? "حي " + o.district.replace(/^حي\s+/, "") : "", o.address, o.customer_notes ? "ملاحظة: " + o.customer_notes : "",
       o.location_latitude != null ? `الموقع: https://maps.google.com/?q=${o.location_latitude},${o.location_longitude}` : ""].filter(Boolean).join("، ");
-    // A اسم المستلم · B المدينة · C الزون · D العنوان · E الجوال · F رقم الطلب · G مرجع الشحنة · H القيمة · I الوزن · J العنوان الوطني · K مصدر التجهيز · L–N أكياس/ببلز/كراتين · O رقم الزون
+    // A اسم المستلم · B المدينة · C الزون · D العنوان · E الجوال · F رقم الطلب · G مرجع الشحنة · H القيمة · I الوزن · J العنوان الوطني (فارغ حالياً) · K مصدر التجهيز · L–N أكياس/ببلز/كراتين · O رقم الزون
     shipments.push([o.anonymized_at ? "—" : o.customer_name, o.city, s.zone, o.anonymized_at ? "—" : address, o.anonymized_at ? "" : localPhone(o.customer_phone),
-      o.order_number, o.shipment_ref, o.amount, kg(o.sboxes), na ? na.toUpperCase() : "", s.prepSource, 0, 0, 0, null]);
+      o.order_number, o.shipment_ref, o.amount, kg(o.sboxes), "", s.prepSource, 0, 0, 0, null]);
     for (const i of (await db.prepare("SELECT * FROM order_items WHERE order_id = ? ORDER BY id").bind(o.id).all()).results)
       items.push([o.order_number, i.product_name_snapshot, null, null, i.quantity, i.unit_price, `${i.boxes_per_unit} علبة في الوحدة`, kg(i.boxes_per_unit * i.quantity)]);
   }

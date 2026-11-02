@@ -206,7 +206,7 @@ template filled: `src/sena_template.js` is generated from their .xlsx by `build_
 lists, zones, hidden options sheet and instructions kept; the 2,495 per-cell copies of their 5 validation rules written as
 5 ranges). Columns: name · city · zone (from their list, setting) · address (district, address, delivery note, map link) ·
 mobile 05… (text) · order number · shipment ref · amount to collect · weight (boxes × box weight, setting) · national
-address (detected when the customer wrote a short code like RRRD2929) · «الشحنة مجهزة من التاجر» · 0 bags/bubbles/cartons.
+address (left empty for now) · «الشحنة مجهزة من التاجر» · 0 bags/bubbles/cartons.
 Items sheet: one line per order item, linked by order number. Regenerate the module if the carrier changes the template.
 
 **Delivery.** Admin → الشحن → a batch: select orders (or paste the numbers / shipment refs from the carrier's report) →
