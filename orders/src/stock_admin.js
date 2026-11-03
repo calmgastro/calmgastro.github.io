@@ -31,7 +31,7 @@ export async function stockSummary(env, ctx) {
   ]);
   const values = batches.results.map(remainingValue);
   return {
-    initialized: true, product: DEFAULT_PRODUCT, onHand: b.on_hand, reserved: b.reserved, available, sold: b.sold,
+    initialized: true, product: DEFAULT_PRODUCT, onHand: b.on_hand, reserved: b.reserved, available, sold: b.sold, flow: await stockFlow(db),
     level: levelFor(available, s), lowStockThreshold: s.lowStockThreshold, criticalStockThreshold: s.criticalStockThreshold,
     shortageOrders: sh.n, shortageUnits: sh.units, costingMethod: s.costingMethod, settings: s,
     stockValue: fin ? sar(values.reduce((a, v) => a + (v || 0), 0)) : undefined, stockValueComplete: fin ? values.every(v => v != null) : undefined,
@@ -226,6 +226,69 @@ export async function setBatchCost(env, ctx, id, body) {
   stmts.push(auditStmt(env, ctx, "batch_cost_set", "inventory_batch", b.id, { totalCostHalalas: null }, { totalCostHalalas: total, ordersRecalculated: orders.length }));
   await db.batch(stmts);
   return { ok: true, unitCost: sar(total / b.quantity_received), ordersRecalculated: orders.length };
+}
+
+/* ---------- stock by availability ----------
+   Boxes are not promised to orders by date: whichever order is shipped first takes them. The only shortage shown is the
+   total — what is in the warehouse against what the orders not shipped yet need (dashboard and stock page). */
+const WITH_CARRIER = `(o.status IN ('SHIPPED','OUT_FOR_DELIVERY') OR (o.status = 'ON_HOLD' AND EXISTS (SELECT 1 FROM shipment_orders s WHERE s.order_id = o.id AND s.removed_at IS NULL)))`;
+export async function stockFlow(db) {
+  const b = await getBalance(db);
+  if (!b) return null;
+  const r = await db.prepare(`SELECT COALESCE(SUM(CASE WHEN ${WITH_CARRIER} THEN o.boxes END), 0) cb, COALESCE(SUM(CASE WHEN ${WITH_CARRIER} THEN 1 END), 0) co,
+      COALESCE(SUM(CASE WHEN NOT ${WITH_CARRIER} THEN o.boxes END), 0) pb, COALESCE(SUM(CASE WHEN NOT ${WITH_CARRIER} THEN 1 END), 0) po
+    FROM orders o WHERE o.status IN ('RECEIVED','CONFIRMED','PREPARING','SHIPPED','OUT_FOR_DELIVERY','ON_HOLD')`).first();
+  const inWarehouse = b.on_hand - r.cb, left = inWarehouse - r.pb;
+  return { onHand: b.on_hand, inWarehouse, withCarrier: { orders: r.co, boxes: r.cb }, pending: { orders: r.po, boxes: r.pb },
+    remaining: Math.max(0, left), short: Math.max(0, -left) };
+}
+
+/* An order that leaves (shipped / delivered) takes its boxes from the warehouse: free stock first, then boxes held for orders
+   that have not shipped yet (newest first) — those simply wait for the next receipt. Called before the status change.
+   Returns { taken, missing }: missing > 0 only when the warehouse itself holds fewer boxes than are leaving. */
+export async function claimStock(env, ctx, o) {
+  const db = env.DB;
+  const r = await db.prepare("SELECT * FROM inventory_reservations WHERE order_id = ? AND status = 'SHORTAGE'").bind(o.id).first();
+  if (!r) return { taken: 0, missing: 0 };
+  const p = r.product_id, bal = await getBalance(db, p);
+  const free = Math.max(0, Math.min(r.shortage_qty, bal.on_hand - bal.reserved));
+  let need = r.shortage_qty - free;
+  const donors = [];
+  if (need > 0) {
+    const rows = (await db.prepare(`SELECT r.id, r.order_id, r.reserved_qty, o.order_number FROM inventory_reservations r JOIN orders o ON o.id = r.order_id
+      WHERE r.product_id = ? AND r.status IN ('RESERVED','SHORTAGE') AND r.reserved_qty > 0 AND r.order_id <> ? AND o.status IN ('RECEIVED','CONFIRMED','PREPARING','ON_HOLD')
+        AND NOT EXISTS (SELECT 1 FROM shipment_orders s WHERE s.order_id = o.id AND s.removed_at IS NULL)
+      ORDER BY o.created_at DESC, o.id DESC`).bind(p, o.id).all()).results;
+    for (const d of rows) { if (!need) break; const q = Math.min(need, d.reserved_qty); donors.push({ ...d, q }); need -= q; }
+  }
+  const total = free + donors.reduce((a, d) => a + d.q, 0);
+  if (!total) return { taken: 0, missing: r.shortage_qty };
+  const t = now(), actor = ctx.user.username, uid = ctx.user.id;
+  // aborts the whole batch (CHECK on_hand >= 0) when the statement before it changed nothing: someone else moved first
+  const abort = () => db.prepare("UPDATE inventory_balances SET on_hand = -1 WHERE product_id = ? AND changes() = 0").bind(p);
+  const tx = (type, qty, orderId, rBefore, note, key) => db.prepare(`INSERT INTO inventory_transactions (product_id, type, quantity, order_id, on_hand_before, on_hand_after,
+      reserved_before, reserved_after, available_before, available_after, reference, notes, actor, user_id, idempotency_key, created_at)
+    SELECT ?, ?, ?, ?, b.on_hand, b.on_hand, b.reserved + ?, b.reserved, b.on_hand - b.reserved - ?, b.on_hand - b.reserved, 'reallocation', ?, ?, ?, ?, ?
+    FROM inventory_balances b WHERE b.product_id = ?`).bind(p, type, qty, orderId, rBefore, rBefore, note, actor, uid, key, t, p);
+  const stmts = [
+    db.prepare("UPDATE orders SET updated_at = ? WHERE id = ? AND updated_at = ?").bind(t, o.id, o.updated_at), abort(),
+    ...donors.flatMap(d => [
+      db.prepare(`UPDATE inventory_reservations SET reserved_qty = reserved_qty - ?, shortage_qty = shortage_qty + ?, status = 'SHORTAGE', updated_at = ?
+        WHERE id = ? AND reserved_qty >= ? AND status IN ('RESERVED','SHORTAGE')`).bind(d.q, d.q, t, d.id, d.q), abort(),
+      db.prepare("UPDATE inventory_balances SET reserved = reserved - ?, updated_at = ? WHERE product_id = ?").bind(d.q, t, p),
+      tx("RELEASE", d.q, d.order_id, d.q, `نُقل إلى ${o.order_number} (شُحن قبله)`, `realloc:${d.order_id}:${o.id}:${t}`)]),
+    db.prepare("UPDATE inventory_balances SET reserved = reserved + ?, updated_at = ? WHERE product_id = ?").bind(total, t, p),
+    db.prepare(`UPDATE inventory_reservations SET reserved_qty = reserved_qty + ?, shortage_qty = shortage_qty - ?,
+        status = CASE WHEN shortage_qty - ? = 0 THEN 'RESERVED' ELSE 'SHORTAGE' END, updated_at = ? WHERE id = ? AND status = 'SHORTAGE' AND shortage_qty >= ?`)
+      .bind(total, total, total, t, r.id, total), abort(),
+    tx("RESERVATION", total, o.id, -total, [free ? `من المتوفر ${free}` : "", ...donors.map(d => `من ${d.order_number} (${d.q})`)].filter(Boolean).join("، "), `claim:${o.id}:${t}`),
+    auditStmt(env, ctx, "stock_claimed", "order", o.order_number, { reserved: r.reserved_qty, missing: r.shortage_qty },
+      { taken: total, free, from: donors.map(d => ({ order: d.order_number, boxes: d.q })) })
+  ];
+  try { await db.batch(stmts); }
+  catch (e) { if (/CHECK constraint failed/i.test(e.message)) return { taken: 0, missing: r.shortage_qty }; throw e; }
+  await checkAlert(db, p);
+  return { taken: total, missing: r.shortage_qty - total };
 }
 
 /* ---------- shortage order: reserve what has arrived since (never changes the order status) ---------- */

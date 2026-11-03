@@ -60,7 +60,7 @@ const ERR = {
   quantity_below_used: "لا يمكن أن تقل الكمية عن المستخدم منها.", edit_exceeds_available: "لا يمكن إنقاص المخزون بهذا القدر: الباقي محجوز لطلبات مفتوحة.", catalog_unavailable: "تعذّر قراءة أسعار الموقع الآن. حاول بعد قليل."
 };
 const errText = e => (e && e.data && e.data.error === "validation" && e.data.fields && e.data.fields.reason) ? "اكتب سبب تغيير السعر."
-  : e && e.message === "inventory_shortage" ? `لا يمكن تسليم الطلب: ينقصه ${e.data.shortage} علبة في المخزون. خصّص المخزون أولاً (المخزون ← طلبات النقص).`
+  : e && e.message === "inventory_shortage" ? `لا يمكن تسليم الطلب: المسجّل في المستودع لا يكفي (ينقص ${e.data.shortage} علبة). سجّل استلام المخزون ثم أعد المحاولة.`
   : ERR[e && e.message] || "تعذّر تنفيذ العملية. حاول مرة أخرى.";
 
 function toast(msg, bad) {
@@ -347,7 +347,7 @@ function orderTable(orders, { selectable, onToggle } = {}) {
         h("td", { text: o.customerName }), h("td", { class: "num", text: o.phone || "" }), h("td", { text: o.city || "" }), h("td", { class: "num", text: o.boxes != null ? fmtN(o.boxes) : "" }), h("td", { text: when(o.createdAt) }),
         h("td", { text: money(o.total) }), h("td", { text: o.paymentMethod === "cod" || !o.paymentMethod ? "عند الاستلام" : o.paymentMethod }),
         h("td", null, badge(o.status), o.archived ? h("span", { class: "tag", text: " مؤرشف" }) : null,
-          o.source === "ADMIN" ? h("span", { class: "tag cust", text: " لوحة التحكم" }) : null, o.inventoryStatus === "SHORTAGE" ? h("span", { class: "inv inv-SHORTAGE", text: "نقص مخزون" }) : null),
+          o.source === "ADMIN" ? h("span", { class: "tag cust", text: " لوحة التحكم" }) : null),
         h("td", { text: o.updatedAt ? when(o.updatedAt) : "" }),
         h("td", null, h("a", { class: "btn ghost sm", href: "/admin/orders/" + o.orderNumber, "data-link": true, text: "عرض" })));
     }))), "orders"));
@@ -413,16 +413,14 @@ async function pageOrders() {
   const custom = h("span", { class: "row" }, "من", from, "إلى", to);
   const arch = h("select", { "aria-label": "الأرشيف" }, [["", "غير المؤرشفة"], ["1", "المؤرشفة"], ["all", "الكل"]].map(([v, t]) => h("option", { value: v, text: t, selected: state.archived === v })));
   const srcSel = h("select", { "aria-label": "مصدر الطلب" }, [["", "كل المصادر"], ["WEBSITE", "الموقع"], ["ADMIN", "لوحة التحكم"]].map(([v, t]) => h("option", { value: v, text: t, selected: state.source === v })));
-  const invSel = multiPick({ label: "حالة المخزون", all: "كل حالات المخزون", options: [["RESERVED", "محجوز"], ["SHORTAGE", "نقص مخزون"], ["COMMITTED", "مُستهلك"], ["RELEASED", "أُلغي الحجز"]],
-    values: state.inv.split(","), onChange: () => apply() });
   const paySel = h("select", { "aria-label": "حالة الدفع" }, [["", "كل حالات الدفع"], ["collected", "تم التحصيل"], ["outstanding", "لم يُحصَّل بعد"]].map(([v, t]) => h("option", { value: v, text: t, selected: state.pay === v })));
   if (!PAGE_SIZES.includes(state.per)) state.per = "25";
   const showCustom = () => { custom.hidden = range.value !== "custom"; };
   showCustom();
   const apply = () => reload({ q: q.value.trim(), status: st.value().join(","), payment: pay.value, city: city.value, range: range.value === "custom" ? "" : range.value,
     from: range.value === "custom" ? from.value : "", to: range.value === "custom" ? to.value : "", archived: arch.value, page: "1",
-    source: srcSel.value, inv: invSel.value().join(","), pay: paySel.value });
-  const form = h("form", { class: "filters", onsubmit: e => { e.preventDefault(); apply(); } }, q, st, pay, city, range, custom, srcSel, invSel, paySel, arch,
+    source: srcSel.value, pay: paySel.value });
+  const form = h("form", { class: "filters", onsubmit: e => { e.preventDefault(); apply(); } }, q, st, pay, city, range, custom, srcSel, paySel, arch,
     h("button", { type: "submit", class: "btn primary", text: "بحث" }),
     h("button", { type: "button", class: "btn ghost", text: "مسح", onclick: () => { selected.clear(); history.replaceState(null, "", "/admin/orders"); pageOrders(); } }));
   [pay, arch, srcSel, paySel].forEach(x => x.addEventListener("change", apply));
@@ -552,7 +550,8 @@ async function pageOrder(number) {
     const left = h("div"), right = h("div");
     put(main, h("div", { class: "o-grid" }, left, right));
     if (o.shipments && o.shipments.length) put(left, h("p", { class: "note-box" }, "شُحن مع سينا: ", o.shipments.map((x, i) => [i ? " · " : "",
-      h("a", { href: "/admin/shipments/" + x.batchId, "data-link": true, class: "num", text: x.batchNo }), ` «${x.name}» — مرجع الشحنة `, h("b", { class: "num", text: x.shipmentRef })])));
+      h("a", { href: "/admin/shipments/" + x.batchId, "data-link": true, class: "num", text: x.batchNo }), ` «${x.name}» — مرجع الشحنة `, h("b", { class: "num", text: x.shipmentRef }),
+      x.removedAt ? h("span", { class: "tag", text: x.removedReason === "CANCELLED" ? ` أُزيل من الشحنة (ملغي) ${day(x.removedAt)}` : ` أُزيل من الشحنة (أُعيد للتجهيز) ${day(x.removedAt)}` }) : null])));
 
     /* معلومات الطلب */
     put(left, h("section", { class: "card" }, h("h2", { text: "معلومات الطلب" }), h("dl", { class: "kv" },
@@ -760,7 +759,7 @@ const AUDIT = {
   order_item_price_changed: "تغيير سعر", order_totals_recalculated: "إعادة حساب الإجمالي", order_note_added: "ملاحظة داخلية",
   order_archived: "أرشفة طلب", order_unarchived: "إلغاء أرشفة", order_link_revoked: "إلغاء رابط الطلب", order_anonymized: "حذف بيانات شخصية",
   orders_exported: "تصدير الطلبات", backup_downloaded: "تنزيل نسخة احتياطية",
-  shipment_exported: "تصدير شحنة لسينا", shipment_file_downloaded: "تنزيل ملف شحنة", shipment_delivery_confirmed: "تأكيد توصيل جماعي",
+  shipment_exported: "تصدير شحنة لسينا", shipment_orders_removed: "إزالة طلبات من شحنة", stock_claimed: "أخذ علب من المستودع عند الشحن", shipment_file_downloaded: "تنزيل ملف شحنة", shipment_delivery_confirmed: "تأكيد توصيل جماعي",
   shipment_delivery_failed: "تعذّر توصيل (شحنة)", shipment_out_for_delivery: "خرج للتوصيل (شحنة)", shipping_settings_changed: "إعدادات الشحن",
   order_created_by_admin: "طلب من لوحة التحكم", expense_created: "إضافة مصروف", expense_edited: "تعديل مصروف", expense_voided: "إلغاء مصروف",
   stock_received: "إضافة مخزون (شراء)", purchase_edited: "تعديل شراء مخزون", purchase_voided: "إلغاء شراء مخزون", batch_cost_set: "إدخال تكلفة دفعة",
@@ -1061,7 +1060,7 @@ const LEVEL = { NONE: "طبيعي", LOW: "مخزون منخفض", CRITICAL: "م�
 const TX = { OPENING_BALANCE: "رصيد افتتاحي", PURCHASE_RECEIPT: "استلام مخزون", RESERVATION: "حجز لطلب", RELEASE: "إلغاء حجز", SALE: "بيع (تسليم)",
   ADJUSTMENT: "تسوية يدوية", RETURN: "مرتجع إلى المخزون", WRITE_OFF: "شطب", COST_UPDATE: "تحديث تكلفة" };
 const SOURCE = { WEBSITE: "الموقع", ADMIN: "لوحة التحكم" };
-const ADJ = { DAMAGED: "تالف", EXPIRED: "منتهي الصلاحية", COUNT_CORRECTION: "تصحيح جرد", LOST: "مفقود", FOUND: "وجدنا وحدات إضافية", OTHER: "سبب آخر" };
+const ADJ = { reallocation: "تحويل بين الطلبات", DAMAGED: "تالف", EXPIRED: "منتهي الصلاحية", COUNT_CORRECTION: "تصحيح جرد", LOST: "مفقود", FOUND: "وجدنا وحدات إضافية", OTHER: "سبب آخر" };
 const PLATFORM = { META: "Meta (فيسبوك/إنستغرام)", GOOGLE: "Google", TIKTOK: "TikTok", SNAPCHAT: "Snapchat", OTHER: "أخرى" };
 const SETTING_LABEL = { RESERVE_AVAILABLE: "احجز المتوفر وسجّل الباقي نقصاً", RESERVE_NONE: "لا تحجز شيئاً إن لم يكتمل الطلب", RESTOCK: "يعود للمخزون بنفس التكلفة",
   WRITE_OFF: "يُشطب (لا يعود للبيع)", FIFO: "الوارد أولاً يُصرف أولاً (FIFO)", ON_ORDER_CREATED: "عند استلام الطلب" };
@@ -1077,18 +1076,20 @@ const fieldErr = e => e && e.data && e.data.fields ? Object.entries(e.data.field
 /* بطاقة المخزون (لوحة المعلومات + صفحة المخزون) */
 function stockTiles(s, { onAck } = {}) {
   if (!s || !s.initialized) return h("div", { class: "note-box" }, "لم يُسجَّل الرصيد الافتتاحي للمخزون بعد. ", can("inventory.manage") ? h("a", { href: "/admin/inventory", "data-link": true, text: "سجّله الآن" }) : "اطلب من المدير العام تسجيله.");
-  const warn = s.level !== "NONE";
-  const msg = { LOW: `مخزون منخفض: ${s.available} علب متاحة فقط (حد التنبيه ${s.lowStockThreshold}).`, CRITICAL: `مخزون حرج: ${s.available} علب متاحة فقط.`, OUT: "نفد المخزون المتاح: الطلبات الجديدة ستُسجَّل كطلبات نقص." }[s.level];
+  const warn = s.level !== "NONE", F = s.flow;
+  const msg = { LOW: `مخزون منخفض: يتبقى ${F.remaining} علبة بعد تجهيز الطلبات غير المشحونة (حد التنبيه ${s.lowStockThreshold}).`, CRITICAL: `مخزون حرج: يتبقى ${F.remaining} علبة فقط بعد تجهيز الطلبات غير المشحونة.`,
+    OUT: F.short ? `المستودع لا يكفي الطلبات غير المشحونة: ينقص ${F.short} علبة.` : "لم يتبقَّ مخزون بعد تجهيز الطلبات غير المشحونة." }[s.level];
   return h("div", null,
     warn ? h("div", { class: "stock-alert lvl-" + s.level, role: "alert" }, h("b", { text: LEVEL[s.level] }), " — ", msg,
       s.alert && onAck ? h("button", { type: "button", class: "btn ghost sm", text: "تم الاطلاع", onclick: () => onAck(s.alert.id) }) : null) : null,
     h("div", { class: "tiles" },
-      tile2("المتوفر للبيع", fmtN(s.available) + " علبة", "الموجود ناقص المحجوز", warn ? "tile-warn" : ""),
-      tile2("محجوز لطلبات مفتوحة", fmtN(s.reserved) + " علبة"),
+      tile2("في المستودع", fmtN(Math.max(0, F.inWarehouse)) + " علبة", F.inWarehouse < 0 ? `شُحن ${fmtN(-F.inWarehouse)} علبة أكثر من المسجّل — سجّل استلام المخزون` : "الموجود فعلياً لديك الآن", F.inWarehouse < 0 ? "tile-warn" : ""),
+      tile2("مطلوب لطلبات لم تُشحن", fmtN(F.pending.boxes) + " علبة", `${fmtN(F.pending.orders)} طلب`),
+      F.short ? tile2("الناقص", fmtN(F.short) + " علبة", "تحتاجها لتجهيز كل الطلبات غير المشحونة", "tile-warn")
+        : tile2("المتبقي بعد تجهيزها", fmtN(F.remaining) + " علبة", "متاح لطلبات جديدة", warn ? "tile-warn" : "tile-good"),
+      tile2("لدى شركة الشحن", fmtN(F.withCarrier.boxes) + " علبة", `${fmtN(F.withCarrier.orders)} طلب بانتظار التوصيل`),
       tile2("تم بيعه (مُسلَّم)", fmtN(s.sold) + " علبة"),
-      tile2("الموجود فعلياً", fmtN(s.onHand) + " علبة", "في المستودع"),
       tile2("حد التنبيه", fmtN(s.lowStockThreshold) + " علبة", "حرج عند " + s.criticalStockThreshold),
-      tile2("طلبات نقص", fmtN(s.shortageOrders), s.shortageUnits ? `ينقصها ${s.shortageUnits} علبة` : "لا يوجد", s.shortageOrders ? "tile-warn" : ""),
       s.stockValue !== undefined ? tile2("قيمة المخزون", sarF(s.stockValue), (s.costingMethod || "FIFO") + (s.stockValueComplete ? "" : " · بعض الدفعات بلا تكلفة")) : null));
 }
 
@@ -1147,7 +1148,7 @@ async function pageInventory() {
   main.textContent = "";
   if (!d.summary.initialized) return openingWizard(main, d.summary);
   const s = d.summary, ack = async id => { try { await api(`/inventory/alerts/${id}/ack`, { body: {} }); pageInventory(); } catch (e) { toast(errText(e), true); } };
-  const TABS = [["overview", "نظرة عامة"], ["receive", "إضافة مخزون"], ["batches", "دفعات المخزون"], ["tx", "سجل الحركات"], ["shortages", `طلبات النقص (${d.shortages.length})`], ["adjust", "التسويات"], ["settings", "الإعدادات"]];
+  const TABS = [["overview", "نظرة عامة"], ["receive", "إضافة مخزون"], ["batches", "دفعات المخزون"], ["tx", "سجل الحركات"], ["adjust", "التسويات"], ["settings", "الإعدادات"]];
   put(main, h("div", { class: "page-head" }, h("h1", { text: "المخزون" }), h("div", { class: "row" },
       h("span", { class: "tag", text: "طريقة التكلفة: " + (SETTING_LABEL[s.costingMethod] || s.costingMethod) }),
       d.canCreatePurchase ? h("a", { class: "btn primary", href: "/admin/inventory?tab=receive", "data-link": true, text: "+ إضافة مخزون" }) : null)),
@@ -1162,8 +1163,8 @@ async function pageInventory() {
       d.canCreatePurchase ? h("a", { class: "btn primary", href: "/admin/inventory?tab=receive", "data-link": true, text: "+ إضافة مخزون" }) : null));
     put(box, h("section", { class: "card" }, h("h2", { text: "كيف تُحسب الأرقام" }),
       h("ul", { class: "small" },
-        h("li", { text: "المتوفر = الموجود فعلياً − المحجوز للطلبات المفتوحة. التنبيه يعتمد على المتوفر." }),
-        h("li", { text: "طلب جديد (من الموقع أو لوحة التحكم) يحجز علبه فوراً ولا يُخصم نهائياً. التسليم يحوّل الحجز إلى بيع، والإلغاء أو تعذّر التسليم يعيده للمتوفر." }),
+        h("li", { text: "في المستودع = الموجود فعلياً لديك (العلب التي سُلّمت لشركة الشحن لا تُحسب فيه). المتبقي أو الناقص = في المستودع − ما تحتاجه الطلبات التي لم تُشحن بعد." }),
+        h("li", { text: "حسب التوفر لا حسب الأقدمية: أي طلب تشحنه يأخذ علبه من المستودع، حتى لو كانت مخصصة لطلب أقدم لم يُشحن؛ ذلك الطلب ينتظر المخزون القادم. التسليم يخصم العلب نهائياً، والإلغاء أو تعذّر التسليم يعيدها." }),
         h("li", { text: "التكلفة: الوارد أولاً يُصرف أولاً (FIFO). تُحفظ تكلفة كل طلب عند تسليمه ولا تُعاد حسابها عند فتح الصفحات." }),
         h("li", { text: "كل حركة لها سطر في «سجل الحركات» برصيد قبل وبعد، ولا يمكن تعديل السجل أو حذفه." })),
       h("button", { type: "button", class: "btn ghost sm", text: "فحص تطابق الأرصدة", onclick: async e => busy(e.currentTarget, "جارٍ الفحص…", async () => {
@@ -1191,14 +1192,6 @@ async function pageInventory() {
           fmtN(t.quantity), `${t.availableBefore} → ${t.availableAfter}`, `${t.onHandBefore} → ${t.onHandAfter}`, `${t.reservedBefore} → ${t.reservedAfter}`,
           ...(d.canSeeCosts ? [t.cost == null ? "—" : sarF(t.cost)] : []), [ADJ[t.reference] || t.reference, t.notes].filter(Boolean).join(" · ") || "—", t.actor === "customer" ? "العميل (الموقع)" : t.actor])),
       pages > 1 ? h("div", { class: "pager" }, Array.from({ length: Math.min(pages, 20) }, (_, i) => h("a", { class: "btn ghost sm" + (i + 1 === d.page ? " on" : ""), href: `/admin/inventory?tab=tx&page=${i + 1}` + (P.get("type") ? "&type=" + P.get("type") : ""), "data-link": true, text: String(i + 1) }))) : null));
-  } else if (tab === "shortages") {
-    put(box, h("section", { class: "card" }, h("h2", { text: "طلبات النقص" }),
-      h("p", { class: "muted small", text: "طلبات استُلمت ولم يكن المتوفر كافياً. معلومات داخلية لا تظهر للعميل. عند وصول مخزون اضغط «حجز المتوفر» — لا تتغير حالة الطلب تلقائياً." }),
-      tbl(["الطلب", "التاريخ", "العميل", "المصدر", "المطلوب", "المتوفر وقت الطلب", "محجوز", "النقص", "المتوفر الآن", "حالة الطلب", ""],
-        d.shortages.map(x => [h("a", { href: "/admin/orders/" + x.orderNumber, "data-link": true, class: "num", text: x.orderNumber }), when(x.orderDate), x.customer, SOURCE[x.source] || x.source,
-          fmtN(x.requested), fmtN(x.availableAtOrder), fmtN(x.reserved), h("b", { class: "danger-text", text: fmtN(x.shortage) }), fmtN(x.currentAvailable), badge(x.orderStatus),
-          d.canManage && x.canAllocate ? h("button", { type: "button", class: "btn primary sm", text: "حجز المتوفر", onclick: e => busy(e.currentTarget, "جارٍ الحجز…", async () => {
-            try { const r = await api(`/orders/${x.orderNumber}/allocate`, { body: {} }); toast(r.status === "RESERVED" ? "تم حجز كامل الكمية." : `تم حجز جزء؛ ما زال ينقص ${r.shortage}.`); pageInventory(); } catch (er) { toast(errText(er), true); } }) }) : ""]))));
   } else if (tab === "adjust") {
     if (d.canManage) put(box, adjustCard(d));
     put(box, h("section", { class: "card" }, h("h2", { text: "التسويات السابقة" }),
@@ -1642,7 +1635,7 @@ async function pageNewOrder() {
     err.textContent = ""; out.textContent = "";
     let r; try { r = await api("/orders/new", { body: body({ preview: true }) }); } catch (e) { err.textContent = e.data && e.data.fields ? "تحقق من: " + Object.keys(e.data.fields).map(k => L[k] || k).join("، ") : errText(e); return; }
     const T = r.totals, S = r.stock, short = S.initialized && S.shortage > 0;
-    const create = h("button", { type: "button", class: "btn primary", text: short ? "إنشاء كطلب نقص" : "إنشاء الطلب" });
+    const create = h("button", { type: "button", class: "btn primary", text: "إنشاء الطلب" });
     create.addEventListener("click", () => busy(create, "جارٍ الإنشاء…", async () => {
       try { const c = await api("/orders/new", { body: body({ allowShortage: short }) }); toast(c.replay ? "هذا الطلب أُنشئ مسبقاً." : "تم إنشاء الطلب " + c.orderNumber); go("/admin/orders/" + c.orderNumber); }
       catch (e) { toast(e.message === "insufficient_stock" ? `تغيّر المخزون: المتوفر الآن ${e.data.available}. راجع الطلب مرة أخرى.` : errText(e), true); }
@@ -1659,8 +1652,8 @@ async function pageNewOrder() {
         h("dt", { text: "الإجمالي" }), h("dd", null, h("b", { text: money(T.total) })),
         h("dt", { text: "المصدر" }), h("dd", { text: "لوحة التحكم" }), h("dt", { text: "الحالة الأولى" }), h("dd", null, badge(r.status))),
       S.initialized ? h("div", { class: short ? "warn-box" : "note-box" },
-        short ? h("p", null, h("b", { text: "المخزون المتوفر لا يكفي. " }), `المطلوب ${S.requested} · المتوفر ${S.available} · النقص ${S.shortage}. سيُحجز ${S.toReserve} ويُسجَّل الطلب «نقص مخزون» (داخلياً فقط).`)
-          : h("p", { text: `المتوفر الآن ${S.available} علبة · سيُحجز ${S.toReserve} · المتبقي بعد الحجز ${S.availableAfter} · المحجوز سيصبح ${S.reservedAfter}.` }))
+        short ? h("p", null, h("b", { text: "المتبقي في المستودع لا يكفي الآن. " }), `يحتاج ${S.requested} علبة والمتبقي بعد الطلبات السابقة ${Math.max(0, S.available)}. يُنشأ الطلب عادياً ويُشحن عند توفر العلب.`)
+          : h("p", { text: `المتبقي في المستودع ${S.available} علبة · بعد هذا الطلب ${S.availableAfter} علبة.` }))
         : h("p", { class: "muted small", text: "لم يُسجَّل الرصيد الافتتاحي للمخزون بعد؛ لن يُحجز مخزون لهذا الطلب الآن." }),
       h("div", { class: "row" }, create, h("button", { type: "button", class: "btn ghost", text: "إلغاء", onclick: () => { out.textContent = ""; } }))));
     out.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1690,19 +1683,18 @@ function orderInventoryCard(o, onDone) {
   if (!inv) return null;
   const card = h("section", { class: "card" }, h("h2", { text: "المخزون" }));
   if (!inv.reservations.length) { put(card, h("p", { class: "muted small", text: ["CANCELLED", "FAILED"].includes(o.status) ? "لا يوجد حجز (طلب ملغي أو متعذّر)." : "لا يوجد حجز لهذا الطلب (سُجّل قبل تفعيل المخزون أو لم يُسجَّل الرصيد الافتتاحي بعد)." })); return card; }
+  // المخزون حسب التوفر: لا يُحجز لطلب قبل شحنه، فلا «نقص» على مستوى الطلب (المجموع في لوحة المعلومات)
+  const stage = r => r.status === "COMMITTED" ? "خُصمت من المخزون (تم التسليم)" : r.status === "RELEASED" ? "لا شيء (أُلغي أو تعذّر)"
+    : ["SHIPPED", "OUT_FOR_DELIVERY"].includes(o.status) ? "خرجت من المستودع مع شركة الشحن" : "تُؤخذ من المستودع عند الشحن";
   for (const r of inv.reservations) put(card, h("dl", { class: "kv" },
-    h("dt", { text: "حالة المخزون" }), h("dd", null, invBadge(r.status)),
-    h("dt", { text: "المطلوب" }), h("dd", { text: r.requested + " علبة" }),
-    h("dt", { text: "المحجوز" }), h("dd", { text: r.reserved + " علبة" }),
-    r.shortage ? [h("dt", { text: "النقص" }), h("dd", null, h("b", { class: "danger-text", text: r.shortage + " علبة" }))] : null,
-    r.availableBefore != null ? [h("dt", { text: "المتوفر قبل الحجز" }), h("dd", { text: fmtN(r.availableBefore) }), h("dt", { text: "المتوفر بعد الحجز" }), h("dd", { text: fmtN(r.availableAfter) })] : null,
+    h("dt", { text: "العلب" }), h("dd", { text: r.requested + " علبة" }),
+    h("dt", { text: "المخزون" }), h("dd", { text: stage(r) }),
     r.cogs !== undefined && r.status === "COMMITTED" ? [h("dt", { text: "تكلفة البضاعة (COGS)" }), h("dd", { text: r.cogsComplete ? sarF(r.cogs) : "غير مكتملة — دفعة بلا تكلفة" })] : null,
     r.committedAt ? [h("dt", { text: "تاريخ الاستهلاك" }), h("dd", { text: when(r.committedAt) })] : null,
     r.releasedAt && r.status === "RELEASED" ? [h("dt", { text: "أُلغي الحجز" }), h("dd", { text: when(r.releasedAt) })] : null));
-  if (inv.canAllocate) put(card, h("button", { type: "button", class: "btn primary sm", text: "حجز المتوفر الآن", onclick: e => busy(e.currentTarget, "جارٍ الحجز…", async () => {
-    try { const r = await api(`/orders/${o.orderNumber}/allocate`, { body: {} }); toast(r.status === "RESERVED" ? "تم حجز كامل الكمية." : `ما زال ينقص ${r.shortage}.`); onDone(); } catch (x) { toast(errText(x), true); } }) }));
   if (inv.transactions.length) put(card, h("details", null, h("summary", { class: "small", text: `حركات المخزون (${inv.transactions.length})` }),
-    h("div", { class: "audit-mini" }, inv.transactions.map(t => h("div", null, h("b", { text: TX[t.type] || t.type }), ` ${t.quantity} · المتوفر ${t.availableBefore} → ${t.availableAfter}`,
+    h("div", { class: "audit-mini" }, inv.transactions.map(t => h("div", null, h("b", { text: t.reference === "reallocation" ? (t.type === "RELEASE" ? "أُعطيت لطلب شُحن قبله" : "أُخذت من المستودع عند الشحن") : TX[t.type] || t.type }),
+      ` ${t.quantity}` + (t.notes && t.reference === "reallocation" ? ` · ${t.notes}` : ""),
       t.cost != null ? ` · ${sarF(t.cost)}` : "", h("small", { class: "muted", text: ` ${when(t.at)} · ${t.actor === "customer" ? "العميل" : t.actor}` }))))));
   return card;
 }
@@ -1797,7 +1789,7 @@ async function pageImportOrders() {
     const todo = rows.filter(r => r.state !== "done");
     const boxes = todo.reduce((a, r) => a + Number(r.quantity), 0);
     if (!(await confirmBox("إنشاء الطلبات", [`سيُنشأ ${todo.length} طلباً (${boxes} علبة) بحالة «${STATUS[status.value]}»، مصدرها لوحة التحكم، وتُحجز علبها من المخزون.`,
-      allowShort.checked ? "إن لم يكفِ المخزون يُنشأ الطلب كطلب نقص." : "إن لم يكفِ المخزون لطلب ما يُترك ولا يُنشأ (فعّل «السماح بطلبات النقص» لإنشائه)."], { okText: "إنشاء" }))) return;
+      allowShort.checked ? "تُنشأ كل الطلبات حتى لو لم يكفِها المتبقي في المستودع الآن (تُشحن عند توفر العلب)." : "الطلب الذي لا يكفيه المتبقي في المستودع يُترك ولا يُنشأ."], { okText: "إنشاء" }))) return;
     await busy(btn, "جارٍ الإنشاء…", async () => {
       for (const r of todo) {
         r.state = "busy"; draw();
@@ -1819,14 +1811,14 @@ async function pageImportOrders() {
     h("section", { class: "card" },
       h("p", { class: "muted small", text: "انسخ رسائل العملاء من واتساب والصقها هنا كلها مرة واحدة. يقرأ النظام الاسم والجوال والمدينة والحي والعنوان والكمية، ثم تراجعها في الجدول قبل الإنشاء. السعر يُحسب دائماً من عروض الموقع." }),
       ta, h("div", { class: "row" }, h("button", { type: "button", class: "btn primary", text: "قراءة الرسائل", onclick: read }),
-        h("label", { class: "row small" }, "الحالة الأولى", status), h("label", { class: "row small" }, allowShort, "السماح بطلبات النقص"))),
+        h("label", { class: "row small" }, "الحالة الأولى", status), h("label", { class: "row small" }, allowShort, "إنشاء الطلبات حتى لو لم يكفِ المخزون"))),
     h("section", { class: "card" }, h("h2", { text: "الطلبات المقروءة" }), summary, table, bar));
 }
 
 /* ============================================================ الشحن (سينا) */
 const SHIP_REASON = { not_found: "غير موجود", anonymized: "بيانات محذوفة", already_shipped: "مشحون مسبقاً", delivered: "تم توصيله", closed: "ملغي / متعذّر",
-  on_hold: "معلّق — راجعه أولاً", shortage: "نقص مخزون", transition_not_allowed: "لا تملك صلاحية نقله", status_changed: "تغيّر من جهاز آخر", not_in_batch: "ليس في هذه الشحنة",
-  already: "في هذه الحالة مسبقاً", inventory_shortage: "مخزون ناقص — سجّل استلام المخزون ثم أكّد التوصيل" };
+  on_hold: "معلّق — راجعه أولاً", transition_not_allowed: "لا تملك صلاحية نقله", status_changed: "تغيّر من جهاز آخر", not_in_batch: "ليس في هذه الشحنة",
+  already: "في هذه الحالة مسبقاً", inventory_shortage: "المسجّل في المستودع لا يكفي — سجّل استلام المخزون ثم أكّد التوصيل", invalid_action: "إجراء غير معروف" };
 const SHIP_SEL_KEY = "cg-ship-selection";
 /* العنوان الوطني في صفحات الشحن: يظهر، أو يُكتب ويُحفظ في الطلب مباشرة (يدخل ملف سينا عند تنزيله) */
 const NA_RE = /^[A-Z]{4}\d{4}$/;
@@ -1972,20 +1964,17 @@ async function pageShipmentNew() {
       S ? tile2("في المستودع الآن", fmtN(S.inWarehouse) + " علبة", S.withCarrier ? `و${fmtN(S.withCarrier)} علبة لدى شركة الشحن` : "حسب النظام") : null,
       S ? (S.inWarehouseAfter < 0 ? tile2("في المستودع بعد الشحن", "0 علبة", `ينقص ${fmtN(-S.inWarehouseAfter)} علبة في النظام`, "tile-warn")
         : tile2("في المستودع بعد الشحن", fmtN(S.inWarehouseAfter) + " علبة", `${fmtN(S.inWarehouse)} − ${fmtN(T.boxes)}`)) : null),
-    T.shortageOrders ? h("section", { class: "card warn-card" }, h("h2", { text: `${fmtN(T.shortageOrders)} طلب مخزونه ناقص في النظام (${fmtN(T.shortageBoxes)} علبة)` }),
-      h("p", { class: "small", text: "يمكنك تصديرها إن كانت العلب موجودة فعلاً لديك. تأكيد توصيلها لاحقاً يحتاج تسجيل استلام المخزون أولاً (المخزون ← استلام مخزون)؛ عند التأكيد يأخذ الطلب المتوفر تلقائياً. إن كنت ستشحن أقل مما طلب العميل فعدّل كمية الطلب قبل التصدير." }),
-      tbl(["الطلب", "العميل", "طلب", "ينقصه"], ok.filter(r => r.shortage > 0).map(r => [h("a", { href: "/admin/orders/" + r.orderNumber, "data-link": true, class: "num", text: r.orderNumber }), r.customer,
-        `${fmtN(r.boxes)} علبة`, h("b", { class: "danger-text", text: `${fmtN(r.shortage)} علبة` })]))) : null,
+    T.shortageBoxes ? h("section", { class: "card warn-card" }, h("h2", { text: `ستشحن ${fmtN(T.shortageBoxes)} علبة أكثر مما هو مسجّل في المستودع` }),
+      h("p", { class: "small", text: "يمكنك التصدير إن كانت العلب موجودة فعلاً لديك (مثلاً وصل مخزون لم يُسجَّل بعد). سجّل استلامه من «المخزون ← إضافة مخزون» قبل تأكيد التوصيل." })) : null,
     bad.length ? h("section", { class: "card warn-card" }, h("h2", { text: `${bad.length} طلب لن يُصدَّر` }),
       h("p", { class: "muted small", text: "هذه الطلبات لا يمكن شحنها الآن وتُستبعد تلقائياً من الملف؛ لا يتغير فيها شيء." }),
       tbl(["الطلب", "العميل", "الحالة", "السبب"], bad.map(r => [h("a", { href: "/admin/orders/" + r.orderNumber, "data-link": true, class: "num", text: r.orderNumber }), r.customer || "—", r.status ? badge(r.status) : "—",
-        h("b", { class: "danger-text", text: (SHIP_REASON[r.reason] || r.reason) + (r.shortage ? ` (ينقصه ${r.shortage})` : "") })]))) : null,
+        h("b", { class: "danger-text", text: SHIP_REASON[r.reason] || r.reason })]))) : null,
     naNote,
     h("section", { class: "card" }, h("h2", { text: "الطلبات في الملف" }),
       tbl(["الطلب", "العميل", "الجوال", "المدينة", "العنوان الوطني", "العلب", "القيمة", "الحالة الآن", "الخطوات"], ok.map(r => [h("span", { class: "num", text: r.orderNumber }), r.customer, h("span", { class: "num", text: r.phone }),
         r.city, naCell(r, drawNaNote),
-        h("span", null, h("b", { class: "num", text: fmtN(r.boxes) }), r.shortage ? h("span", { class: "inv inv-SHORTAGE", text: `ينقصه ${fmtN(r.shortage)}` })
-          : r.allocate ? h("span", { class: "inv inv-RESERVED", title: "كان ناقصاً عند الطلب والمخزون الحالي يغطيه؛ يُحجز له عند التصدير", text: "يُحجز من المتوفر" }) : null),
+        h("b", { class: "num", text: fmtN(r.boxes) }),
         money(r.amount), badge(r.status), r.steps.map(s => STATUS[s]).join(" ← ")]))),
     h("section", { class: "card" }, h("h2", { text: "اسم التصدير" }),
       h("div", { class: "grid2" }, h("label", { class: "f" }, "اسم الشحنة (يظهر في سجل الشحن واسم الملف)", name), h("label", { class: "f" }, "ملاحظة", notes)),
@@ -2001,12 +1990,12 @@ async function pageShipmentNew() {
       bad.length ? h("p", { class: "muted small", text: `لن يشمل الملف ${bad.length} طلباً مستبعداً.` }) : null,
       naMissing() ? h("p", { class: "warn-box", text: `${fmtN(naMissing())} طلب بدون عنوان وطني — سيبقى عموده فارغاً في الملف.` }) : null,
       naApprox() ? h("p", { class: "small", text: `${fmtN(naApprox())} طلب بعنوان وطني تقريبي (عنوان مدينته البديل).` }) : null,
-      T.shortageOrders ? h("p", { class: "warn-box", text: `${fmtN(T.shortageOrders)} طلب مخزونه ناقص في النظام (${fmtN(T.shortageBoxes)} علبة) — تأكد أن العلب موجودة لديك فعلاً.` }) : null,
+      T.shortageBoxes ? h("p", { class: "warn-box", text: `ستشحن ${fmtN(T.shortageBoxes)} علبة أكثر مما هو مسجّل في المستودع — تأكد أنها موجودة لديك فعلاً.` }) : null,
       h("p", { class: "warn-box", text: "لا يمكن التراجع عن «تم الشحن» إلا بتغيير استثنائي للحالة." })], { okText: "نعم، صدّر وغيّر الحالة" }))) return;
     await busy(go_, "جارٍ التصدير…", async () => {
       try {
         const r = await api("/shipments", { body: { name: name.value.trim(), notes: notes.value.trim(), numbers: ok.map(x => x.orderNumber), requestId, expectedCount: T.orders, expectedBoxes: T.boxes,
-          allowShortage: T.shortageOrders > 0 } });
+          allowShortage: T.shortageBoxes > 0 } });
         if (!r.batch) { err.textContent = "لم يُصدَّر أي طلب: " + r.failed.map(f => `${f.orderNumber} (${SHIP_REASON[f.reason] || f.reason})`).join("، "); return; }
         try { sessionStorage.removeItem(SHIP_SEL_KEY); } catch (_) {}
         selected.clear();
@@ -2040,7 +2029,7 @@ async function pageShipment(id) {
         h("td", null, h("a", { href: "/admin/orders/" + o.orderNumber, "data-link": true, class: "num", text: o.orderNumber })), h("td", { class: "num small", text: o.shipmentRef }),
         h("td", null, naCell(o, drawNa)),
         h("td", { text: o.customer }), h("td", { class: "num", text: o.phone }), h("td", { text: o.city }), h("td", { class: "num", text: fmtN(o.boxes) }), h("td", { text: money(o.amount) }),
-        h("td", null, badge(o.status), o.shortage && open.includes(o) ? h("span", { class: "inv inv-SHORTAGE", text: `مخزون ناقص ${fmtN(o.shortage)}` }) : null), h("td", { class: "small", text: when(o.statusAt) })));
+        h("td", null, badge(o.status)), h("td", { class: "small", text: when(o.statusAt) })));
     });
   };
   const naBox = h("div");
@@ -2058,27 +2047,43 @@ async function pageShipment(id) {
     if (!d.canManage || !open.length) { bar.hidden = true; return; }
     bar.hidden = false;
     const s = sum(pick);
-    put(bar, h("b", { text: pick.size ? `محدد ${fmtN(s.n)} طلب · ${fmtN(s.boxes)} علبة · ${money(s.amount)}` : "حدّد الطلبات التي وصلت لعملائها" }),
+    put(bar, h("b", { text: pick.size ? `محدد ${fmtN(s.n)} طلب · ${fmtN(s.boxes)} علبة · ${money(s.amount)}` : "حدّد طلبات لتأكيد توصيلها أو إزالتها من الشحنة" }),
       h("button", { type: "button", class: "btn ghost sm", text: `تحديد كل غير المُسلَّمة (${open.length})`, onclick: () => { open.forEach(o => pick.add(o.orderNumber)); drawRows(); drawBar(); } }),
       pick.size ? h("button", { type: "button", class: "btn ghost sm", text: "إلغاء التحديد", onclick: () => { pick.clear(); drawRows(); drawBar(); } }) : null,
       h("button", { type: "button", class: "btn primary sm", text: `تأكيد التوصيل (${pick.size})`, disabled: !pick.size, onclick: () => confirmAs("DELIVERED") }),
       h("button", { type: "button", class: "btn ghost sm", text: "خرج للتوصيل", disabled: !pick.size, onclick: () => confirmAs("OUT_FOR_DELIVERY") }),
-      h("button", { type: "button", class: "btn danger sm", text: "تعذّر التوصيل", disabled: !pick.size, onclick: () => confirmAs("FAILED") }));
+      h("button", { type: "button", class: "btn danger sm", text: "تعذّر التوصيل", disabled: !pick.size, onclick: () => confirmAs("FAILED") }),
+      h("button", { type: "button", class: "btn ghost sm", text: "إزالة من الشحنة…", disabled: !pick.size, onclick: removeSelected }));
   };
   async function confirmAs(to) {
     const s = sum(pick), label = { DELIVERED: "تأكيد التوصيل", FAILED: "تعذّر التوصيل", OUT_FOR_DELIVERY: "خرج للتوصيل" }[to];
     const note = h("input", { maxlength: 300, placeholder: to === "FAILED" ? "السبب — مثال: رفض الاستلام" : "اختياري — مثال: حسب كشف سينا 12/11" });
     const effect = { DELIVERED: `تصبح «تم التوصيل»: تُحسب إيراداتها (${money(s.amount)}) وتُخصم علبها (${fmtN(s.boxes)}) من المخزون نهائياً بتكلفتها.`,
       FAILED: `تصبح «تعذّر إكمال الطلب»: تعود علبها (${fmtN(s.boxes)}) للمخزون المتوفر ولا تُحسب إيراداً.`, OUT_FOR_DELIVERY: "تصبح «خرج للتوصيل» ويُبلَّغ العميل." }[to];
-    const short = to === "DELIVERED" ? d.orders.filter(o => pick.has(o.orderNumber) && o.shortage > 0) : [];
     if (!(await confirmBox("هل أنت متأكد؟", [h("p", null, `${label} لـ `, h("b", { text: `${fmtN(s.n)} طلب` }), ` من الشحنة ${B.batchNo}.`), h("p", { class: "small", text: effect }),
-      short.length ? h("p", { class: "warn-box", text: `${fmtN(short.length)} طلب مخزونه ناقص: يأخذ المتوفر في المخزون أولاً، وما لا يكفيه المخزون يبقى «تم الشحن» حتى تسجّل استلام المخزون.` }) : null,
       h("label", { class: "f" }, "ملاحظة", note)], { okText: `نعم، ${label}`, danger: to === "FAILED" }))) return;
     try {
       const r = await api(`/shipments/${B.id}/confirm`, { body: { status: to, numbers: [...pick], expectedCount: pick.size, note: note.value.trim() } });
       toast(`تم: ${fmtN(r.updated)} طلب — ${label}.` + (r.skipped.length ? ` تُخطي ${r.skipped.length}.` : ""), !!r.skipped.length);
       if (r.skipped.length) await confirmBox("طلبات لم تتغير", h("div", { class: "audit-mini" }, r.skipped.slice(0, 50).map(x => h("div", null, h("span", { class: "num", text: x.orderNumber }), " — ", SHIP_REASON[x.reason] || x.reason,
-        x.shortage ? ` (ينقصه ${fmtN(x.shortage)} علبة)` : ""))), { okText: "حسناً" });
+        x.shortage ? ` (ينقص ${fmtN(x.shortage)} علبة في المستودع)` : ""))), { okText: "حسناً" });
+      financeChanged(); pageShipment(id);
+    } catch (e) { if (e.message !== "unauthorized") toast(errText(e), true); }
+  }
+  // تعديل الشحنة: إزالة طلبات منها (مكرر → إلغاء، أو إعادته للتجهيز ليُشحن لاحقاً)
+  async function removeSelected() {
+    const s = sum(pick);
+    const choice = h("div", { class: "radio-list" },
+      h("label", { class: "row" }, h("input", { type: "radio", name: "rm", value: "cancel", checked: true }), h("span", null, h("b", { text: "إلغاء الطلب" }), " — مكرر أو ألغاه العميل (تتحول حالته إلى «ملغي»)")),
+      h("label", { class: "row" }, h("input", { type: "radio", name: "rm", value: "return" }), h("span", null, h("b", { text: "إعادته للتجهيز" }), " — لم يُرسَل مع هذه الشحنة ويُشحن لاحقاً (تعود حالته «جاري التجهيز»)")));
+    const note = h("input", { maxlength: 300, placeholder: "السبب — مثال: طلب مكرر لنفس العميل" });
+    if (!(await confirmBox("إزالة من الشحنة", [h("p", null, "إزالة ", h("b", { text: `${fmtN(s.n)} طلب (${fmtN(s.boxes)} علبة، ${money(s.amount)})` }), ` من الشحنة ${B.batchNo}.`), choice,
+      h("p", { class: "small", text: `تصبح الشحنة ${fmtN(B.orders - s.n)} طلب و${fmtN(B.boxes - s.boxes)} علبة، وتعود علبها للمستودع. نزّل ملف سينا مرة أخرى بعد الإزالة.` }),
+      h("label", { class: "f" }, "ملاحظة", note)], { okText: "نعم، أزِل من الشحنة", danger: true }))) return;
+    const action = choice.querySelector("input:checked").value;
+    try {
+      const r = await api(`/shipments/${B.id}/remove`, { body: { action, numbers: [...pick], expectedCount: pick.size, note: note.value.trim() } });
+      toast(`أُزيل ${fmtN(r.removed)} طلب — الشحنة الآن ${fmtN(r.batch.orders)} طلب و${fmtN(r.batch.boxes)} علبة. نزّل ملف سينا من جديد.` + (r.skipped.length ? ` تُخطي ${r.skipped.length}.` : ""), !!r.skipped.length);
       financeChanged(); pageShipment(id);
     } catch (e) { if (e.message !== "unauthorized") toast(errText(e), true); }
   }
@@ -2096,7 +2101,7 @@ async function pageShipment(id) {
       h("div", { class: "row" }, shipState(B), d.canManage ? h("a", { class: "btn primary", href: shipFileUrl(B.id), download: "", text: "تنزيل ملف سينا (Excel)" }) : null,
         h("a", { class: "btn ghost", href: "/admin/orders?shipment=" + B.id, "data-link": true, text: "في صفحة الطلبات" }))),
     h("p", { class: "muted small", text: `صدّرها ${B.createdBy} · ${when(B.createdAt)}` + (B.notes ? ` · ${B.notes}` : "") + ` · نُزّل الملف ${fmtN(B.downloads)} مرة` + (B.lastDownloadAt ? ` (آخرها ${when(B.lastDownloadAt)})` : "") }),
-    h("div", { class: "tiles" }, tile2("الطلبات", fmtN(B.orders)), tile2("العلب", fmtN(B.boxes) + " علبة"), tile2("القيمة", money(B.amount)),
+    h("div", { class: "tiles" }, tile2("الطلبات", fmtN(B.orders), B.removed ? `بعد إزالة ${fmtN(B.removed)}` : null), tile2("العلب", fmtN(B.boxes) + " علبة"), tile2("القيمة", money(B.amount)),
       tile2("تم التوصيل", fmtN(B.delivered), money(B.deliveredAmount), B.delivered === B.orders ? "tile-good" : ""), tile2("لدى شركة الشحن", fmtN(B.inTransit), money(B.transitAmount), B.inTransit ? "tile-total" : ""),
       B.failed ? tile2("تعذّر التوصيل", fmtN(B.failed), null, "tile-warn") : null), naBox,
     d.canManage && open.length ? h("section", { class: "card" }, h("h2", { text: "تأكيد التوصيل" }),
@@ -2104,7 +2109,11 @@ async function pageShipment(id) {
       paste, h("div", { class: "row" }, h("button", { type: "button", class: "btn ghost sm", text: "تحديد الأرقام الملصقة", onclick: matchPaste }))) : null,
     bar,
     h("section", { class: "card" }, h("div", { class: "table-wrap" }, h("table", null,
-      h("thead", null, h("tr", null, h("th", { class: "sel" }), ["الطلب", "مرجع الشحنة", "العنوان الوطني", "العميل", "الجوال", "المدينة", "العلب", "القيمة", "الحالة", "منذ"].map(t => h("th", { text: t })))), body))));
+      h("thead", null, h("tr", null, h("th", { class: "sel" }), ["الطلب", "مرجع الشحنة", "العنوان الوطني", "العميل", "الجوال", "المدينة", "العلب", "القيمة", "الحالة", "منذ"].map(t => h("th", { text: t })))), body))),
+    d.removed && d.removed.length ? h("section", { class: "card removed-card" }, h("h2", { text: `أُزيلت من الشحنة (${fmtN(d.removed.length)})` }),
+      h("p", { class: "muted small", text: "لا تُحسب في مجموع الشحنة ولا تظهر في ملف سينا. مرجع شحنتها لا يُستخدم مرة أخرى." }),
+      tbl(["الطلب", "مرجع الشحنة", "العميل", "العلب", "القيمة", "السبب", "الحالة الآن", "متى", "بواسطة"], d.removed.map(o => [h("a", { href: "/admin/orders/" + o.orderNumber, "data-link": true, class: "num", text: o.orderNumber }),
+        h("span", { class: "num small", text: o.shipmentRef }), o.customer, fmtN(o.boxes), money(o.amount), o.removedReason === "CANCELLED" ? "أُلغي" : "أُعيد للتجهيز", badge(o.status), when(o.removedAt), o.removedBy === "system" ? "النظام" : o.removedBy]))) : null);
   drawRows(); drawBar();
 }
 

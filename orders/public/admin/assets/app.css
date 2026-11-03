@@ -271,3 +271,9 @@ html.col-resizing, html.col-resizing *{cursor:col-resize !important; user-select
 .ms-foot .btn{min-width:72px}
 .chips-hint{align-self:center}
 @media (max-width:560px){ .ms{flex:1 1 100%} .ms > summary{max-width:none; width:100%} .ms-panel{position:static; margin-top:6px; min-width:0; max-width:none; box-shadow:none} }
+/* تعديل الشحنة */
+.radio-list{display:grid; gap:6px; margin:8px 0}
+.radio-list label{display:flex; flex-wrap:nowrap; gap:10px; align-items:flex-start; padding:8px 10px; border:1px solid var(--line); border-radius:10px; cursor:pointer}
+.radio-list input{margin-top:.3em; accent-color:var(--teal-deep)}
+.removed-card{opacity:.92}
+.radio-list label > span{flex:1; min-width:0}

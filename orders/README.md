@@ -127,9 +127,16 @@ ON_HOLD → RESERVE · DELIVERED → COMMIT (FIFO consumption, COGS stored on th
 Overrides are handled too: Cancelled → open re-reserves, Cancelled → Delivered consumes directly if stock is available,
 Delivered → Cancelled is a RETURN (restocks the same batches; or WRITE_OFF per the return policy setting).
 
-**Shortage.** An order needing more than is available reserves what is there (policy RESERVE_AVAILABLE, or nothing with
-RESERVE_NONE) and is flagged SHORTAGE (admin only; the customer sees nothing). It cannot be delivered until an admin
-allocates stock (Inventory → Shortages → «حجز المتوفر»); arriving stock never changes an order by itself.
+**Stock by availability, not by order date.** An order still reserves what is free when it is created (policy
+RESERVE_AVAILABLE) — internal bookkeeping only. When an order is shipped (or delivered) it takes its boxes from the
+warehouse (`claimStock`, called by `applyTransition` before SHIPPED / DELIVERED): free stock first, then boxes held for
+orders that have **not** shipped yet, newest first (never from an order with the carrier). The move is in the ledger both
+ways (`reference = 'reallocation'`: RELEASE on the donor «نُقل إلى …», RESERVATION on the shipped order) and audited as
+`stock_claimed`. No order is ever shown as «نقص مخزون»: the orders list, the order page and the shipment pages show no
+per-order shortage, and there is no shortages tab. The shortage is a **total** (`stockSummary().flow`, dashboard and
+Admin → المخزون): **في المستودع** = on hand − boxes with the carrier · **مطلوب لطلبات لم تُشحن** · **المتبقي بعد تجهيزها**
+or **الناقص** · **لدى شركة الشحن**. Delivery is refused (`inventory_shortage`) only when the warehouse itself holds fewer
+boxes than are leaving (a receipt not recorded yet).
 
 **Cost.** Every receipt is its own batch (`inventory_batches`, never merged). The admin enters the quantity and the UNIT
 cost; the server stores value = quantity × unit cost (`total_cost_halalas`, which FIFO reads) and database triggers refuse
@@ -158,7 +165,8 @@ negative adjustments and write-offs). Filter by source (WEBSITE / ADMIN): genera
 
 **Admin orders.** Admin → الطلبات → «+ طلب جديد»: same validation, website pricing (boxes → bundles, best price), customer
 record per mobile number (`customers`), reservation and history as a website order; `source = ADMIN`, `created_by`. Preview
-first (totals + stock impact); with insufficient stock the admin must confirm «إنشاء كطلب نقص». Initial status RECEIVED or
+first (totals + what is left in the warehouse); when it is not enough the order is still created normally (shipped when the
+boxes arrive). Initial status RECEIVED or
 CONFIRMED only. Optional manual discount (`orders.discount`, reason required) is kept when items are edited later.
 
 **Editing purchases and expenses (migration `0004`).** No parallel tables: a purchase IS its batch (source PURCHASE, or
@@ -185,7 +193,7 @@ three figures for any period. This is cash out; net profit does NOT subtract pur
 COGS when sold). Every figure is computed from the rows at request time; open report pages reload by themselves after any
 add / edit / void (BroadcastChannel `cg-finance`, and on returning to the tab).
 
-**Permissions.** `inventory.view` (stock, shortages, purchases list; no costs) · `inventory.manage` (adjustments, settings,
+**Permissions.** `inventory.view` (stock, purchases list; no costs) · `inventory.manage` (adjustments, settings,
 opening balance, allocation) · `inventory.purchase.create|edit|void` · `finance.view` (costs, COGS, stock value, profit,
 spending) · `expenses.create|edit|void` · `orders.create` · `orders.discount`. All checked in the API. Super Admin: all ·
 Order Manager: inventory.view, orders.create · Support Agent: orders.create. (`0004` replaced `expenses.manage` with the
@@ -196,9 +204,10 @@ three expense keys and gave the purchase keys to every role that had `inventory.
 **Export.** Admin → الطلبات: select orders (the bar reads «تم تحديد 14 طلب بـ 23 علبة») → «تصدير لشركة الشحن (سينا)» →
 review page («حدّدت … طلب بـ … علبة», orders that can ship, boxes leaving the warehouse, warehouse before/after, orders
 excluded and why: cancelled / failed / delivered / already shipped / on hold) → export name → «هل أنت متأكد؟».
-A stock shortage does **not** exclude an order (the boxes can be physically there before the receipt is recorded): the
-review lists the orders short of stock and by how much, the confirmation names them, and the API refuses the export
-unless `allowShortage: true` is sent (audited with the orders and boxes short). Each order then moves to SHIPPED
+Any order can take what is in the warehouse (see «Stock by availability»). Only when the selection needs more boxes than
+the warehouse holds in the system (e.g. a receipt not recorded yet) the review shows one total warning («ستشحن N علبة أكثر
+مما هو مسجّل في المستودع»), the confirmation repeats it, and the API refuses the export unless `allowShortage: true` is sent
+(audited as `shortageBoxes`). Each order then moves to SHIPPED
 through the normal steps (RECEIVED → CONFIRMED → PREPARING → SHIPPED, each in its history, tagged with the batch number; the
 customer is notified once, at «تم الشحن»), gets a unique shipment reference, and the batch (`shipment_batches`,
 `shipment_orders`, number `SENA-YYYY-NNNN`, one per click via `request_id`) is saved. The whole selection is refused if
@@ -216,9 +225,19 @@ offer in the description). Regenerate the module if the carrier changes the temp
 **Delivery.** Admin → الشحن → a batch: select orders (or paste the numbers / shipment refs from the carrier's report) →
 «تأكيد التوصيل» / «خرج للتوصيل» / «تعذّر التوصيل» with «هل أنت متأكد؟». Same status change as elsewhere: delivered
 consumes the stock (FIFO) and counts as revenue; failed releases it. Only orders of that batch that are with the carrier
-move. An order shipped short of stock first takes what is available now (same allocation as «حجز المتوفر», audited as
-`shortage_allocated`); if stock still does not cover it, it is skipped with the boxes missing and stays shipped until the
-receipt is recorded (Inventory → استلام مخزون), then confirmed again.
+move. If the warehouse in the system still does not hold its boxes it is skipped with the boxes missing and stays shipped
+until the receipt is recorded (Inventory → إضافة مخزون), then confirmed again.
+
+**Editing a batch** (migration `0007`): an order taken out of a batch keeps its `shipment_orders` row with `removed_at`,
+`removed_by`, `removed_reason` (CANCELLED | RETURNED) and no longer counts anywhere: batch totals, the carrier file,
+delivery confirmation, «لدى شركة الشحن», `?shipment=` on the orders page. It happens (1) automatically whenever the order
+is cancelled or moved back before «تم الشحن» from anywhere (same transaction as the status change), or (2) from the batch
+page: select → «إزالة من الشحنة…» → «إلغاء الطلب» (duplicate / cancelled by the customer) or «إعادته للتجهيز» (ships in a
+later batch, new reference `…-2`; the old one is never reused). `POST /shipments/{id}/remove { action: cancel|return,
+numbers, expectedCount, note }`, permission `shipments.manage` (taking an order out of a shipment is part of managing
+it, so the override permission is not needed); the customer is notified of a cancellation only; audited as
+`shipment_orders_removed`. The batch page lists removed orders under «أُزيلت من الشحنة»; download the file again after an edit.
+On deploy the migration marks rows of orders that were already cancelled (SENA-2026-0001: CG-2026-000036 → 14 orders, 22 boxes).
 
 **National address** (migration `0006`): the Saudi short code (4 letters + 4 digits, e.g. RRRD2929) on `orders` and
 `customers` (CHECK on the shape). Checkout requires it **or** the customer's map location («تحديد موقعي تلقائياً»; `requireNationalAddress` on website

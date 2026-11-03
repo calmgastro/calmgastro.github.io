@@ -4,19 +4,22 @@
    Each order then moves to SHIPPED through the normal steps (RECEIVED → CONFIRMED → PREPARING → SHIPPED, each one in its
    history, the customer notified once, for «تم الشحن»), gets a unique shipment reference, and the carrier's own Excel
    template is filled from the batch (downloadable again at any time). Only orders that can really leave are accepted:
-   not cancelled / failed / delivered / already shipped / on hold / anonymized. A shortage that stock received since the
-   order covers is simply reserved at export. A remaining stock shortage does not block the export either
-   (the boxes may be physically there before the receipt is recorded) — it is shown and must be confirmed (allowShortage).
+   not cancelled / failed / delivered / already shipped / on hold / anonymized. Stock goes by availability: a shipped order
+   takes its boxes from the warehouse, even ones held for an order that has not shipped yet (see claimStock). Shipping more
+   boxes than the warehouse holds in the system does not block the export (the receipt may not be recorded yet) — it is
+   shown and must be confirmed (allowShortage).
+
+   Editing a batch: an order cancelled (e.g. a duplicate) or returned to «جاري التجهيز» leaves the batch — its row stays on
+   record but the totals, the carrier file and delivery confirmation skip it (removeFromShipment, or any status change).
 
    Delivery = per batch: confirm all remaining orders, or the selected ones, as Delivered (or Failed) in one action. It is
-   the usual status change, so stock is consumed (FIFO cost), revenue counts and the history records who confirmed. A
-   shortage order first takes whatever stock is available now; one still short is skipped until the receipt is recorded. */
+   the usual status change, so stock is consumed (FIFO cost), revenue counts and the history records who confirmed. */
 import { HttpError, loadOrder, normalizeOrderNumber, localPhone, normalizeNationalAddress } from "./orders.js";
 import { allowedTransition } from "./statuses.js";
 import { applyTransition, need, BULK_MAX } from "./admin.js";
 import { audit } from "./auth.js";
-import { getBalance, riyadhDay } from "./inventory.js";
-import { allocateShortage } from "./stock_admin.js";
+import { riyadhDay } from "./inventory.js";
+import { stockFlow } from "./stock_admin.js";
 import { senaWorkbook } from "./xlsx.js";
 import { SENA_ZONES, SENA_PREP, SENA_MAX_ROWS } from "./sena_template.js";
 
@@ -86,7 +89,6 @@ async function examine(env, ctx, numbers) {
     const full = await loadOrder(env.DB, n);
     if (!full) { rows.push({ orderNumber: n, eligible: false, reason: "not_found" }); continue; }
     const o = full.order;
-    const res = await env.DB.prepare("SELECT status, shortage_qty FROM inventory_reservations WHERE order_id = ? AND status = 'SHORTAGE'").bind(o.id).first();
     const steps = PATH[o.status] || [];
     let reason = null;
     if (o.anonymized_at) reason = "anonymized";
@@ -96,33 +98,26 @@ async function examine(env, ctx, numbers) {
     else if (o.status === "ON_HOLD") reason = "on_hold";
     else if (!steps.every((s, i) => allowedTransition(ctx.perms, i ? steps[i - 1] : o.status, s) === "normal")) reason = "transition_not_allowed";
     rows.push({ orderNumber: o.order_number, customer: o.customer_name, phone: localPhone(o.customer_phone), city: o.city, district: o.district,
-      boxes: o.boxes, amount: o.total_amount, status: o.status, steps, eligible: !reason, reason, shortage: res ? res.shortage_qty : 0, allocate: 0,
+      boxes: o.boxes, amount: o.total_amount, status: o.status, steps, eligible: !reason, reason,
       nationalAddress: o.national_address || null, naApprox: o.national_address ? null : fallbackFor(o.city, fb), createdAt: o.created_at });
   }
-  // a shortage that stock received since the order now covers is reserved at export (in selection order); only the rest is short
-  const bal = await getBalance(env.DB);
-  let free = bal ? Math.max(0, bal.on_hand - bal.reserved) : 0;
-  for (const r of rows) if (r.eligible && r.shortage > 0 && free > 0) { const take = Math.min(r.shortage, free); free -= take; r.allocate = take; r.shortage -= take; }
   return rows;
 }
+// what is physically in the warehouse (on hand − boxes with the carrier) before and after this export; any order can take it
 async function stockPicture(db, selectedBoxes) {
-  const b = await getBalance(db);
-  if (!b) return null;
-  // boxes of orders already handed to the carrier are still on hand (sold only when delivered) but no longer in the warehouse
-  const t = await db.prepare(`SELECT COALESCE(SUM(r.reserved_qty), 0) n FROM inventory_reservations r JOIN orders o ON o.id = r.order_id
-    WHERE r.status IN ('RESERVED','SHORTAGE') AND o.status IN ('SHIPPED','OUT_FOR_DELIVERY')`).first();
-  const inWarehouse = b.on_hand - t.n;
-  return { onHand: b.on_hand, reserved: b.reserved, available: b.on_hand - b.reserved, withCarrier: t.n, inWarehouse, selected: selectedBoxes, inWarehouseAfter: inWarehouse - selectedBoxes };
+  const f = await stockFlow(db);
+  if (!f) return null;
+  return { onHand: f.onHand, inWarehouse: f.inWarehouse, withCarrier: f.withCarrier.boxes, selected: selectedBoxes, inWarehouseAfter: f.inWarehouse - selectedBoxes };
 }
-const totals = rows => {
-  const ok = rows.filter(r => r.eligible), short = ok.filter(r => r.shortage > 0);
-  return { orders: ok.length, boxes: ok.reduce((a, r) => a + r.boxes, 0), amount: ok.reduce((a, r) => a + r.amount, 0),
-    shortageOrders: short.length, shortageBoxes: short.reduce((a, r) => a + r.shortage, 0) };
+const totals = async (db, rows) => {
+  const ok = rows.filter(r => r.eligible), boxes = ok.reduce((a, r) => a + r.boxes, 0), f = await stockFlow(db);
+  // boxes leaving beyond what the warehouse holds in the system (receipt not recorded yet): allowed, but only knowingly
+  return { orders: ok.length, boxes, amount: ok.reduce((a, r) => a + r.amount, 0), shortageBoxes: f ? Math.max(0, boxes - Math.max(0, f.inWarehouse)) : 0 };
 };
 
 export async function previewShipment(env, ctx, body) {
   need(ctx, "shipments.manage");
-  const rows = await examine(env, ctx, readNumbers(body)), tot = totals(rows);
+  const rows = await examine(env, ctx, readNumbers(body)), tot = await totals(env.DB, rows);
   const d = riyadhDay(now());
   // everything the admin picked, before exclusions («حدّدت 14 طلب بـ 23 علبة»)
   const selected = { orders: rows.length, boxes: rows.reduce((a, r) => a + (r.boxes || 0), 0) };
@@ -143,13 +138,13 @@ export async function createShipment(env, ctx, body) {
   if (Object.keys(errors).length) throw new HttpError(422, { error: "validation", fields: errors });
   const prior = await db.prepare("SELECT id FROM shipment_batches WHERE request_id = ?").bind(requestId).first();
   if (prior) return { replay: true, batch: await batchSummary(db, prior.id), shipped: [], failed: [] };
-  const rows = await examine(env, ctx, numbers), tot = totals(rows);
+  const rows = await examine(env, ctx, numbers), tot = await totals(db, rows);
   const bad = rows.filter(r => !r.eligible);
   if (bad.length) throw new HttpError(409, { error: "not_eligible", orders: bad.map(r => ({ orderNumber: r.orderNumber, reason: r.reason, status: r.status })) });
   // what the admin confirmed must still be what is exported
   if (Number(body.expectedCount) !== tot.orders || Number(body.expectedBoxes) !== tot.boxes) throw new HttpError(409, { error: "selection_changed", totals: tot });
   // shipping more boxes than the system holds is allowed, but only knowingly
-  if (tot.shortageOrders && body.allowShortage !== true) throw new HttpError(409, { error: "shortage_confirmation_required", totals: tot });
+  if (tot.shortageBoxes && body.allowShortage !== true) throw new HttpError(409, { error: "shortage_confirmation_required", totals: tot });
 
   const year = riyadhDay(now()).slice(0, 4), t = now();
   let batchId = null;
@@ -174,10 +169,6 @@ export async function createShipment(env, ctx, body) {
   for (const r of rows) {
     let full = await loadOrder(db, r.orderNumber), reached = full.order.status;
     try {
-      if (r.allocate) {
-        try { await allocateShortage(env, ctx, full.order); } catch (e) { if (!(e instanceof HttpError)) throw e; }
-        full = await loadOrder(db, r.orderNumber);
-      }
       for (const step of PATH[full.order.status] || []) {
         await applyTransition(env, ctx, full, step, { note, visibility: "internal", kind: "normal", bulkId: batch.batch_no, notify: step === "SHIPPED" });
         reached = step;
@@ -195,7 +186,7 @@ export async function createShipment(env, ctx, body) {
   }
   if (!shipped.length) await db.prepare("DELETE FROM shipment_batches WHERE id = ? AND NOT EXISTS (SELECT 1 FROM shipment_orders WHERE batch_id = ?)").bind(batchId, batchId).run();
   await audit(env, ctx, "shipment_exported", "shipment", batch.batch_no, null, { name, orders: shipped.length, boxes: tot.boxes, amount: tot.amount,
-    shipped, failed: failed.map(f => f.orderNumber), ...(tot.shortageOrders ? { shortageOrders: rows.filter(r => r.shortage > 0).map(r => r.orderNumber), shortageBoxes: tot.shortageBoxes } : {}) });
+    shipped, failed: failed.map(f => f.orderNumber), ...(tot.shortageBoxes ? { shortageBoxes: tot.shortageBoxes } : {}) });
   return { replay: false, batch: shipped.length ? await batchSummary(db, batchId) : null, shipped, failed };
 }
 
@@ -209,9 +200,9 @@ const AGG = `COUNT(s.id) n, COALESCE(SUM(s.boxes), 0) boxes, COALESCE(SUM(s.amou
 const batchView = b => ({ id: b.id, batchNo: b.batch_no, carrier: b.carrier, name: b.name, notes: b.notes, createdBy: b.created_by, createdAt: b.created_at,
   downloads: b.downloads, lastDownloadAt: b.last_download_at, orders: b.n, boxes: b.boxes, amount: b.amount,
   delivered: b.delivered, inTransit: b.in_transit, failed: b.failed, other: b.other, deliveredAmount: b.delivered_amount, transitAmount: b.transit_amount,
-  state: b.in_transit ? "IN_TRANSIT" : "DONE" });
+  removed: b.removed || 0, state: b.in_transit ? "IN_TRANSIT" : "DONE" });
 async function batchSummary(db, id) {
-  const b = await db.prepare(`SELECT b.*, ${AGG} FROM shipment_batches b LEFT JOIN shipment_orders s ON s.batch_id = b.id LEFT JOIN orders o ON o.id = s.order_id WHERE b.id = ? GROUP BY b.id`).bind(id).first();
+  const b = await db.prepare(`SELECT b.*, ${AGG}, (SELECT COUNT(*) FROM shipment_orders x WHERE x.batch_id = b.id AND x.removed_at IS NOT NULL) removed FROM shipment_batches b LEFT JOIN shipment_orders s ON s.batch_id = b.id AND s.removed_at IS NULL LEFT JOIN orders o ON o.id = s.order_id WHERE b.id = ? GROUP BY b.id`).bind(id).first();
   return b ? batchView(b) : null;
 }
 
@@ -223,12 +214,12 @@ export async function listShipments(env, ctx, params) {
   const state = params.get("state"), having = state === "open" ? "HAVING in_transit > 0" : state === "done" ? "HAVING in_transit = 0" : "";
   const w = where.length ? "WHERE " + where.join(" AND ") : "";
   const [rows, all, transit] = await Promise.all([
-    db.prepare(`SELECT b.*, ${AGG} FROM shipment_batches b LEFT JOIN shipment_orders s ON s.batch_id = b.id LEFT JOIN orders o ON o.id = s.order_id ${w}
+    db.prepare(`SELECT b.*, ${AGG} FROM shipment_batches b LEFT JOIN shipment_orders s ON s.batch_id = b.id AND s.removed_at IS NULL LEFT JOIN orders o ON o.id = s.order_id ${w}
       GROUP BY b.id ${having} ORDER BY b.id DESC LIMIT ${per} OFFSET ${(page - 1) * per}`).bind(...binds).all(),
-    db.prepare(`SELECT COUNT(*) n FROM (SELECT b.id, ${AGG} FROM shipment_batches b LEFT JOIN shipment_orders s ON s.batch_id = b.id LEFT JOIN orders o ON o.id = s.order_id ${w} GROUP BY b.id ${having})`).bind(...binds).first(),
+    db.prepare(`SELECT COUNT(*) n FROM (SELECT b.id, ${AGG} FROM shipment_batches b LEFT JOIN shipment_orders s ON s.batch_id = b.id AND s.removed_at IS NULL LEFT JOIN orders o ON o.id = s.order_id ${w} GROUP BY b.id ${having})`).bind(...binds).first(),
     // everything currently with the carrier, whatever batch
     db.prepare(`SELECT COUNT(*) n, COALESCE(SUM(s.boxes), 0) boxes, COALESCE(SUM(s.amount), 0) amount FROM shipment_orders s JOIN orders o ON o.id = s.order_id
-      WHERE o.status IN ('SHIPPED','OUT_FOR_DELIVERY') AND s.id = (SELECT MAX(id) FROM shipment_orders x WHERE x.order_id = s.order_id)`).first()
+      WHERE o.status IN ('SHIPPED','OUT_FOR_DELIVERY') AND s.removed_at IS NULL AND s.id = (SELECT MAX(id) FROM shipment_orders x WHERE x.order_id = s.order_id)`).first()
   ]);
   return { batches: rows.results.map(batchView), total: all.n, page, per, withCarrier: { orders: transit.n, boxes: transit.boxes, amount: transit.amount },
     canManage: ctx.perms.has("shipments.manage") };
@@ -239,13 +230,13 @@ export async function shipmentDetail(env, ctx, id) {
   const db = env.DB, batch = await batchSummary(db, Number(id)), fb = (await getShippingSettings(db)).naFallback;
   if (!batch) throw new HttpError(404, { error: "not_found" });
   const rows = (await db.prepare(`SELECT s.*, o.order_number, o.customer_name, o.customer_phone, o.city, o.district, o.status, o.anonymized_at, o.national_address, o.updated_at order_updated_at,
-      (SELECT MAX(h.created_at) FROM order_status_history h WHERE h.order_id = o.id AND h.new_status = o.status) status_at,
-      (SELECT COALESCE(SUM(r.shortage_qty), 0) FROM inventory_reservations r WHERE r.order_id = o.id AND r.status = 'SHORTAGE') shortage
+      (SELECT MAX(h.created_at) FROM order_status_history h WHERE h.order_id = o.id AND h.new_status = o.status) status_at
     FROM shipment_orders s JOIN orders o ON o.id = s.order_id WHERE s.batch_id = ? ORDER BY s.id`).bind(batch.id).all()).results;
-  return { batch, orders: rows.map(r => ({ orderNumber: r.order_number, shipmentRef: r.shipment_ref, customer: r.customer_name, phone: localPhone(r.customer_phone),
-      city: r.city, district: r.district, boxes: r.boxes, amount: r.amount, statusBefore: r.status_before, status: r.status, statusAt: r.status_at, anonymized: !!r.anonymized_at,
-      shortage: r.shortage, nationalAddress: r.national_address || null, naApprox: r.national_address ? null : fallbackFor(r.city, fb), orderUpdatedAt: r.order_updated_at })),
-    canManage: ctx.perms.has("shipments.manage") };
+  const view = r => ({ orderNumber: r.order_number, shipmentRef: r.shipment_ref, customer: r.customer_name, phone: localPhone(r.customer_phone),
+    city: r.city, district: r.district, boxes: r.boxes, amount: r.amount, statusBefore: r.status_before, status: r.status, statusAt: r.status_at, anonymized: !!r.anonymized_at,
+    nationalAddress: r.national_address || null, naApprox: r.national_address ? null : fallbackFor(r.city, fb), orderUpdatedAt: r.order_updated_at,
+    ...(r.removed_at ? { removedAt: r.removed_at, removedBy: r.removed_by, removedReason: r.removed_reason } : {}) });
+  return { batch, orders: rows.filter(r => !r.removed_at).map(view), removed: rows.filter(r => r.removed_at).map(view), canManage: ctx.perms.has("shipments.manage") };
 }
 
 /* ---------- the carrier file (their template, filled) ---------- */
@@ -254,7 +245,7 @@ export async function shipmentFile(env, ctx, id) {
   const db = env.DB, b = await db.prepare("SELECT * FROM shipment_batches WHERE id = ?").bind(Number(id)).first();
   if (!b) throw new HttpError(404, { error: "not_found" });
   const s = await getShippingSettings(db);
-  const rows = (await db.prepare(`SELECT s.shipment_ref, s.boxes sboxes, s.amount, o.* FROM shipment_orders s JOIN orders o ON o.id = s.order_id WHERE s.batch_id = ? ORDER BY s.id`).bind(b.id).all()).results;
+  const rows = (await db.prepare(`SELECT s.shipment_ref, s.boxes sboxes, s.amount, o.* FROM shipment_orders s JOIN orders o ON o.id = s.order_id WHERE s.batch_id = ? AND s.removed_at IS NULL ORDER BY s.id`).bind(b.id).all()).results;
   const kg = n => Math.round(n * s.boxWeightKg * 100) / 100;
   const shipments = [], items = [];
   for (const o of rows) {
@@ -283,7 +274,7 @@ export async function confirmShipment(env, ctx, id, body) {
   if (!b) throw new HttpError(404, { error: "not_found" });
   const to = String(body && body.status || "");
   if (!["DELIVERED", "FAILED", "OUT_FOR_DELIVERY"].includes(to)) throw new HttpError(422, { error: "invalid_status" });
-  const inBatch = new Set((await db.prepare("SELECT o.order_number FROM shipment_orders s JOIN orders o ON o.id = s.order_id WHERE s.batch_id = ?").bind(b.id).all()).results.map(r => r.order_number));
+  const inBatch = new Set((await db.prepare("SELECT o.order_number FROM shipment_orders s JOIN orders o ON o.id = s.order_id WHERE s.batch_id = ? AND s.removed_at IS NULL").bind(b.id).all()).results.map(r => r.order_number));
   const numbers = readNumbers(body);
   if (body.expectedCount != null && Number(body.expectedCount) !== numbers.length) throw new HttpError(409, { error: "selection_changed" });
   const note = clean(body.note, 300), updated = [], skipped = [];
@@ -295,10 +286,6 @@ export async function confirmShipment(env, ctx, id, body) {
     if (o.anonymized_at) { skipped.push({ orderNumber: n, reason: "anonymized", status: o.status }); continue; }
     if (!IN_TRANSIT.includes(o.status) || allowedTransition(ctx.perms, o.status, to) !== "normal") { skipped.push({ orderNumber: n, reason: "transition_not_allowed", status: o.status }); continue; }
     try {
-      // shipped short of stock: take what has been received since, so delivery can consume it
-      if (to === "DELIVERED" && await db.prepare("SELECT 1 FROM inventory_reservations WHERE order_id = ? AND status = 'SHORTAGE'").bind(o.id).first()) {
-        try { await allocateShortage(env, ctx, o); } catch (e) { if (!(e instanceof HttpError)) throw e; }
-      }
       await applyTransition(env, ctx, await loadOrder(db, n), to, { note: `${label} — ${b.batch_no}` + (note ? `: ${note}` : ""), visibility: "internal", kind: "normal", bulkId: `${b.batch_no}:${to}` });
       updated.push(n);
     } catch (e) {
@@ -311,8 +298,42 @@ export async function confirmShipment(env, ctx, id, body) {
   return { updated: updated.length, skipped, batch: await batchSummary(db, b.id) };
 }
 
+/* ---------- edit a batch: take orders out ----------
+   action "cancel": the order is cancelled (e.g. a duplicate) · "return": back to «جاري التجهيز», to be shipped in a later batch.
+   Either way its boxes go back to the warehouse for other orders, its row leaves the totals and the carrier file (download it
+   again), and its history records who did it. Taking an order out of a shipment is part of managing shipments, so
+   shipments.manage is enough even though leaving «تم الشحن» is otherwise an exceptional status change. */
+export async function removeFromShipment(env, ctx, id, body) {
+  need(ctx, "shipments.manage");
+  const db = env.DB, b = await db.prepare("SELECT * FROM shipment_batches WHERE id = ?").bind(Number(id)).first();
+  if (!b) throw new HttpError(404, { error: "not_found" });
+  const action = String(body && body.action || "");
+  if (!["cancel", "return"].includes(action)) throw new HttpError(422, { error: "invalid_action" });
+  const numbers = readNumbers(body);
+  if (body.expectedCount != null && Number(body.expectedCount) !== numbers.length) throw new HttpError(409, { error: "selection_changed" });
+  const inBatch = new Set((await db.prepare("SELECT o.order_number FROM shipment_orders s JOIN orders o ON o.id = s.order_id WHERE s.batch_id = ? AND s.removed_at IS NULL").bind(b.id).all()).results.map(r => r.order_number));
+  const to = action === "cancel" ? "CANCELLED" : "PREPARING", note = clean(body.note, 300), removed = [], skipped = [];
+  const label = action === "cancel" ? `أُلغي وأُزيل من الشحنة ${b.batch_no}` : `أُعيد للتجهيز وأُزيل من الشحنة ${b.batch_no}`;
+  for (const n of numbers) {
+    if (!inBatch.has(n)) { skipped.push({ orderNumber: n, reason: "not_in_batch" }); continue; }
+    const full = await loadOrder(db, n), o = full.order;
+    if (o.anonymized_at) { skipped.push({ orderNumber: n, reason: "anonymized", status: o.status }); continue; }
+    if (!["SHIPPED", "OUT_FOR_DELIVERY", "ON_HOLD"].includes(o.status)) { skipped.push({ orderNumber: n, reason: "transition_not_allowed", status: o.status }); continue; }
+    try {
+      await applyTransition(env, ctx, full, to, { note: label + (note ? `: ${note}` : ""), visibility: "internal", kind: allowedTransition(ctx.perms, o.status, to) || "override",
+        bulkId: `${b.batch_no}:remove`, notify: to === "CANCELLED" });
+      removed.push(n);
+    } catch (e) {
+      if (!(e instanceof HttpError)) throw e;
+      skipped.push({ orderNumber: n, reason: e.body.error, status: o.status });
+    }
+  }
+  await audit(env, ctx, "shipment_orders_removed", "shipment", b.batch_no, null, { action, note: note || undefined, orders: removed, skipped: skipped.map(s => s.orderNumber) });
+  return { removed: removed.length, skipped, batch: await batchSummary(db, b.id) };
+}
+
 /* shipment rows of one order (order page) */
 export async function shipmentsOfOrder(db, orderId) {
-  return (await db.prepare(`SELECT s.shipment_ref, s.created_at, b.id, b.batch_no, b.name FROM shipment_orders s JOIN shipment_batches b ON b.id = s.batch_id WHERE s.order_id = ? ORDER BY s.id`)
-    .bind(orderId).all()).results.map(r => ({ batchId: r.id, batchNo: r.batch_no, name: r.name, shipmentRef: r.shipment_ref, at: r.created_at }));
+  return (await db.prepare(`SELECT s.shipment_ref, s.created_at, s.removed_at, s.removed_reason, b.id, b.batch_no, b.name FROM shipment_orders s JOIN shipment_batches b ON b.id = s.batch_id WHERE s.order_id = ? ORDER BY s.id`)
+    .bind(orderId).all()).results.map(r => ({ batchId: r.id, batchNo: r.batch_no, name: r.name, shipmentRef: r.shipment_ref, at: r.created_at, removedAt: r.removed_at, removedReason: r.removed_reason }));
 }
