@@ -210,7 +210,8 @@ lists, zones, hidden options sheet and instructions kept; the 2,495 per-cell cop
 5 ranges). Columns: name · city · zone (from their list, setting) · address (district, address, delivery note, map link) ·
 mobile 05… (text) · order number · shipment ref · amount to collect · weight (boxes × box weight, setting) · national
 address (`orders.national_address`, see below) · «الشحنة مجهزة من التاجر» · 0 bags/bubbles/cartons.
-Items sheet: one line per order item, linked by order number. Regenerate the module if the carrier changes the template.
+Items sheet: one line per order item, linked by order number, counted in boxes (quantity = boxes, price per box, the chosen
+offer in the description). Regenerate the module if the carrier changes the template.
 
 **Delivery.** Admin → الشحن → a batch: select orders (or paste the numbers / shipment refs from the carrier's report) →
 «تأكيد التوصيل» / «خرج للتوصيل» / «تعذّر التوصيل» with «هل أنت متأكد؟». Same status change as elsewhere: delivered
@@ -231,6 +232,10 @@ Editable in place («تعديل» next to it on the order page and in the SENA r
 per city** (Shipping → settings, `shipping_settings.na_fallback`): one real code per city (a public place) with the city's
 spellings («جدة، جده، Jeddah»); an order without its own code gets its city's code in column J, shown as «تقريبي», and the
 order itself stays empty so the customer's real code can be added later (the file is regenerated on each download).
+
+**Orders page size**: «عدد الطلبات في الصفحة: 25 | 50 | 100» above the list (`per` + `page` in the API and the link; the server
+accepts only 25/50/100, so nothing loads thousands at once; changing it returns to page 1; an out-of-range page moves to the
+last one; «عرض 1–50 من 327 طلبًا»). No «all» option on purpose.
 
 **Orders table columns** can be resized by dragging the edge of a header (or ←/→ on the focused edge); widths are kept per
 browser (`localStorage` `cg-cols:orders`), double-click an edge to reset. Permission `shipments.manage` (Super Admin, Order Manager) plus the normal status permissions.

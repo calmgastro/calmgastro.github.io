@@ -248,3 +248,10 @@ html.col-resizing, html.col-resizing *{cursor:col-resize !important; user-select
 .fb-rows{display:grid; gap:8px; margin:8px 0}
 .fb-row{display:grid; grid-template-columns:minmax(0,1fr) 9.5em auto; gap:8px; align-items:center}
 @media (max-width:560px){ .fb-row{grid-template-columns:1fr auto} .fb-row input:first-child{grid-column:1 / -1} }
+/* عدد الطلبات في الصفحة */
+.list-bar{display:flex; flex-wrap:wrap; gap:8px 16px; align-items:center; justify-content:space-between; margin:0 0 8px}
+.list-range{font-weight:600}
+.page-size{display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap}
+.page-size .seg{min-width:44px; min-height:36px; padding:.3em .8em; border:1px solid var(--line); background:var(--surface); border-radius:999px; font:inherit; font-weight:700; cursor:pointer; color:var(--teal-deep)}
+.page-size .seg[aria-pressed="true"]{background:var(--teal-deep); border-color:var(--teal-deep); color:#fff}
+.page-size .seg:focus-visible{outline:2px solid var(--teal-deep); outline-offset:2px}

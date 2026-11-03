@@ -383,29 +383,29 @@ async function pageOrders() {
   const srcSel = h("select", { "aria-label": "مصدر الطلب" }, [["", "كل المصادر"], ["WEBSITE", "الموقع"], ["ADMIN", "لوحة التحكم"]].map(([v, t]) => h("option", { value: v, text: t, selected: state.source === v })));
   const invSel = h("select", { "aria-label": "حالة المخزون" }, [["", "كل حالات المخزون"], ["RESERVED", "محجوز"], ["SHORTAGE", "نقص مخزون"], ["COMMITTED", "مُستهلك"], ["RELEASED", "أُلغي الحجز"]].map(([v, t]) => h("option", { value: v, text: t, selected: state.inv === v })));
   const paySel = h("select", { "aria-label": "حالة الدفع" }, [["", "كل حالات الدفع"], ["collected", "تم التحصيل"], ["outstanding", "لم يُحصَّل بعد"]].map(([v, t]) => h("option", { value: v, text: t, selected: state.pay === v })));
-  const per = h("select", { "aria-label": "عدد الطلبات في الصفحة" }, ["25", "50", "100"].map(v => h("option", { value: v, text: v + " في الصفحة", selected: state.per === v })));
+  if (!PAGE_SIZES.includes(state.per)) state.per = "25";
   const showCustom = () => { custom.hidden = range.value !== "custom"; };
   showCustom();
   const apply = () => reload({ q: q.value.trim(), status: st.value, payment: pay.value, city: city.value, range: range.value === "custom" ? "" : range.value,
-    from: range.value === "custom" ? from.value : "", to: range.value === "custom" ? to.value : "", archived: arch.value, per: per.value, page: "1",
+    from: range.value === "custom" ? from.value : "", to: range.value === "custom" ? to.value : "", archived: arch.value, page: "1",
     source: srcSel.value, inv: invSel.value, pay: paySel.value });
-  const form = h("form", { class: "filters", onsubmit: e => { e.preventDefault(); apply(); } }, q, st, pay, city, range, custom, srcSel, invSel, paySel, arch, per,
+  const form = h("form", { class: "filters", onsubmit: e => { e.preventDefault(); apply(); } }, q, st, pay, city, range, custom, srcSel, invSel, paySel, arch,
     h("button", { type: "submit", class: "btn primary", text: "بحث" }),
     h("button", { type: "button", class: "btn ghost", text: "مسح", onclick: () => { selected.clear(); history.replaceState(null, "", "/admin/orders"); pageOrders(); } }));
-  [st, pay, arch, per, srcSel, invSel, paySel].forEach(x => x.addEventListener("change", apply));
+  [st, pay, arch, srcSel, invSel, paySel].forEach(x => x.addEventListener("change", apply));
   range.addEventListener("change", () => { showCustom(); if (range.value !== "custom") apply(); });   // الفترات الجاهزة تُطبّق فوراً
 
   const exportBtn = can("orders.export") ? h("a", { class: "btn ghost", text: "تصدير CSV / Excel", href: "#", onclick: e => { e.currentTarget.href = "/admin/api/orders/export.csv" + (qs({ page: "", per: "" }) ? "?" + qs({ page: "", per: "" }) : ""); } , download: "" }) : null;
   const bulk = h("div", { class: "bulkbar", hidden: true });
   const chips = h("div", { class: "chips" });
   const list = h("div", null, h("p", { class: "muted", text: "جارٍ التحميل…" }));
-  const pager = h("div", { class: "pager" });
+  const pager = h("div", { class: "pager" }), listBar = h("div", { class: "list-bar" });
   const newBtn = can("orders.create") ? [h("a", { class: "btn primary", href: "/admin/orders/new", "data-link": true, text: "+ طلب جديد" }),
     h("a", { class: "btn ghost", href: "/admin/orders/import", "data-link": true, text: "إدخال عدة طلبات" })] : null;
   put(main, h("div", { class: "page-head" }, h("h1", { text: "الطلبات" }), h("div", { class: "row" }, newBtn, exportBtn)), state.phone ? h("p", { class: "note-box" }, "طلبات العميل ", h("span", { class: "num", text: state.phone }), " ", h("a", { href: "/admin/orders", "data-link": true, text: "عرض كل الطلبات" })) : null,
     state.shipment ? h("p", { class: "note-box" }, "طلبات شحنة واحدة. ", h("a", { href: "/admin/shipments/" + state.shipment, "data-link": true, text: "صفحة الشحنة" }), " · ",
       h("a", { href: "/admin/orders", "data-link": true, text: "كل الطلبات" })) : null,
-    form, chips, bulk, list, pager);
+    form, chips, bulk, listBar, list, pager);
 
   let last = null;
   function renderBulk() {
@@ -457,8 +457,15 @@ async function pageOrders() {
     list.textContent = ""; put(list, orderTable(last.orders, { selectable: true, onToggle: renderBulk }));
     renderBulk();
     const start = last.total ? (last.page - 1) * last.per + 1 : 0, end = Math.min(last.total, last.page * last.per), pages = Math.ceil(last.total / last.per);
+    const range_ = last.total ? `عرض ${fmtN(start)}–${fmtN(end)} من ${ordersCount(last.total)}` : "لا توجد طلبات";
+    // عدد الطلبات في الصفحة: الخادم يعيد هذا العدد فقط (25 / 50 / 100)، والتغيير يعيد للصفحة الأولى
+    listBar.textContent = "";
+    put(listBar, h("span", { class: "list-range", text: range_ }),
+      h("div", { class: "page-size", role: "group", "aria-label": "عدد الطلبات في الصفحة" }, h("span", { class: "muted small", text: "عدد الطلبات في الصفحة:" }),
+        PAGE_SIZES.map(v => h("button", { type: "button", class: "seg", "aria-pressed": String(String(last.per) === v), text: v,
+          onclick: () => { if (String(last.per) !== v) reload({ per: v, page: "1" }); } }))));
     pager.textContent = "";
-    put(pager, h("span", { class: "muted", text: `${fmtN(start)}–${fmtN(end)} من ${fmtN(last.total)}` }),
+    put(pager, h("span", { class: "muted", text: range_ }),
       h("span", { class: "row" },
         h("button", { type: "button", class: "btn ghost sm", text: "السابق", disabled: last.page <= 1, onclick: () => reload({ page: String(last.page - 1) }) }),
         h("span", { class: "num", text: `${last.page} / ${Math.max(1, pages)}` }),
@@ -469,11 +476,20 @@ async function pageOrders() {
       ORDER.filter(s => last.counts[s] || s === "RECEIVED").map(s => h("button", { type: "button", class: "chip", "aria-pressed": String(state.status === s), onclick: () => { st.value = s; apply(); } }, STATUS[s], h("b", { class: "num", text: fmtN(last.counts[s] || 0) }))));
   }
   async function load() {
-    try { last = await api("/orders?" + qs()); render(); }
+    try {
+      last = await api("/orders?" + qs());
+      // صفحة خارج النطاق (رابط قديم أو بعد تغيير الفلاتر): انتقل لآخر صفحة موجودة
+      const pages = Math.ceil(last.total / last.per);
+      if (!last.orders.length && pages && last.page > pages) return reload({ page: String(pages) });
+      render();
+    }
     catch (e) { if (e.message !== "unauthorized") { list.textContent = ""; put(list, h("p", { class: "err", text: "تعذر تحميل الطلبات. " + errText(e) })); } }
   }
   load();
 }
+
+const PAGE_SIZES = ["25", "50", "100"];
+const ordersCount = n => n === 1 ? "طلب واحد" : n === 2 ? "طلبين" : n <= 10 ? `${fmtN(n)} طلبات` : `${fmtN(n)} طلبًا`;
 
 /* ============================================================ طلب واحد */
 async function pageOrder(number) {

@@ -263,8 +263,13 @@ export async function shipmentFile(env, ctx, id) {
     // A اسم المستلم · B المدينة · C الزون · D العنوان · E الجوال · F رقم الطلب · G مرجع الشحنة · H القيمة · I الوزن · J العنوان الوطني · K مصدر التجهيز · L–N أكياس/ببلز/كراتين · O رقم الزون
     shipments.push([o.anonymized_at ? "—" : o.customer_name, o.city, s.zone, o.anonymized_at ? "—" : address, o.anonymized_at ? "" : localPhone(o.customer_phone),
       o.order_number, o.shipment_ref, o.amount, kg(o.sboxes), o.national_address || fallbackFor(o.city, s.naFallback) || "", s.prepSource, 0, 0, 0, null]);
-    for (const i of (await db.prepare("SELECT * FROM order_items WHERE order_id = ? ORDER BY id").bind(o.id).all()).results)
-      items.push([o.order_number, i.product_name_snapshot, null, null, i.quantity, i.unit_price, `${i.boxes_per_unit} علبة في الوحدة`, kg(i.boxes_per_unit * i.quantity)]);
+    // one line per order item, counted in boxes (what is packed): quantity = boxes, price = per box (quantity × price = line value),
+    // the offer the customer chose («علبتان · برنامج شهرين» × 1) goes in the description
+    for (const i of (await db.prepare("SELECT * FROM order_items WHERE order_id = ? ORDER BY id").bind(o.id).all()).results) {
+      const boxes = i.boxes_per_unit * i.quantity;
+      items.push([o.order_number, "CalmGastro — علبة", null, null, boxes, Math.round(i.line_total / boxes * 100) / 100,
+        i.quantity > 1 ? `${i.product_name_snapshot} × ${i.quantity}` : i.product_name_snapshot, kg(boxes)]);
+    }
   }
   await db.prepare("UPDATE shipment_batches SET downloads = downloads + 1, last_download_at = ? WHERE id = ?").bind(now(), b.id).run();
   await audit(env, ctx, "shipment_file_downloaded", "shipment", b.batch_no, null, { orders: rows.length });
