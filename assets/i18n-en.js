@@ -493,6 +493,8 @@ window.I18N_EN = {
   "مرحباً، أحتاج المساعدة في استرجاع رقم طلبي.": "Hello, I need help finding my order number.",
   "اكتب العنوان الوطني المختصر: 4 حروف ثم 4 أرقام، مثل RRRD2929": "Enter the short national address: 4 letters then 4 digits, e.g. RRRD2929",
   "العنوان الوطني": "National address",
+  "الشارع: {street}": "Street: {street}",
+  "يمكنك تعديل المدينة والحي والعنوان إذا لم تكن دقيقة، وأضف رقم المبنى أو أقرب معلم.": "You can edit the city, district and address if they’re not accurate, and add the building number or nearest landmark.",
   "اكتب عنوانك الوطني المختصر، وإن لم يكن لديك فاضغط «تحديد موقعي تلقائياً» بالأسفل": "Enter your short national address, or if you don't have one, tap “Locate me automatically” below.",
   "لا بأس إن لم يكن لديك عنوان وطني؛ سنعتمد موقعك على الخريطة.": "No national address? That's fine, we'll use your map location."
  }

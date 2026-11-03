@@ -518,14 +518,16 @@
         const r = await fetch(`${rg.endpoint}?lat=${lat}&lng=${lng}`, { signal: ctrl.signal });
         if (!r.ok) return null;
         const j = await r.json();
-        return { city: String(j.city || "").trim(), district: String(j.district || "").trim() };
+        return { city: String(j.city || "").trim(), district: String(j.district || "").trim(), street: String(j.street || "").trim() };
       }
       if (rg.provider === "nominatim"){
         const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=16&addressdetails=1&accept-language=${LANG}&lat=${lat}&lon=${lng}`, { signal: ctrl.signal });
         if (!r.ok) return null;
         const a = (await r.json()).address || {};
         return { city: (a.city || a.town || a.village || a.municipality || a.county || "").trim(),
-                 district: (a.suburb || a.neighbourhood || a.quarter || a.city_district || a.residential || a.hamlet || "").trim() };
+                 district: (a.suburb || a.neighbourhood || a.quarter || a.city_district || a.residential || a.hamlet || "").trim(),
+                 // الشارع (ورقم المبنى إن وُجد) لحقل «عنوان التوصيل»
+                 street: [(a.road || a.pedestrian || a.footway || a.street || "").trim(), (a.house_number || "").trim()].filter(Boolean).join(" ") };
       }
     } catch (_) {} finally { clearTimeout(timer); }
     return null;
@@ -549,12 +551,15 @@
         if (place && place.district) form.elements.district.value = place.district;
         if (form.elements.city.value) check("city");
         if (form.elements.district.value) check("district");
+        // لا نكتب فوق عنوان كتبه العميل
+        if (place && place.street && !form.elements.address.value.trim()){ form.elements.address.value = place.street; check("address"); }
         const lines = [t("✓ تم تحديد موقعك")];
         // الموقع يغني عن العنوان الوطني لمن لا يعرفه
         if (!form.elements.nationalAddress.value.trim()){ lines.push(t("لا بأس إن لم يكن لديك عنوان وطني؛ سنعتمد موقعك على الخريطة.")); if (form.elements.nationalAddress.getAttribute("aria-invalid") === "true") check("nationalAddress"); }
         if (place && (place.city || place.district)){
           lines.push(t("المدينة: {city} — الحي: {district}", { city: place.city || "—", district: place.district || "—" }));
-          lines.push(t("يمكنك تعديل المدينة والحي إذا لم تكن دقيقة."));
+          if (place.street) lines.push(t("الشارع: {street}", { street: place.street }));
+          lines.push(t(place.street ? "يمكنك تعديل المدينة والحي والعنوان إذا لم تكن دقيقة، وأضف رقم المبنى أو أقرب معلم." : "يمكنك تعديل المدينة والحي إذا لم تكن دقيقة."));
         } else lines.push(t("سنحفظ موقعك على الخريطة مع الطلب. اكتب المدينة والحي يدوياً."));
         finish(t("تحديث موقعي")); showLoc("ok", lines, true);
       }, fail, { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 });
