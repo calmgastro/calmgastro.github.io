@@ -36,6 +36,13 @@ async function filterFor(env, params) {
   return orderFilter(params, key ? await citySpellings(env, key) : null);
 }
 
+const STATUS_GROUPS = {
+  OPEN: ["RECEIVED", "CONFIRMED", "PREPARING", "SHIPPED", "OUT_FOR_DELIVERY", "ON_HOLD"],
+  TO_SHIP: ["RECEIVED", "CONFIRMED", "PREPARING"],
+  WITH_CARRIER: ["SHIPPED", "OUT_FOR_DELIVERY"]
+};
+const listParam = (params, k) => String(params.get(k) || "").split(",").map(s => s.trim()).filter(Boolean).slice(0, 20);
+
 function orderFilter(params, spellings = null) {
   const where = [], binds = [];
   const add = (sql, ...v) => where.push(sql.replace(/\?/g, () => `?${binds.push(v.shift())}`));
@@ -50,20 +57,19 @@ function orderFilter(params, spellings = null) {
   }
   const phone = normalizePhone(params.get("phone"));
   if (phone) add("o.customer_phone = ?", phone);
-  const status = params.get("status");
-  if (STATUSES.includes(status)) add("o.status = ?", status);
-  else if (status === "OPEN") where.push("o.status IN ('RECEIVED','CONFIRMED','PREPARING','SHIPPED','OUT_FOR_DELIVERY','ON_HOLD')");
-  else if (status === "TO_SHIP") where.push("o.status IN ('RECEIVED','CONFIRMED','PREPARING')");
-  else if (status === "WITH_CARRIER") where.push("o.status IN ('SHIPPED','OUT_FOR_DELIVERY')");
+  // status=RECEIVED,SHIPPED → either one; a group name (OPEN / TO_SHIP / WITH_CARRIER) stands for its statuses
+  const statuses = [...new Set(listParam(params, "status").flatMap(s => STATUSES.includes(s) ? [s] : STATUS_GROUPS[s] || []))];
+  if (statuses.length) add("o.status IN (" + statuses.map(() => "?").join(",") + ")", ...statuses);
   const shipment = parseInt(params.get("shipment"), 10);
   if (shipment > 0) add("EXISTS (SELECT 1 FROM shipment_orders so WHERE so.order_id = o.id AND so.batch_id = ?)", shipment);
   const payment = params.get("payment");
   if (payment === "cod") add("o.payment_method = ?", payment);
   const source = params.get("source");
   if (source === "WEBSITE" || source === "ADMIN") add("o.source = ?", source);
-  const inv = params.get("inv");
-  if (["RESERVED", "SHORTAGE", "COMMITTED", "RELEASED"].includes(inv)) add("EXISTS (SELECT 1 FROM inventory_reservations r WHERE r.order_id = o.id AND r.status = ?)", inv);
-  else if (inv === "NONE") where.push("NOT EXISTS (SELECT 1 FROM inventory_reservations r WHERE r.order_id = o.id)");
+  const inv = listParam(params, "inv"), invSt = ["RESERVED", "SHORTAGE", "COMMITTED", "RELEASED"].filter(s => inv.includes(s));
+  const invParts = [invSt.length ? `EXISTS (SELECT 1 FROM inventory_reservations r WHERE r.order_id = o.id AND r.status IN (${invSt.map(() => "?").join(",")}))` : null,
+    inv.includes("NONE") ? "NOT EXISTS (SELECT 1 FROM inventory_reservations r WHERE r.order_id = o.id)" : null].filter(Boolean);
+  if (invParts.length) add("(" + invParts.join(" OR ") + ")", ...invSt);
   const pay = params.get("pay");                                   // cash on delivery: collected once delivered
   if (pay === "collected") where.push("o.status = 'DELIVERED'");
   else if (pay === "outstanding") where.push("o.status NOT IN ('DELIVERED','CANCELLED','FAILED')");

@@ -33,6 +33,10 @@ const STATUS = {
   OUT_FOR_DELIVERY: "خرج للتوصيل", DELIVERED: "تم التوصيل", CANCELLED: "ملغي", FAILED: "تعذّر إكمال الطلب", ON_HOLD: "معلّق — يوجد مشكلة"
 };
 const ORDER = ["RECEIVED", "CONFIRMED", "PREPARING", "SHIPPED", "OUT_FOR_DELIVERY", "DELIVERED", "CANCELLED", "FAILED", "ON_HOLD"];
+const STATUS_GROUPS = [   // [الاسم، الحالات، الاسم في الرابط] — نفس المجموعات في الخادم
+  ["الطلبات المفتوحة", ["RECEIVED", "CONFIRMED", "PREPARING", "SHIPPED", "OUT_FOR_DELIVERY", "ON_HOLD"], "OPEN"],
+  ["لم تُشحن بعد", ["RECEIVED", "CONFIRMED", "PREPARING"], "TO_SHIP"],
+  ["لدى شركة الشحن", ["SHIPPED", "OUT_FOR_DELIVERY"], "WITH_CARRIER"]];
 const badge = s => h("span", { class: "st st-" + s, text: STATUS[s] || s });
 const ROLE = { super_admin: "مدير عام", order_manager: "مدير الطلبات", support_agent: "دعم العملاء" };
 const ERR = {
@@ -264,6 +268,35 @@ function citySelect(current, onChange) {
   sel.addEventListener("change", () => onChange(sel.value));
   return sel;
 }
+// قائمة اختيار متعدد: اختر حالة واحدة أو أكثر معاً (مثل «تم استلام الطلب» + «تم الشحن»)، أو لا شيء = الكل
+function multiPick({ label, all, options, groups = [], values = [], onChange }) {
+  const sel = new Set(values.filter(v => options.some(([o]) => o === v)));
+  const summary = h("summary", { "aria-label": label });
+  const boxes = options.map(([v, t]) => h("input", { type: "checkbox", value: v, checked: sel.has(v), onchange: e => { e.target.checked ? sel.add(v) : sel.delete(v); changed(); } }));
+  const panel = h("div", { class: "ms-panel", role: "group", "aria-label": label },
+    groups.length ? h("div", { class: "ms-groups" }, groups.map(([t, vs]) => h("button", { type: "button", class: "btn ghost sm", text: t, onclick: () => set(vs, true) }))) : null,
+    options.map(([v, t], i) => h("label", { class: "ms-opt" }, boxes[i], t)),
+    h("div", { class: "ms-foot" }, h("button", { type: "button", class: "btn ghost sm", text: "مسح الاختيار", onclick: () => set([], true) }),
+      h("button", { type: "button", class: "btn primary sm", text: "تم", onclick: () => { el.open = false; summary.focus(); } })));
+  const el = h("details", { class: "ms" }, summary, panel);
+  const same = (a, b) => a.length === b.length && a.every(x => b.includes(x));
+  function paint() {
+    const v = [...sel], group = groups.find(([, vs]) => same(vs, v));
+    summary.textContent = !v.length ? all : group ? group[0] : v.length <= 2 ? v.map(x => options.find(([o]) => o === x)[1]).join(" + ") : `${label}: ${fmtN(v.length)}`;
+    el.classList.toggle("on", v.length > 0);
+    boxes.forEach(b => { b.checked = sel.has(b.value); });
+  }
+  function changed() { paint(); onChange([...sel]); }
+  function set(vs, notify) { sel.clear(); vs.forEach(v => sel.add(v)); notify ? changed() : paint(); }
+  el.value = () => options.map(([o]) => o).filter(o => sel.has(o));                 // بترتيب القائمة
+  el.flip = v => { sel.has(v) ? sel.delete(v) : sel.add(v); paint(); };
+  el.set = vs => set(vs, false);
+  paint();
+  return el;
+}
+document.addEventListener("click", e => document.querySelectorAll("details.ms[open]").forEach(d => { if (!d.contains(e.target)) d.open = false; }));
+document.addEventListener("keydown", e => { if (e.key === "Escape") document.querySelectorAll("details.ms[open]").forEach(d => { d.open = false; d.querySelector("summary").focus(); }); });
+
 const cityName = async key => { const c = (await cityOptions()).find(x => x.key === key); return c ? c.name : ""; };
 const withCity = (path, city) => city ? path + (path.includes("?") ? "&" : "?") + "city=" + encodeURIComponent(city) : path;
 
@@ -287,7 +320,7 @@ async function pageDashboard() {
       tile("خرج للتوصيل", s.OUT_FOR_DELIVERY || 0, "/admin/orders?status=OUT_FOR_DELIVERY"),
       tile("تم التوصيل", s.DELIVERED || 0, "/admin/orders?status=DELIVERED"),
       tile("ملغي", s.CANCELLED || 0, "/admin/orders?status=CANCELLED"),
-      tile("معلّق / متعذّر", (s.ON_HOLD || 0) + (s.FAILED || 0), "/admin/orders?status=ON_HOLD")),
+      tile("معلّق / متعذّر", (s.ON_HOLD || 0) + (s.FAILED || 0), "/admin/orders?status=ON_HOLD,FAILED")),
     d.inventory ? h("section", { class: "card" }, h("div", { class: "page-head" }, h("h2", { text: "المخزون" }), h("div", { class: "row" }, can("inventory.purchase.create") && d.inventory.initialized ? h("a", { class: "btn primary sm", href: "/admin/inventory?tab=receive", "data-link": true, text: "+ إضافة مخزون" }) : null,
         h("a", { class: "btn ghost sm", href: "/admin/inventory", "data-link": true, text: "إدارة المخزون" }))),
       stockTiles(d.inventory, { onAck: async id => { try { await api(`/inventory/alerts/${id}/ack`, { body: {} }); pageDashboard(); } catch (e) { toast(errText(e), true); } } })) : null,
@@ -369,10 +402,9 @@ async function pageOrders() {
   const reload = (extra = {}) => { Object.assign(state, extra); history.replaceState(null, "", "/admin/orders" + (qs() ? "?" + qs() : "")); load(); };
 
   const q = h("input", { type: "search", placeholder: "رقم الطلب، اسم العميل أو الجوال", "aria-label": "بحث", value: state.q });
-  const st = h("select", { "aria-label": "الحالة" }, h("option", { value: "", text: "كل الحالات" }), h("option", { value: "OPEN", text: "الطلبات المفتوحة" }),
-    h("option", { value: "TO_SHIP", text: "لم تُشحن بعد (جاهزة للشحن)" }), h("option", { value: "WITH_CARRIER", text: "لدى شركة الشحن" }),
-    ORDER.map(s => h("option", { value: s, text: STATUS[s], selected: state.status === s })));
-  if (["OPEN", "TO_SHIP", "WITH_CARRIER"].includes(state.status)) st.value = state.status;
+  // الحالة وحالة المخزون: اختيار واحد أو أكثر معاً (status=RECEIVED,SHIPPED)؛ الروابط القديمة (status=TO_SHIP) تُفتح بحالاتها
+  const st = multiPick({ label: "الحالة", all: "كل الحالات", options: ORDER.map(s => [s, STATUS[s]]), groups: STATUS_GROUPS,
+    values: state.status.split(",").flatMap(s => (STATUS_GROUPS.find(([, , k]) => k === s) || [, [s]])[1]), onChange: () => apply() });
   const pay = h("select", { "aria-label": "طريقة الدفع" }, h("option", { value: "", text: "كل طرق الدفع" }), h("option", { value: "cod", text: "الدفع عند الاستلام", selected: state.payment === "cod" }));
   const city = citySelect(state.city, () => apply());
   const range = h("select", { "aria-label": "الفترة" }, [["", "كل التواريخ"], ["today", "اليوم"], ["yesterday", "أمس"], ["7d", "آخر 7 أيام"], ["30d", "آخر 30 يوماً"], ["custom", "فترة مخصصة"]]
@@ -381,18 +413,19 @@ async function pageOrders() {
   const custom = h("span", { class: "row" }, "من", from, "إلى", to);
   const arch = h("select", { "aria-label": "الأرشيف" }, [["", "غير المؤرشفة"], ["1", "المؤرشفة"], ["all", "الكل"]].map(([v, t]) => h("option", { value: v, text: t, selected: state.archived === v })));
   const srcSel = h("select", { "aria-label": "مصدر الطلب" }, [["", "كل المصادر"], ["WEBSITE", "الموقع"], ["ADMIN", "لوحة التحكم"]].map(([v, t]) => h("option", { value: v, text: t, selected: state.source === v })));
-  const invSel = h("select", { "aria-label": "حالة المخزون" }, [["", "كل حالات المخزون"], ["RESERVED", "محجوز"], ["SHORTAGE", "نقص مخزون"], ["COMMITTED", "مُستهلك"], ["RELEASED", "أُلغي الحجز"]].map(([v, t]) => h("option", { value: v, text: t, selected: state.inv === v })));
+  const invSel = multiPick({ label: "حالة المخزون", all: "كل حالات المخزون", options: [["RESERVED", "محجوز"], ["SHORTAGE", "نقص مخزون"], ["COMMITTED", "مُستهلك"], ["RELEASED", "أُلغي الحجز"]],
+    values: state.inv.split(","), onChange: () => apply() });
   const paySel = h("select", { "aria-label": "حالة الدفع" }, [["", "كل حالات الدفع"], ["collected", "تم التحصيل"], ["outstanding", "لم يُحصَّل بعد"]].map(([v, t]) => h("option", { value: v, text: t, selected: state.pay === v })));
   if (!PAGE_SIZES.includes(state.per)) state.per = "25";
   const showCustom = () => { custom.hidden = range.value !== "custom"; };
   showCustom();
-  const apply = () => reload({ q: q.value.trim(), status: st.value, payment: pay.value, city: city.value, range: range.value === "custom" ? "" : range.value,
+  const apply = () => reload({ q: q.value.trim(), status: st.value().join(","), payment: pay.value, city: city.value, range: range.value === "custom" ? "" : range.value,
     from: range.value === "custom" ? from.value : "", to: range.value === "custom" ? to.value : "", archived: arch.value, page: "1",
-    source: srcSel.value, inv: invSel.value, pay: paySel.value });
+    source: srcSel.value, inv: invSel.value().join(","), pay: paySel.value });
   const form = h("form", { class: "filters", onsubmit: e => { e.preventDefault(); apply(); } }, q, st, pay, city, range, custom, srcSel, invSel, paySel, arch,
     h("button", { type: "submit", class: "btn primary", text: "بحث" }),
     h("button", { type: "button", class: "btn ghost", text: "مسح", onclick: () => { selected.clear(); history.replaceState(null, "", "/admin/orders"); pageOrders(); } }));
-  [st, pay, arch, srcSel, invSel, paySel].forEach(x => x.addEventListener("change", apply));
+  [pay, arch, srcSel, paySel].forEach(x => x.addEventListener("change", apply));
   range.addEventListener("change", () => { showCustom(); if (range.value !== "custom") apply(); });   // الفترات الجاهزة تُطبّق فوراً
 
   const exportBtn = can("orders.export") ? h("a", { class: "btn ghost", text: "تصدير CSV / Excel", href: "#", onclick: e => { e.currentTarget.href = "/admin/api/orders/export.csv" + (qs({ page: "", per: "" }) ? "?" + qs({ page: "", per: "" }) : ""); } , download: "" }) : null;
@@ -472,8 +505,11 @@ async function pageOrders() {
         h("button", { type: "button", class: "btn ghost sm", text: "التالي", disabled: last.page >= pages, onclick: () => reload({ page: String(last.page + 1) }) })));
     chips.textContent = "";
     const total = Object.values(last.counts).reduce((a, b) => a + b, 0);
-    put(chips, h("button", { type: "button", class: "chip", "aria-pressed": String(!state.status), onclick: () => { st.value = ""; apply(); } }, "الكل", h("b", { class: "num", text: fmtN(total) })),
-      ORDER.filter(s => last.counts[s] || s === "RECEIVED").map(s => h("button", { type: "button", class: "chip", "aria-pressed": String(state.status === s), onclick: () => { st.value = s; apply(); } }, STATUS[s], h("b", { class: "num", text: fmtN(last.counts[s] || 0) }))));
+    // الأزرار تعمل كاختيار متعدد: اضغط حالة لعرضها، واضغط أخرى لإضافتها معها، واضغطها مرة ثانية لإزالتها
+    const on = st.value();
+    put(chips, h("button", { type: "button", class: "chip", "aria-pressed": String(!on.length), onclick: () => { st.set([]); apply(); } }, "الكل", h("b", { class: "num", text: fmtN(total) })),
+      ORDER.filter(s => last.counts[s] || s === "RECEIVED" || on.includes(s)).map(s => h("button", { type: "button", class: "chip", "aria-pressed": String(on.includes(s)), onclick: () => { st.flip(s); apply(); } }, STATUS[s], h("b", { class: "num", text: fmtN(last.counts[s] || 0) }))),
+      h("span", { class: "muted small chips-hint", text: on.length > 1 ? `تعرض ${on.length === 2 ? "حالتين" : fmtN(on.length) + " حالات"} معاً — اضغط حالة لإزالتها` : "اضغط أكثر من حالة لعرضها معاً" }));
   }
   async function load() {
     try {

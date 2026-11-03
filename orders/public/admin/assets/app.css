@@ -255,3 +255,19 @@ html.col-resizing, html.col-resizing *{cursor:col-resize !important; user-select
 .page-size .seg{min-width:44px; min-height:36px; padding:.3em .8em; border:1px solid var(--line); background:var(--surface); border-radius:999px; font:inherit; font-weight:700; cursor:pointer; color:var(--teal-deep)}
 .page-size .seg[aria-pressed="true"]{background:var(--teal-deep); border-color:var(--teal-deep); color:#fff}
 .page-size .seg:focus-visible{outline:2px solid var(--teal-deep); outline-offset:2px}
+/* اختيار متعدد في الفلاتر (الحالة، حالة المخزون) */
+.ms{position:relative}
+.ms > summary{list-style:none; display:inline-flex; align-items:center; gap:.4em; min-height:38px; margin:0; padding:.35em .8em; border:1px solid var(--line); border-radius:10px; background:var(--surface); color:var(--ink); max-width:260px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.ms > summary::-webkit-details-marker{display:none}
+.ms > summary::after{content:"▾"; font-size:.8em; color:var(--muted); margin-inline-start:auto}
+.ms.on > summary{border-color:var(--teal-deep); box-shadow:inset 0 0 0 1px var(--teal-deep); font-weight:700}
+.ms > summary:focus-visible{outline:2px solid var(--teal-deep); outline-offset:2px}
+.ms-panel{position:absolute; z-index:20; inset-inline-start:0; top:calc(100% + 4px); min-width:250px; max-width:calc(100vw - 32px); background:var(--surface); border:1px solid var(--line); border-radius:12px; box-shadow:0 10px 28px rgba(0,0,0,.14); padding:8px}
+.ms-groups{display:flex; flex-wrap:wrap; gap:6px; padding-bottom:8px; margin-bottom:4px; border-bottom:1px solid var(--line)}
+.ms-opt{display:flex; align-items:center; gap:.6em; min-height:40px; padding:0 .4em; border-radius:8px; cursor:pointer}
+.ms-opt:hover{background:var(--paper)}
+.ms-opt input{width:18px; height:18px; margin:0; accent-color:var(--teal-deep)}
+.ms-foot{display:flex; justify-content:space-between; gap:8px; padding-top:8px; margin-top:4px; border-top:1px solid var(--line)}
+.ms-foot .btn{min-width:72px}
+.chips-hint{align-self:center}
+@media (max-width:560px){ .ms{flex:1 1 100%} .ms > summary{max-width:none; width:100%} .ms-panel{position:static; margin-top:6px; min-width:0; max-width:none; box-shadow:none} }

@@ -237,6 +237,11 @@ order itself stays empty so the customer's real code can be added later (the fil
 accepts only 25/50/100, so nothing loads thousands at once; changing it returns to page 1; an out-of-range page moves to the
 last one; «عرض 1–50 من 327 طلبًا»). No «all» option on purpose.
 
+**Several statuses at once**: `status` and `inv` take a comma list (`status=RECEIVED,SHIPPED` = either one; the group names
+`OPEN`, `TO_SHIP`, `WITH_CARRIER` still work and can be mixed in). On the orders page the «الحالة» and «حالة المخزون» filters
+are tick-boxes (with quick groups and «مسح الاختيار»), and the status chips toggle: press one to show it, press another to add
+it, press it again to remove it, «الكل» clears. List, «تحديد كل النتائج» and CSV export all follow the same filter.
+
 **Orders table columns** can be resized by dragging the edge of a header (or ←/→ on the focused edge); widths are kept per
 browser (`localStorage` `cg-cols:orders`), double-click an edge to reset. Permission `shipments.manage` (Super Admin, Order Manager) plus the normal status permissions.
 
