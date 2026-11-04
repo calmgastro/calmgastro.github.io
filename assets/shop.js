@@ -73,8 +73,14 @@
 
   /* ---------- قياس الإعلانات: بدون أي بيانات شخصية ---------- */
   const SNAP = { add_to_cart: "ADD_CART", begin_checkout: "START_CHECKOUT", view_offers: "VIEW_CONTENT" };
+  const META = { add_to_cart: "AddToCart", begin_checkout: "InitiateCheckout", view_offers: "ViewContent" };
   function track(event, data = {}){
     try { (window.dataLayer = window.dataLayer || []).push({ event: "cg_" + event, ...data }); } catch (_) {}
+    if (typeof window.fbq === "function") try {
+      const meta = { value: data.value, currency: "SAR", content_ids: data.items, content_type: "product", num_items: data.boxes };
+      if (event === "order_created") fbq("track", "Purchase", meta, { eventID: data.order });
+      else if (META[event]) fbq("track", META[event], meta);
+    } catch (_) {}
     if (typeof window.snaptr !== "function") return;
     try {
       if (event === "order_created") snaptr("track", "PURCHASE", { price: data.value, currency: "SAR", item_ids: data.items, number_items: data.boxes, transaction_id: data.order });

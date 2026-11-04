@@ -16,3 +16,27 @@ if (window.snaptr) {
   snaptr("init", "589cd51b-2b7a-4cb3-a73e-d2e7a321a5a5", {});
   snaptr("track", "PAGE_VIEW");
 }
+
+/* Meta Pixel (فيسبوك وانستقرام): يسجل زيارة الصفحة. أحداث الطلب تُرسل من shop.js عبر window.fbq
+   النطاقات المستخدمة مسموحة في سياسة الأمان (CSP) داخل index.html: connect.facebook.net و www.facebook.com */
+(function (w, d) {
+  // يعمل على الموقع الحقيقي فقط، حتى لا تصل زيارات المعاينة والاختبارات المحلية لحساب الإعلانات
+  if (w.fbq || !/^(www\.)?vitamik\.com$/.test(location.hostname)) return;
+  var ID = "28877128168623335", KEY = /[?&]k=/;
+  function start() {
+    if (KEY.test(location.hash)) return;
+    var n = w.fbq = function () { n.callMethod ? n.callMethod.apply(n, arguments) : n.queue.push(arguments); };
+    if (!w._fbq) w._fbq = n;
+    n.push = n; n.loaded = true; n.version = "2.0"; n.queue = [];
+    n.disablePushState = true;   // الأحداث المرسلة هي المحددة هنا وفي shop.js فقط، وليس كل انتقال داخل الصفحة
+    var t = d.createElement("script"), s = d.getElementsByTagName("script")[0];
+    t.async = true;
+    t.src = "https://connect.facebook.net/en_US/fbevents.js";
+    s.parentNode.insertBefore(t, s);
+    fbq("set", "autoConfig", false, ID);   // لا يقرأ الأزرار والحقول تلقائياً
+    fbq("init", ID);
+    fbq("track", "PageView");
+  }
+  // رابط الطلب الآمن فيه مفتاح يفتح بيانات العميل: ننتظر حتى يحفظه shop.js ويمسحه من العنوان، فلا يصل لفيسبوك
+  if (KEY.test(location.hash)) d.addEventListener("DOMContentLoaded", start); else start();
+})(window, document);
