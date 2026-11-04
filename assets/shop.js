@@ -81,6 +81,11 @@
       if (event === "order_created") fbq("track", "Purchase", meta, { eventID: data.order });
       else if (META[event]) fbq("track", META[event], meta);
     } catch (_) {}
+    if (window.ttq && typeof ttq.track === "function") try {
+      const tt = { value: data.value, currency: "SAR", content_type: "product", contents: (data.items || []).map(id => ({ content_id: id, content_type: "product" })) };
+      if (event === "order_created") ttq.track("CompletePayment", tt, { event_id: data.order });
+      else if (META[event]) ttq.track(META[event], tt);
+    } catch (_) {}
     if (typeof window.snaptr !== "function") return;
     try {
       if (event === "order_created") snaptr("track", "PURCHASE", { price: data.value, currency: "SAR", item_ids: data.items, number_items: data.boxes, transaction_id: data.order });

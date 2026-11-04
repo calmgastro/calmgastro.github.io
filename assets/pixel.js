@@ -40,3 +40,37 @@ if (window.snaptr) {
   // رابط الطلب الآمن فيه مفتاح يفتح بيانات العميل: ننتظر حتى يحفظه shop.js ويمسحه من العنوان، فلا يصل لفيسبوك
   if (KEY.test(location.hash)) d.addEventListener("DOMContentLoaded", start); else start();
 })(window, document);
+
+/* TikTok Pixel: يسجل زيارة الصفحة. أحداث الطلب تُرسل من shop.js عبر window.ttq
+   النطاق المستخدم مسموح في سياسة الأمان (CSP) داخل index.html: analytics.tiktok.com */
+(function (w, d, t) {
+  // يعمل على الموقع الحقيقي فقط، حتى لا تصل زيارات المعاينة والاختبارات المحلية لحساب الإعلانات
+  if (w[t] || !/^(www\.)?vitamik\.com$/.test(location.hostname)) return;
+  var KEY = /[?&]k=/;
+  function start() {
+    if (KEY.test(location.hash)) return;
+    w.TiktokAnalyticsObject = t;
+    var ttq = w[t] = w[t] || [];
+    ttq.methods = ["page", "track", "identify", "instances", "debug", "on", "off", "once", "ready", "alias", "group", "enableCookie", "disableCookie", "holdConsent", "revokeConsent", "grantConsent"];
+    ttq.setAndDefer = function (o, m) { o[m] = function () { o.push([m].concat(Array.prototype.slice.call(arguments, 0))); }; };
+    for (var i = 0; i < ttq.methods.length; i++) ttq.setAndDefer(ttq, ttq.methods[i]);
+    ttq.instance = function (id) {
+      for (var e = ttq._i[id] || [], n = 0; n < ttq.methods.length; n++) ttq.setAndDefer(e, ttq.methods[n]);
+      return e;
+    };
+    ttq.load = function (e, n) {
+      var r = "https://analytics.tiktok.com/i18n/pixel/events.js", o = n && n.partner;
+      ttq._i = ttq._i || {}; ttq._i[e] = []; ttq._i[e]._u = r;
+      ttq._t = ttq._t || {}; ttq._t[e] = +new Date;
+      ttq._o = ttq._o || {}; ttq._o[e] = n || {};
+      n = d.createElement("script");
+      n.type = "text/javascript"; n.async = true; n.src = r + "?sdkid=" + e + "&lib=" + t;
+      e = d.getElementsByTagName("script")[0];
+      e.parentNode.insertBefore(n, e);
+    };
+    ttq.load("DBLN9KRC77UFMFQA9520");
+    ttq.page();
+  }
+  // نفس حماية مفتاح رابط الطلب الآمن في بكسل Meta أعلاه
+  if (KEY.test(location.hash)) d.addEventListener("DOMContentLoaded", start); else start();
+})(window, document, "ttq");
