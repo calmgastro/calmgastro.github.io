@@ -11,6 +11,8 @@
 
    Editing a batch: an order cancelled (e.g. a duplicate) or returned to «جاري التجهيز» leaves the batch — its row stays on
    record but the totals, the carrier file and delivery confirmation skip it (removeFromShipment, or any status change).
+   Orders can also be added after export (addToShipment): same checks and same steps as an export. SENA refuses a reference it
+   has already received, so the added orders can be downloaded in a file of their own (?only=new).
 
    Delivery = per batch: confirm all remaining orders, or the selected ones, as Delivered (or Failed) in one action. It is
    the usual status change, so stock is consumed (FIFO cost), revenue counts and the history records who confirmed. */
@@ -178,8 +180,23 @@ export async function createShipment(env, ctx, body) {
   }
   if (!batchId) throw new HttpError(409, { error: "busy_try_again" });
   const batch = await db.prepare("SELECT * FROM shipment_batches WHERE id = ?").bind(batchId).first();
-  const note = `شُحن مع سينا — ${batch.batch_no} (${name})`;
-  const shipped = [], failed = [];
+  const { shipped, failed } = await shipOrders(env, ctx, batch, rows);
+  if (!shipped.length) await db.prepare("DELETE FROM shipment_batches WHERE id = ? AND NOT EXISTS (SELECT 1 FROM shipment_orders WHERE batch_id = ?)").bind(batchId, batchId).run();
+  await audit(env, ctx, "shipment_exported", "shipment", batch.batch_no, null, { name, prepSource: prep, orders: shipped.length, boxes: tot.boxes, amount: tot.amount,
+    shipped, failed: failed.map(f => f.orderNumber), ...(tot.shortageBoxes ? { shortageBoxes: tot.shortageBoxes } : {}) });
+  return { replay: false, batch: shipped.length ? await batchSummary(db, batchId) : null, shipped, failed };
+}
+
+/* A reference is never reused: X, then X-2, X-3 … across every shipment of the order (SENA refuses one it has received). */
+async function nextShipmentRef(db, o) {
+  const refs = (await db.prepare("SELECT shipment_ref r FROM shipment_orders WHERE order_id = ?").bind(o.id).all()).results.map(x => x.r);
+  if (!refs.length) return o.order_number;
+  return `${o.order_number}-${Math.max(...refs.map(r => r === o.order_number ? 1 : Number(r.slice(o.order_number.length + 1)) || 1)) + 1}`;
+}
+/* Each order goes to SHIPPED through the normal steps and joins the batch. An order taken out of this same batch earlier comes back on
+   its row (one row per batch and order), with a new reference. */
+async function shipOrders(env, ctx, batch, rows) {
+  const db = env.DB, note = `شُحن مع سينا — ${batch.batch_no} (${batch.name})`, shipped = [], failed = [];
   for (const r of rows) {
     let full = await loadOrder(db, r.orderNumber), reached = full.order.status;
     try {
@@ -189,19 +206,43 @@ export async function createShipment(env, ctx, body) {
         full = await loadOrder(db, r.orderNumber);
       }
       if (full.order.status !== "SHIPPED") throw new HttpError(409, { error: "status_changed" });
-      const n = (await db.prepare("SELECT COUNT(*) n FROM shipment_orders WHERE order_id = ?").bind(full.order.id).first()).n;
-      await db.prepare(`INSERT INTO shipment_orders (batch_id, order_id, shipment_ref, status_before, boxes, amount, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-        .bind(batchId, full.order.id, n ? `${full.order.order_number}-${n + 1}` : full.order.order_number, r.status, full.order.boxes, full.order.total_amount, now()).run();
+      const o = full.order, ref = await nextShipmentRef(db, o), t = now();
+      await db.prepare(`INSERT INTO shipment_orders (batch_id, order_id, shipment_ref, status_before, boxes, amount, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+        ON CONFLICT (batch_id, order_id) DO UPDATE SET shipment_ref = ?3, status_before = ?4, boxes = ?5, amount = ?6, created_at = ?7,
+          removed_at = NULL, removed_by = NULL, removed_reason = NULL, downloaded_at = NULL`)
+        .bind(batch.id, o.id, ref, r.status, o.boxes, o.total_amount, t).run();
       shipped.push(r.orderNumber);
     } catch (e) {
       if (!(e instanceof HttpError)) throw e;
       failed.push({ orderNumber: r.orderNumber, reason: e.body.error, reached });
     }
   }
-  if (!shipped.length) await db.prepare("DELETE FROM shipment_batches WHERE id = ? AND NOT EXISTS (SELECT 1 FROM shipment_orders WHERE batch_id = ?)").bind(batchId, batchId).run();
-  await audit(env, ctx, "shipment_exported", "shipment", batch.batch_no, null, { name, prepSource: prep, orders: shipped.length, boxes: tot.boxes, amount: tot.amount,
-    shipped, failed: failed.map(f => f.orderNumber), ...(tot.shortageBoxes ? { shortageBoxes: tot.shortageBoxes } : {}) });
-  return { replay: false, batch: shipped.length ? await batchSummary(db, batchId) : null, shipped, failed };
+  return { shipped, failed };
+}
+
+/* ---------- edit a batch: add orders ----------
+   The same checks as an export: only orders that can really leave, what was confirmed must still be true, boxes beyond the warehouse
+   only knowingly. The batch keeps its preparation source. */
+export async function shipmentCandidates(env, ctx, id) {
+  need(ctx, "shipments.manage");
+  const db = env.DB, batch = await batchSummary(db, Number(id)), set = await getShippingSettings(db);
+  if (!batch) throw new HttpError(404, { error: "not_found" });
+  batch.prepSource = batch.prepSource || set.prepSource;
+  const rows = (await db.prepare(`SELECT ${DUP_OF} dup_of, o.* FROM orders o WHERE o.status IN ('RECEIVED','CONFIRMED','PREPARING') AND o.anonymized_at IS NULL AND o.archived_at IS NULL ORDER BY o.id LIMIT ${MAX}`).all()).results;
+  return { batch, stock: await stockPicture(db, 0), max: MAX, orders: rows.map(o => ({ orderNumber: o.order_number, customer: o.customer_name, phone: localPhone(o.customer_phone), city: o.city, boxes: o.boxes, amount: o.total_amount,
+    status: o.status, createdAt: o.created_at, nationalAddress: o.national_address || null, naApprox: o.national_address ? null : fallbackFor(o.city, set.naFallback), duplicateOf: dupList(o.dup_of) })) };
+}
+export async function addToShipment(env, ctx, id, body) {
+  need(ctx, "shipments.manage");
+  const db = env.DB, batch = await db.prepare("SELECT * FROM shipment_batches WHERE id = ?").bind(Number(id)).first();
+  if (!batch) throw new HttpError(404, { error: "not_found" });
+  const rows = await examine(env, ctx, readNumbers(body)), tot = await totals(db, rows), bad = rows.filter(r => !r.eligible);
+  if (bad.length) throw new HttpError(409, { error: "not_eligible", orders: bad.map(r => ({ orderNumber: r.orderNumber, reason: r.reason, status: r.status })) });
+  if (Number(body.expectedCount) !== tot.orders || Number(body.expectedBoxes) !== tot.boxes) throw new HttpError(409, { error: "selection_changed", totals: tot });
+  if (tot.shortageBoxes && body.allowShortage !== true) throw new HttpError(409, { error: "shortage_confirmation_required", totals: tot });
+  const { shipped, failed } = await shipOrders(env, ctx, batch, rows);
+  await audit(env, ctx, "shipment_orders_added", "shipment", batch.batch_no, null, { orders: shipped, boxes: tot.boxes, amount: tot.amount, failed: failed.map(f => f.orderNumber), ...(tot.shortageBoxes ? { shortageBoxes: tot.shortageBoxes } : {}) });
+  return { added: shipped.length, shipped, failed, batch: await batchSummary(db, batch.id) };
 }
 
 /* ---------- batches ---------- */
@@ -214,9 +255,10 @@ const AGG = `COUNT(s.id) n, COALESCE(SUM(s.boxes), 0) boxes, COALESCE(SUM(s.amou
 const batchView = b => ({ id: b.id, batchNo: b.batch_no, carrier: b.carrier, name: b.name, notes: b.notes, createdBy: b.created_by, createdAt: b.created_at,
   downloads: b.downloads, lastDownloadAt: b.last_download_at, orders: b.n, boxes: b.boxes, amount: b.amount,
   delivered: b.delivered, inTransit: b.in_transit, failed: b.failed, other: b.other, deliveredAmount: b.delivered_amount, transitAmount: b.transit_amount,
-  prepSource: b.prep_source, removed: b.removed || 0, state: b.in_transit ? "IN_TRANSIT" : "DONE" });
+  prepSource: b.prep_source, removed: b.removed || 0, notDownloaded: b.not_downloaded || 0, state: b.in_transit ? "IN_TRANSIT" : "DONE" });
 async function batchSummary(db, id) {
-  const b = await db.prepare(`SELECT b.*, ${AGG}, (SELECT COUNT(*) FROM shipment_orders x WHERE x.batch_id = b.id AND x.removed_at IS NOT NULL) removed FROM shipment_batches b LEFT JOIN shipment_orders s ON s.batch_id = b.id AND s.removed_at IS NULL LEFT JOIN orders o ON o.id = s.order_id WHERE b.id = ? GROUP BY b.id`).bind(id).first();
+  const b = await db.prepare(`SELECT b.*, ${AGG}, (SELECT COUNT(*) FROM shipment_orders x WHERE x.batch_id = b.id AND x.removed_at IS NOT NULL) removed,
+    (SELECT COUNT(*) FROM shipment_orders x WHERE x.batch_id = b.id AND x.removed_at IS NULL AND x.downloaded_at IS NULL) not_downloaded FROM shipment_batches b LEFT JOIN shipment_orders s ON s.batch_id = b.id AND s.removed_at IS NULL LEFT JOIN orders o ON o.id = s.order_id WHERE b.id = ? GROUP BY b.id`).bind(id).first();
   return b ? batchView(b) : null;
 }
 
@@ -249,18 +291,19 @@ export async function shipmentDetail(env, ctx, id) {
     FROM shipment_orders s JOIN orders o ON o.id = s.order_id WHERE s.batch_id = ? ORDER BY s.id`).bind(batch.id).all()).results;
   const view = r => ({ orderNumber: r.order_number, shipmentRef: r.shipment_ref, customer: r.customer_name, phone: localPhone(r.customer_phone),
     city: r.city, district: r.district, boxes: r.boxes, amount: r.amount, statusBefore: r.status_before, status: r.status, statusAt: r.status_at, anonymized: !!r.anonymized_at,
-    nationalAddress: r.national_address || null, naApprox: r.national_address ? null : fallbackFor(r.city, fb), orderUpdatedAt: r.order_updated_at, duplicateOf: dupList(r.dup_of),
+    nationalAddress: r.national_address || null, naApprox: r.national_address ? null : fallbackFor(r.city, fb), orderUpdatedAt: r.order_updated_at, duplicateOf: dupList(r.dup_of), downloaded: !!r.downloaded_at,
     ...(r.removed_at ? { removedAt: r.removed_at, removedBy: r.removed_by, removedReason: r.removed_reason } : {}) });
   return { batch, orders: rows.filter(r => !r.removed_at).map(view), removed: rows.filter(r => r.removed_at).map(view), canManage: ctx.perms.has("shipments.manage") };
 }
 
 /* ---------- the carrier file (their template, filled) ---------- */
-export async function shipmentFile(env, ctx, id) {
+export async function shipmentFile(env, ctx, id, { onlyNew = false } = {}) {
   need(ctx, "shipments.manage");
   const db = env.DB, b = await db.prepare("SELECT * FROM shipment_batches WHERE id = ?").bind(Number(id)).first();
   if (!b) throw new HttpError(404, { error: "not_found" });
   const s = await getShippingSettings(db);
-  const rows = (await db.prepare(`SELECT s.shipment_ref, s.boxes sboxes, s.amount, o.* FROM shipment_orders s JOIN orders o ON o.id = s.order_id WHERE s.batch_id = ? AND s.removed_at IS NULL ORDER BY s.id`).bind(b.id).all()).results;
+  const rows = (await db.prepare(`SELECT s.shipment_ref, s.boxes sboxes, s.amount, o.* FROM shipment_orders s JOIN orders o ON o.id = s.order_id WHERE s.batch_id = ? AND s.removed_at IS NULL${onlyNew ? " AND s.downloaded_at IS NULL" : ""} ORDER BY s.id`).bind(b.id).all()).results;
+  if (onlyNew && !rows.length) throw new HttpError(409, { error: "nothing_new" });
   const kg = n => Math.round(n * s.boxWeightKg * 100) / 100;
   const prep = b.prep_source || s.prepSource, fromStock = prep === FROM_SENA_STOCK;
   // the mobile as a number without its leading 0, and a digits-only SKU / barcode as a whole number: as in the file approved for import
@@ -277,9 +320,12 @@ export async function shipmentFile(env, ctx, id) {
     // one line per order: the product and its boxes. SKU / barcode only from SENA's stock, where they deduct it (their rule 11); prepared by the merchant the line is a description (rule 12)
     items.push([o.order_number, s.itemName, code(s.sku), code(s.barcode), o.sboxes, s.itemPrice, `${o.sboxes} علبة في الوحدة`, kg(o.sboxes)]);
   }
-  await db.prepare("UPDATE shipment_batches SET downloads = downloads + 1, last_download_at = ? WHERE id = ?").bind(now(), b.id).run();
-  await audit(env, ctx, "shipment_file_downloaded", "shipment", b.batch_no, null, { orders: rows.length });
-  return { fileName: `${b.batch_no}.xlsx`, displayName: `${b.batch_no} ${b.name}.xlsx`, bytes: senaWorkbook(shipments, items) };
+  const t = now();
+  await db.batch([db.prepare("UPDATE shipment_batches SET downloads = downloads + 1, last_download_at = ? WHERE id = ?").bind(t, b.id),
+    db.prepare("UPDATE shipment_orders SET downloaded_at = ? WHERE batch_id = ? AND removed_at IS NULL AND downloaded_at IS NULL").bind(t, b.id)]);
+  await audit(env, ctx, "shipment_file_downloaded", "shipment", b.batch_no, null, { orders: rows.length, ...(onlyNew ? { onlyNew: true } : {}) });
+  const tail = onlyNew ? "-added" : "";
+  return { fileName: `${b.batch_no}${tail}.xlsx`, displayName: `${b.batch_no}${tail} ${b.name}.xlsx`, bytes: senaWorkbook(shipments, items) };
 }
 
 /* ---------- delivery confirmation for a batch (all remaining, or selected orders) ---------- */

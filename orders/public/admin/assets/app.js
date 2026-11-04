@@ -172,6 +172,8 @@ async function route() {
   if (path === "/admin/orders/new") return can("orders.create") ? pageNewOrder() : go("/admin/orders", true);
   if (path === "/admin/orders/import") return can("orders.create") ? pageImportOrders() : go("/admin/orders", true);
   if (path === "/admin/shipments/new") return can("shipments.manage") ? pageShipmentNew() : go("/admin/orders", true);
+  const sa = path.match(/^\/admin\/shipments\/(\d{1,9})\/add$/);
+  if (sa) return can("shipments.manage") ? pageShipmentAdd(sa[1]) : go("/admin/shipments/" + sa[1], true);
   const sm = path.match(/^\/admin\/shipments\/(\d{1,9})$/);
   if (sm && session.nav.includes("shipments")) return pageShipment(sm[1]);
   const m = path.match(/^\/admin\/orders\/([A-Za-z0-9-]+)$/);
@@ -783,7 +785,7 @@ const AUDIT = {
   order_item_price_changed: "تغيير سعر", order_totals_recalculated: "إعادة حساب الإجمالي", order_note_added: "ملاحظة داخلية",
   order_archived: "أرشفة طلب", order_unarchived: "إلغاء أرشفة", order_link_revoked: "إلغاء رابط الطلب", order_anonymized: "حذف بيانات شخصية",
   orders_exported: "تصدير الطلبات", backup_downloaded: "تنزيل نسخة احتياطية",
-  order_duplicate_cleared: "ليس مكرراً (بعد المراجعة)", order_duplicate_flagged: "إعادة تنبيه التكرار", shipment_exported: "تصدير شحنة لسينا", shipment_orders_removed: "إزالة طلبات من شحنة", stock_claimed: "أخذ علب من المستودع عند الشحن", shipment_file_downloaded: "تنزيل ملف شحنة", shipment_delivery_confirmed: "تأكيد توصيل جماعي",
+  order_duplicate_cleared: "ليس مكرراً (بعد المراجعة)", order_duplicate_flagged: "إعادة تنبيه التكرار", shipment_exported: "تصدير شحنة لسينا", shipment_orders_removed: "إزالة طلبات من شحنة", shipment_orders_added: "إضافة طلبات إلى شحنة", stock_claimed: "أخذ علب من المستودع عند الشحن", shipment_file_downloaded: "تنزيل ملف شحنة", shipment_delivery_confirmed: "تأكيد توصيل جماعي",
   shipment_delivery_failed: "تعذّر توصيل (شحنة)", shipment_out_for_delivery: "خرج للتوصيل (شحنة)", shipping_settings_changed: "إعدادات الشحن",
   order_created_by_admin: "طلب من لوحة التحكم", expense_created: "إضافة مصروف", expense_edited: "تعديل مصروف", expense_voided: "إلغاء مصروف",
   stock_received: "إضافة مخزون (شراء)", purchase_edited: "تعديل شراء مخزون", purchase_voided: "إلغاء شراء مخزون", batch_cost_set: "إدخال تكلفة دفعة",
@@ -1843,7 +1845,7 @@ async function pageImportOrders() {
 /* ============================================================ الشحن (سينا) */
 const SHIP_REASON = { not_found: "غير موجود", anonymized: "بيانات محذوفة", already_shipped: "مشحون مسبقاً", delivered: "تم توصيله", closed: "ملغي / متعذّر",
   on_hold: "معلّق — راجعه أولاً", transition_not_allowed: "لا تملك صلاحية نقله", status_changed: "تغيّر من جهاز آخر", not_in_batch: "ليس في هذه الشحنة",
-  already: "في هذه الحالة مسبقاً", inventory_shortage: "المسجّل في المستودع لا يكفي — سجّل استلام المخزون ثم أكّد التوصيل", invalid_action: "إجراء غير معروف" };
+  already: "في هذه الحالة مسبقاً", not_eligible: "لا يمكن شحنه الآن", inventory_shortage: "المسجّل في المستودع لا يكفي — سجّل استلام المخزون ثم أكّد التوصيل", invalid_action: "إجراء غير معروف" };
 const SHIP_SEL_KEY = "cg-ship-selection";
 /* العنوان الوطني في صفحات الشحن: يظهر، أو يُكتب ويُحفظ في الطلب مباشرة (يدخل ملف سينا عند تنزيله) */
 const NA_RE = /^[A-Z]{4}\d{4}$/;
@@ -2056,6 +2058,66 @@ async function pageShipmentNew() {
   });
 }
 
+/* إضافة طلبات إلى شحنة قائمة: نفس فحوص التصدير وخطواته */
+async function pageShipmentAdd(id) {
+  const main = shell("shipments", h("p", { class: "muted", text: "جارٍ التحميل…" }));
+  let d; try { d = await api(`/shipments/${id}/candidates`); } catch (e) { if (e.message !== "unauthorized") main.lastChild.textContent = errText(e); return; }
+  main.textContent = "";
+  const B = d.batch, S = d.stock, pick = new Set(), body = h("tbody"), bar = h("div", { class: "bulkbar" }), err = h("p", { class: "err", role: "alert" });
+  document.title = "إضافة طلبات — " + B.batchNo;
+  const q = h("input", { type: "search", placeholder: "رقم الطلب، اسم العميل، الجوال أو المدينة", "aria-label": "بحث في الطلبات" });
+  const sum = () => d.orders.filter(o => pick.has(o.orderNumber)).reduce((a, o) => ({ n: a.n + 1, boxes: a.boxes + o.boxes, amount: a.amount + o.amount }), { n: 0, boxes: 0, amount: 0 });
+  const drawRows = () => {
+    const t = q.value.trim().toLowerCase();
+    body.textContent = "";
+    d.orders.filter(o => !t || [o.orderNumber, o.customer, o.phone, o.city].some(v => String(v || "").toLowerCase().includes(t))).forEach(o => {
+      const cb = h("input", { type: "checkbox", "aria-label": "تحديد " + o.orderNumber, checked: pick.has(o.orderNumber) });
+      cb.addEventListener("change", () => { cb.checked ? pick.add(o.orderNumber) : pick.delete(o.orderNumber); drawBar(); });
+      body.append(h("tr", null, h("td", { class: "sel" }, cb),
+        h("td", null, h("a", { href: "/admin/orders/" + o.orderNumber, "data-link": true, class: "num", text: o.orderNumber }), dupTag(o.duplicateOf)),
+        h("td", { text: o.customer }), h("td", { class: "num", text: o.phone }), h("td", { text: o.city }), h("td", { class: "num", text: fmtN(o.boxes) }), h("td", { text: money(o.amount) }), h("td", null, badge(o.status)), h("td", { text: when(o.createdAt) }),
+        h("td", null, o.nationalAddress ? h("span", { class: "num small", text: o.nationalAddress }) : o.naApprox ? h("span", { class: "na-approx", text: "تقريبي " + o.naApprox }) : h("span", { class: "tag dup", text: "بدون عنوان وطني" }))));
+    });
+  };
+  const drawBar = () => {
+    const s = sum();
+    bar.textContent = "";
+    put(bar, h("b", { text: s.n ? `محدد ${fmtN(s.n)} طلب · ${fmtN(s.boxes)} علبة · ${money(s.amount)}` : "حدّد الطلبات التي تريد إضافتها" }),
+      h("button", { type: "button", class: "btn primary sm", text: `إضافة ${fmtN(s.n)} طلب إلى الشحنة`, disabled: !s.n, onclick: submit }));
+  };
+  async function submit() {
+    err.textContent = "";
+    const numbers = [...pick];
+    let pv; try { pv = await api("/shipments/preview", { body: { numbers } }); } catch (e) { if (e.message !== "unauthorized") err.textContent = errText(e); return; }
+    const notOk = pv.rows.filter(r => !r.eligible);
+    if (notOk.length) { err.textContent = "لا يمكن شحن: " + notOk.map(r => `${r.orderNumber} (${SHIP_REASON[r.reason] || r.reason})`).join("، "); return; }
+    const T = pv.totals, dups = pv.rows.filter(r => r.duplicateOf.length), noNa = pv.rows.filter(r => !r.nationalAddress && !r.naApprox).length;
+    if (!(await confirmBox("هل أنت متأكد؟", [
+      h("p", null, "سيُضاف ", h("b", { text: `${fmtN(T.orders)} طلب (${fmtN(T.boxes)} علبة، ${money(T.amount)})` }), ` إلى الشحنة ${B.batchNo}، فتصبح ${fmtN(B.orders + T.orders)} طلب و${fmtN(B.boxes + T.boxes)} علبة.`),
+      h("ul", { class: "change-list" }, h("li", { text: "تتغير حالتها إلى «تم الشحن» (مع تسجيل خطوات التأكيد والتجهيز في سجل كل طلب)." }), h("li", { text: "يُبلَّغ كل عميل برسالة «تم تسليم طلبك لشركة الشحن»." })),
+      B.downloads ? h("p", { class: "small", text: "بعدها نزّل «الطلبات المضافة فقط» من صفحة الشحنة وارفعها إلى سينا." }) : null,
+      dups.length ? h("p", { class: "warn-box", text: `⚠ ${dupCount(dups.length)} (نفس الجوال خلال 3 أيام): ${dups.map(r => r.orderNumber).join("، ")}.` }) : null,
+      noNa ? h("p", { class: "warn-box", text: `${fmtN(noNa)} طلب بدون عنوان وطني — سيبقى عموده فارغاً في الملف.` }) : null,
+      T.shortageBoxes ? h("p", { class: "warn-box", text: `ستشحن ${fmtN(T.shortageBoxes)} علبة أكثر مما هو مسجّل في المستودع — تأكد أنها موجودة لديك فعلاً.` }) : null],
+      { okText: "نعم، أضف إلى الشحنة" }))) return;
+    try {
+      const r = await api(`/shipments/${B.id}/add`, { body: { numbers, expectedCount: T.orders, expectedBoxes: T.boxes, allowShortage: T.shortageBoxes > 0 } });
+      toast(`أُضيف ${fmtN(r.added)} طلب — الشحنة الآن ${fmtN(r.batch.orders)} طلب و${fmtN(r.batch.boxes)} علبة.` + (r.failed.length ? ` لم يُضَف ${r.failed.length}.` : ""), !!r.failed.length);
+      financeChanged(); go("/admin/shipments/" + B.id);
+    } catch (e) {
+      if (["not_eligible", "selection_changed", "shortage_confirmation_required"].includes(e.message)) { toast("تغيّرت بعض الطلبات؛ أُعيد تحميل القائمة.", true); pageShipmentAdd(id); return; }
+      if (e.message !== "unauthorized") err.textContent = errText(e);
+    }
+  }
+  q.addEventListener("input", drawRows);
+  put(main, h("div", { class: "page-head" }, h("div", null, h("a", { href: "/admin/shipments/" + B.id, "data-link": true, class: "small", text: "→ الشحنة " + B.batchNo }), h("h1", { text: "إضافة طلبات إلى الشحنة" }))),
+    h("p", { class: "muted small", text: `«${B.name}» · الآن ${fmtN(B.orders)} طلب و${fmtN(B.boxes)} علبة · مصدر التجهيز: ${B.prepSource}` + (S ? ` · في المستودع ${fmtN(Math.max(0, S.inWarehouse))} علبة` : "") }),
+    d.orders.length ? [h("div", { class: "filters" }, q), bar, err, h("section", { class: "card" }, h("div", { class: "table-wrap" }, h("table", null,
+      h("thead", null, h("tr", null, h("th", { class: "sel" }), ["الطلب", "العميل", "الجوال", "المدينة", "العلب", "القيمة", "الحالة", "التاريخ", "العنوان الوطني"].map(t => h("th", { text: t })))), body)))]
+      : h("div", { class: "empty", text: "لا توجد طلبات بانتظار الشحن." }));
+  drawRows(); drawBar();
+}
+
 /* صفحة شحنة: الطلبات، تنزيل الملف، تأكيد التوصيل جماعياً */
 async function pageShipment(id) {
   const main = shell("shipments", h("p", { class: "muted", text: "جارٍ التحميل…" }));
@@ -2072,7 +2134,8 @@ async function pageShipment(id) {
       const cb = can_ ? h("input", { type: "checkbox", "aria-label": "تحديد " + o.orderNumber, checked: pick.has(o.orderNumber) }) : null;
       if (cb) cb.addEventListener("change", () => { cb.checked ? pick.add(o.orderNumber) : pick.delete(o.orderNumber); drawBar(); });
       body.append(h("tr", { class: pick.has(o.orderNumber) ? "row-editing" : null }, h("td", { class: "sel" }, cb),
-        h("td", null, h("a", { href: "/admin/orders/" + o.orderNumber, "data-link": true, class: "num", text: o.orderNumber }), dupTag(o.duplicateOf)), h("td", { class: "num small", text: o.shipmentRef }),
+        h("td", null, h("a", { href: "/admin/orders/" + o.orderNumber, "data-link": true, class: "num", text: o.orderNumber }), dupTag(o.duplicateOf), B.downloads && !o.downloaded ? h("span", { class: "tag added", text: "مُضاف — لم يُنزَّل بعد" }) : null,
+          can_ ? h("button", { type: "button", class: "row-remove", text: "إزالة", "aria-label": "إزالة " + o.orderNumber + " من الشحنة", onclick: () => removeOrders(new Set([o.orderNumber])) }) : null), h("td", { class: "num small", text: o.shipmentRef }),
         h("td", null, naCell(o, drawNa)),
         h("td", { text: o.customer }), h("td", { class: "num", text: o.phone }), h("td", { text: o.city }), h("td", { class: "num", text: fmtN(o.boxes) }), h("td", { text: money(o.amount) }),
         h("td", null, badge(o.status)), h("td", { class: "small", text: when(o.statusAt) })));
@@ -2099,7 +2162,7 @@ async function pageShipment(id) {
       h("button", { type: "button", class: "btn primary sm", text: `تأكيد التوصيل (${pick.size})`, disabled: !pick.size, onclick: () => confirmAs("DELIVERED") }),
       h("button", { type: "button", class: "btn ghost sm", text: "خرج للتوصيل", disabled: !pick.size, onclick: () => confirmAs("OUT_FOR_DELIVERY") }),
       h("button", { type: "button", class: "btn danger sm", text: "تعذّر التوصيل", disabled: !pick.size, onclick: () => confirmAs("FAILED") }),
-      h("button", { type: "button", class: "btn ghost sm", text: "إزالة من الشحنة…", disabled: !pick.size, onclick: removeSelected }));
+      h("button", { type: "button", class: "btn ghost sm", text: "إزالة من الشحنة…", disabled: !pick.size, onclick: () => removeOrders(pick) }));
   };
   async function confirmAs(to) {
     const s = sum(pick), label = { DELIVERED: "تأكيد التوصيل", FAILED: "تعذّر التوصيل", OUT_FOR_DELIVERY: "خرج للتوصيل" }[to];
@@ -2117,19 +2180,20 @@ async function pageShipment(id) {
     } catch (e) { if (e.message !== "unauthorized") toast(errText(e), true); }
   }
   // تعديل الشحنة: إزالة طلبات منها (مكرر → إلغاء، أو إعادته للتجهيز ليُشحن لاحقاً)
-  async function removeSelected() {
-    const s = sum(pick);
+  async function removeOrders(set) {
+    const s = sum(set);
     const choice = h("div", { class: "radio-list" },
       h("label", { class: "row" }, h("input", { type: "radio", name: "rm", value: "cancel", checked: true }), h("span", null, h("b", { text: "إلغاء الطلب" }), " — مكرر أو ألغاه العميل (تتحول حالته إلى «ملغي»)")),
       h("label", { class: "row" }, h("input", { type: "radio", name: "rm", value: "return" }), h("span", null, h("b", { text: "إعادته للتجهيز" }), " — لم يُرسَل مع هذه الشحنة ويُشحن لاحقاً (تعود حالته «جاري التجهيز»)")));
     const note = h("input", { maxlength: 300, placeholder: "السبب — مثال: طلب مكرر لنفس العميل" });
     if (!(await confirmBox("إزالة من الشحنة", [h("p", null, "إزالة ", h("b", { text: `${fmtN(s.n)} طلب (${fmtN(s.boxes)} علبة، ${money(s.amount)})` }), ` من الشحنة ${B.batchNo}.`), choice,
-      h("p", { class: "small", text: `تصبح الشحنة ${fmtN(B.orders - s.n)} طلب و${fmtN(B.boxes - s.boxes)} علبة، وتعود علبها للمستودع. نزّل ملف سينا مرة أخرى بعد الإزالة.` }),
+      h("p", { class: "small", text: `تصبح الشحنة ${fmtN(B.orders - s.n)} طلب و${fmtN(B.boxes - s.boxes)} علبة، وتعود علبها للمستودع.` }),
+      B.downloads ? h("p", { class: "warn-box", text: "إن كنت رفعت الملف إلى سينا فألغِ هذه الشحنة من نظام سينا أيضاً: الإزالة هنا لا تصل إليهم." }) : null,
       h("label", { class: "f" }, "ملاحظة", note)], { okText: "نعم، أزِل من الشحنة", danger: true }))) return;
     const action = choice.querySelector("input:checked").value;
     try {
-      const r = await api(`/shipments/${B.id}/remove`, { body: { action, numbers: [...pick], expectedCount: pick.size, note: note.value.trim() } });
-      toast(`أُزيل ${fmtN(r.removed)} طلب — الشحنة الآن ${fmtN(r.batch.orders)} طلب و${fmtN(r.batch.boxes)} علبة. نزّل ملف سينا من جديد.` + (r.skipped.length ? ` تُخطي ${r.skipped.length}.` : ""), !!r.skipped.length);
+      const r = await api(`/shipments/${B.id}/remove`, { body: { action, numbers: [...set], expectedCount: set.size, note: note.value.trim() } });
+      toast(`أُزيل ${fmtN(r.removed)} طلب — الشحنة الآن ${fmtN(r.batch.orders)} طلب و${fmtN(r.batch.boxes)} علبة.` + (r.skipped.length ? ` تُخطي ${r.skipped.length}.` : ""), !!r.skipped.length);
       financeChanged(); pageShipment(id);
     } catch (e) { if (e.message !== "unauthorized") toast(errText(e), true); }
   }
@@ -2150,6 +2214,11 @@ async function pageShipment(id) {
     h("div", { class: "tiles" }, tile2("الطلبات", fmtN(B.orders), B.removed ? `بعد إزالة ${fmtN(B.removed)}` : null), tile2("العلب", fmtN(B.boxes) + " علبة"), tile2("القيمة", money(B.amount)),
       tile2("تم التوصيل", fmtN(B.delivered), money(B.deliveredAmount), B.delivered === B.orders ? "tile-good" : ""), tile2("لدى شركة الشحن", fmtN(B.inTransit), money(B.transitAmount), B.inTransit ? "tile-total" : ""),
       B.failed ? tile2("تعذّر التوصيل", fmtN(B.failed), null, "tile-warn") : null), naBox,
+    d.canManage ? h("section", { class: "card edit-batch" }, h("h2", { text: "تعديل الشحنة" }),
+      h("p", { class: "muted small", text: "أضف طلبات لم تُشحن بعد، أو أزل طلباً من الشحنة بزر «إزالة» بجانبه في الجدول (أو حدّد عدة طلبات)." }),
+      h("div", { class: "row" }, h("a", { class: "btn primary sm", href: `/admin/shipments/${B.id}/add`, "data-link": true, text: "+ إضافة طلبات" })),
+      B.downloads && B.notDownloaded ? h("div", { class: "warn-box added-file" }, h("p", { text: `${ordersCount(B.notDownloaded)} أُضيفت بعد آخر تنزيل للملف. إن كنت رفعت الملف السابق إلى سينا فارفع الطلبات المضافة فقط؛ سينا يرفض مرجع الشحنة المستخدم سابقاً.` }),
+        h("a", { class: "btn primary sm", href: shipFileUrl(B.id) + "?only=new", download: "", text: `تنزيل الطلبات المضافة فقط (${fmtN(B.notDownloaded)})`, onclick: () => setTimeout(() => pageShipment(id), 1500) })) : null) : null,
     d.canManage && open.length ? h("section", { class: "card" }, h("h2", { text: "تأكيد التوصيل" }),
       h("p", { class: "muted small", text: "حدّد الطلبات التي وصلت (أو الصق أرقامها من كشف سينا)، ثم «تأكيد التوصيل». تتحول إلى «تم التوصيل» دفعة واحدة وتُحسب إيراداتها ومخزونها." }),
       paste, h("div", { class: "row" }, h("button", { type: "button", class: "btn ghost sm", text: "تحديد الأرقام الملصقة", onclick: matchPaste }))) : null,

@@ -244,6 +244,13 @@ it, so the override permission is not needed); the customer is notified of a can
 `shipment_orders_removed`. The batch page lists removed orders under «أُزيلت من الشحنة»; download the file again after an edit.
 On deploy the migration marks rows of orders that were already cancelled (SENA-2026-0001: CG-2026-000036 → 14 orders, 22 boxes).
 
+**Adding to a batch** (migration `0009`): batch page → «+ إضافة طلبات» → `/admin/shipments/{id}/add` lists orders not shipped yet
+(`GET /shipments/{id}/candidates`) → `POST /shipments/{id}/add { numbers, expectedCount, expectedBoxes, allowShortage }`: same checks and steps as
+an export (permission `shipments.manage`, audited `shipment_orders_added`); the batch keeps its preparation source. An order removed from this same batch
+returns on its row with a new reference; references are never reused (X, X-2, X-3 …). SENA refuses a reference it has received (rule 9), so each row records
+`downloaded_at` and `GET /shipments/{id}/file.xlsx?only=new` gives only rows not in a downloaded file («تنزيل الطلبات المضافة فقط»). The system does not
+connect to SENA: an order removed after the file was uploaded must also be cancelled in SENA's system (the dialog says so).
+
 **Possible duplicates** (migration `0008`): an open order with another order on the same mobile placed within 3 days of it
 (`DUP_*` in `admin.js`; cancelled, failed, archived and anonymized orders do not count, a delivered one can be the other order
 but is not flagged itself). Admin only, nothing is blocked and the customer sees nothing: «⚠ قد يكون مكرراً» under the order number (orders,

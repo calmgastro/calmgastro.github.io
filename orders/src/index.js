@@ -185,12 +185,14 @@ async function adminApi(request, env, url) {
   if (m && method === "POST") return json(await F.voidExpense(env, ctx, m[1], body));
   m = path.match(/^\/expenses\/(\d{1,9})$/);
   if (m && method === "POST") return json(await F.editExpense(env, ctx, m[1], body));
-  m = path.match(/^\/shipments\/(\d{1,9})(?:\/(confirm|remove|file\.xlsx))?$/);
+  m = path.match(/^\/shipments\/(\d{1,9})(?:\/(confirm|remove|add|candidates|file\.xlsx))?$/);
   if (m && method === "GET" && !m[2]) return json(await SH.shipmentDetail(env, ctx, m[1]));
   if (m && method === "POST" && m[2] === "confirm") return json(await SH.confirmShipment(env, ctx, m[1], body));
   if (m && method === "POST" && m[2] === "remove") return json(await SH.removeFromShipment(env, ctx, m[1], body));
+  if (m && method === "POST" && m[2] === "add") return json(await SH.addToShipment(env, ctx, m[1], body));
+  if (m && method === "GET" && m[2] === "candidates") return json(await SH.shipmentCandidates(env, ctx, m[1]));
   if (m && method === "GET" && m[2] === "file.xlsx") {
-    const f = await SH.shipmentFile(env, ctx, m[1]);
+    const f = await SH.shipmentFile(env, ctx, m[1], { onlyNew: p.get("only") === "new" });
     return new Response(f.bytes, { headers: { ...BASE_HEADERS, "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "Content-Disposition": `attachment; filename="${f.fileName}"; filename*=UTF-8''${encodeURIComponent(f.displayName)}` } });
   }

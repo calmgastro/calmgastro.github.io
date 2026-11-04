@@ -731,7 +731,7 @@ export async function backup(env, ctx) {
   const tables = ["orders", "order_items", "order_status_history", "order_notes", "notification_outbox", "order_counters", "audit_logs", "roles", "permissions", "role_permissions", "catalog_cache",
     "customers", "products", "inventory_settings", "inventory_balances", "inventory_batches", "inventory_reservations", "inventory_consumptions", "inventory_adjustments",
     "inventory_transactions", "inventory_alerts", "expense_categories", "expenses", "shipping_settings", "shipment_batches", "shipment_orders"];
-  const out = { exportedAt: now(), exportedBy: ctx.user.username, schema: "0008", tables: {} };
+  const out = { exportedAt: now(), exportedBy: ctx.user.username, schema: "0009", tables: {} };
   for (const t of tables) out.tables[t] = (await env.DB.prepare(`SELECT * FROM ${t} ORDER BY rowid LIMIT 100000`).all()).results;
   out.tables.users = (await env.DB.prepare("SELECT id, username, display_name, role_id, is_active, created_at, updated_at FROM users ORDER BY id").all()).results;
   await audit(env, ctx, "backup_downloaded", "system", null, null, Object.fromEntries(Object.entries(out.tables).map(([k, v]) => [k, v.length])));
