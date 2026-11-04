@@ -277,3 +277,10 @@ html.col-resizing, html.col-resizing *{cursor:col-resize !important; user-select
 .radio-list input{margin-top:.3em; accent-color:var(--teal-deep)}
 .removed-card{opacity:.92}
 .radio-list label > span{flex:1; min-width:0}
+/* تنبيه الطلبات المكررة */
+.tag.dup{display:block; width:fit-content; margin-top:.25em; background:var(--warn-bg); color:var(--warn); white-space:nowrap}
+.chip-dup{border-color:var(--orange); color:var(--warn)}
+.chip-dup[aria-pressed="true"]{border-color:var(--warn); background:var(--warn); color:#fff}
+.dup-alert{display:block; margin-bottom:12px; text-decoration:none}
+.dup-alert:hover{text-decoration:underline}
+.dup-card h2{color:var(--warn)}

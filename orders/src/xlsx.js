@@ -1,6 +1,7 @@
 /* The carrier's Excel template, filled. An .xlsx file is a zip of XML parts: every part of the carrier's template is
-   written back unchanged, except the data rows of «الشحنات» and «الأصناف». Cells are inline strings or numbers, so
-   phone numbers keep their leading zero and nothing a customer typed can ever be read as a formula. */
+   written back unchanged, except the data rows of «الشحنات» and «الأصناف». Cells are inline strings or numbers, so nothing
+   a customer typed can ever be read as a formula. A long number (SKU, barcode) is { n, s: 1 }: number format «0», so Excel shows
+   every digit instead of 8.68E+12. */
 import { SENA_PARTS, SENA_SHEETS, SENA_ORDER } from "./sena_template.js";
 
 const enc = new TextEncoder();
@@ -45,6 +46,7 @@ function rowXml(r, values) {
   const cells = values.map((v, i) => {
     if (v == null || v === "") return "";
     const ref = colName(i) + r;
+    if (v && typeof v === "object") return `<c r="${ref}" s="${v.s}"><v>${v.n}</v></c>`;
     return typeof v === "number" && Number.isFinite(v) ? `<c r="${ref}"><v>${v}</v></c>` : `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${esc(v)}</t></is></c>`;
   }).join("");
   return `<row r="${r}" spans="1:${values.length}">${cells}</row>`;
@@ -56,6 +58,10 @@ function sheetXml(tpl, rows, width) {
 
 /* shipments: arrays of 15 values (columns A–O of «الشحنات»); items: arrays of 8 values («الأصناف»). */
 export function senaWorkbook(shipments, items) {
-  const parts = { ...SENA_PARTS, "xl/worksheets/sheet1.xml": sheetXml(SENA_SHEETS.shipments, shipments, 15), "xl/worksheets/sheet2.xml": sheetXml(SENA_SHEETS.items, items, 8) };
+  // style 1 = number format «0»; the SKU and barcode columns are widened to show it (their template is otherwise unchanged)
+  const styles = SENA_PARTS["xl/styles.xml"].replace(/<cellXfs count="1">(.*?)<\/cellXfs>/s,
+    '<cellXfs count="2">$1<xf xfId="0" fontId="0" numFmtId="1" fillId="0" borderId="0" applyNumberFormat="1"/></cellXfs>');
+  const itemsTpl = { ...SENA_SHEETS.items, head: SENA_SHEETS.items.head.replace(/(<col min="[34]" max="[34]" width=")[\d.]+/g, "$116") };
+  const parts = { ...SENA_PARTS, "xl/styles.xml": styles, "xl/worksheets/sheet1.xml": sheetXml(SENA_SHEETS.shipments, shipments, 15), "xl/worksheets/sheet2.xml": sheetXml(itemsTpl, items, 8) };
   return zip(SENA_ORDER.map(name => ({ name, data: enc.encode(parts[name]) })));
 }

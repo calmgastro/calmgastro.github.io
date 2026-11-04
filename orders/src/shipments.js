@@ -16,7 +16,7 @@
    the usual status change, so stock is consumed (FIFO cost), revenue counts and the history records who confirmed. */
 import { HttpError, loadOrder, normalizeOrderNumber, localPhone, normalizeNationalAddress } from "./orders.js";
 import { allowedTransition } from "./statuses.js";
-import { applyTransition, need, BULK_MAX } from "./admin.js";
+import { applyTransition, need, BULK_MAX, DUP_OF, dupList } from "./admin.js";
 import { audit } from "./auth.js";
 import { riyadhDay } from "./inventory.js";
 import { stockFlow } from "./stock_admin.js";
@@ -29,6 +29,7 @@ const MAX = Math.min(BULK_MAX, SENA_MAX_ROWS);
 // the normal steps from each status to «تم الشحن»
 const PATH = { RECEIVED: ["CONFIRMED", "PREPARING", "SHIPPED"], CONFIRMED: ["PREPARING", "SHIPPED"], PREPARING: ["SHIPPED"] };
 const IN_TRANSIT = ["SHIPPED", "OUT_FOR_DELIVERY"];
+const FROM_SENA_STOCK = SENA_PREP[1];       // «من مخزون SENA»: SENA packs from its warehouse (their rules 8 and 11: packaging counts, SKU or barcode required)
 const canView = ctx => { if (!ctx.perms.has("shipments.manage") && !ctx.perms.has("orders.view")) throw new HttpError(403, { error: "forbidden" }); };
 
 /* ---------- settings (zone, preparation source, weight of one box) ---------- */
@@ -36,7 +37,9 @@ export async function getShippingSettings(db) {
   const rows = (await db.prepare("SELECT key, value FROM shipping_settings").all()).results, s = Object.fromEntries(rows.map(r => [r.key, r.value]));
   let naFallback = [];
   try { naFallback = (JSON.parse(s.na_fallback || "[]") || []).filter(r => r && r.names && normalizeNationalAddress(r.code)); } catch (_) {}
-  return { zone: s.sena_zone || SENA_ZONES.find(z => z.code === "KSA").label, prepSource: s.sena_prep_source || SENA_PREP[0], boxWeightKg: Number(s.box_weight_kg || 0.5), naFallback };
+  return { zone: s.sena_zone || SENA_ZONES.find(z => z.code === "KSA").label, prepSource: s.sena_prep_source || FROM_SENA_STOCK, boxWeightKg: Number(s.box_weight_kg || 0.5), naFallback,
+    itemName: s.sena_item_name || "calmgastro", sku: s.sena_sku ?? "", barcode: s.sena_barcode ?? "", itemPrice: Number(s.sena_item_price || 0),
+    bags: Number(s.sena_bags ?? 1), bubbles: Number(s.sena_bubbles || 0), cartons: Number(s.sena_cartons || 0) };
 }
 
 /* Approximate national address per city: used in the carrier file only, for an order that has none of its own (the order
@@ -57,10 +60,19 @@ export async function shippingSettings(env, ctx) {
 }
 export async function saveShippingSettings(env, ctx, body) {
   need(ctx, "shipments.manage");
-  const errors = {}, w = Number(body.boxWeightKg);
+  const old = await getShippingSettings(env.DB), errors = {}, w = Number(body.boxWeightKg);
   if (!SENA_ZONES.some(z => z.label === body.zone)) errors.zone = "invalid";
   if (!SENA_PREP.includes(body.prepSource)) errors.prepSource = "invalid";
   if (!(w >= 0.01 && w <= 30)) errors.boxWeightKg = "invalid";
+  // the item and packaging written to the carrier file; each is optional in the request (unsent = unchanged)
+  const extra = [], item = {};
+  const text = (key, field, max, min) => { if (body[field] == null) return old[field]; const v = clean(body[field], max); if (v.length < min) errors[field] = "invalid"; extra.push([key, v]); item[field] = v; return v; };
+  const count = (key, field, top, isInt) => { if (body[field] == null) return; const v = Number(body[field]); if (body[field] === "" || !(v >= 0 && v <= top) || (isInt && !Number.isInteger(v))) errors[field] = "invalid"; extra.push([key, String(v)]); item[field] = v; };
+  text("sena_item_name", "itemName", 120, 2);
+  const sku = text("sena_sku", "sku", 64, 0), barcode = text("sena_barcode", "barcode", 64, 0);
+  if (body.prepSource === FROM_SENA_STOCK && !sku && !barcode) errors.sku = "required";   // their rule 11
+  count("sena_item_price", "itemPrice", 100000, false);
+  count("sena_bags", "bags", 999, true); count("sena_bubbles", "bubbles", 999, true); count("sena_cartons", "cartons", 999, true);
   let fb = null;
   if (body.naFallback != null) {
     const list = Array.isArray(body.naFallback) ? body.naFallback.slice(0, 60) : [];
@@ -68,11 +80,11 @@ export async function saveShippingSettings(env, ctx, body) {
     if (fb.some(r => r.names.length < 2 || !r.code)) errors.naFallback = "invalid";
   }
   if (Object.keys(errors).length) throw new HttpError(422, { error: "validation", fields: errors });
-  const old = await getShippingSettings(env.DB), t = now(), u = ctx.user.username;
-  await env.DB.batch([["sena_zone", body.zone], ["sena_prep_source", body.prepSource], ["box_weight_kg", String(Math.round(w * 1000) / 1000)],
+  const t = now(), u = ctx.user.username;
+  await env.DB.batch([["sena_zone", body.zone], ["sena_prep_source", body.prepSource], ["box_weight_kg", String(Math.round(w * 1000) / 1000)], ...extra,
     ...(fb ? [["na_fallback", JSON.stringify(fb)]] : [])].map(([k, v]) =>
     env.DB.prepare("INSERT INTO shipping_settings (key, value, updated_by, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_by = excluded.updated_by, updated_at = excluded.updated_at").bind(k, v, u, t)));
-  await audit(env, ctx, "shipping_settings_changed", "shipping", "SENA", old, { zone: body.zone, prepSource: body.prepSource, boxWeightKg: w, ...(fb ? { naFallback: fb } : {}) });
+  await audit(env, ctx, "shipping_settings_changed", "shipping", "SENA", old, { zone: body.zone, prepSource: body.prepSource, boxWeightKg: w, ...item, ...(fb ? { naFallback: fb } : {}) });
   return getShippingSettings(env.DB);
 }
 
@@ -89,6 +101,7 @@ async function examine(env, ctx, numbers) {
     const full = await loadOrder(env.DB, n);
     if (!full) { rows.push({ orderNumber: n, eligible: false, reason: "not_found" }); continue; }
     const o = full.order;
+    const dup = await env.DB.prepare(`SELECT ${DUP_OF} d FROM orders o WHERE o.id = ?`).bind(o.id).first();
     const steps = PATH[o.status] || [];
     let reason = null;
     if (o.anonymized_at) reason = "anonymized";
@@ -98,7 +111,7 @@ async function examine(env, ctx, numbers) {
     else if (o.status === "ON_HOLD") reason = "on_hold";
     else if (!steps.every((s, i) => allowedTransition(ctx.perms, i ? steps[i - 1] : o.status, s) === "normal")) reason = "transition_not_allowed";
     rows.push({ orderNumber: o.order_number, customer: o.customer_name, phone: localPhone(o.customer_phone), city: o.city, district: o.district,
-      boxes: o.boxes, amount: o.total_amount, status: o.status, steps, eligible: !reason, reason,
+      boxes: o.boxes, amount: o.total_amount, status: o.status, steps, eligible: !reason, reason, duplicateOf: dupList(dup.d),
       nationalAddress: o.national_address || null, naApprox: o.national_address ? null : fallbackFor(o.city, fb), createdAt: o.created_at });
   }
   return rows;
@@ -124,7 +137,7 @@ export async function previewShipment(env, ctx, body) {
   // SENA asks for the national address of every shipment inside Saudi Arabia: missing ones are shown (and can be filled) before export
   const missingNationalAddress = rows.filter(r => r.eligible && !r.nationalAddress && !r.naApprox).length;
   const approxNationalAddress = rows.filter(r => r.eligible && !r.nationalAddress && r.naApprox).length;
-  return { rows, selected, totals: tot, missingNationalAddress, approxNationalAddress, excluded: rows.filter(r => !r.eligible).length, stock: await stockPicture(env.DB, tot.boxes), settings: await getShippingSettings(env.DB),
+  return { rows, selected, totals: tot, missingNationalAddress, approxNationalAddress, excluded: rows.filter(r => !r.eligible).length, stock: await stockPicture(env.DB, tot.boxes), settings: await getShippingSettings(env.DB), prepSources: SENA_PREP,
     suggestedName: `شحنة سينا ${d}`, max: MAX };
 }
 
@@ -135,6 +148,7 @@ export async function createShipment(env, ctx, body) {
   const errors = {};
   if (name.length < 2) errors.name = "required";
   if (!/^[A-Za-z0-9_-]{8,64}$/.test(requestId)) errors.requestId = "invalid";
+  if (body.prepSource != null && !SENA_PREP.includes(body.prepSource)) errors.prepSource = "invalid";
   if (Object.keys(errors).length) throw new HttpError(422, { error: "validation", fields: errors });
   const prior = await db.prepare("SELECT id FROM shipment_batches WHERE request_id = ?").bind(requestId).first();
   if (prior) return { replay: true, batch: await batchSummary(db, prior.id), shipped: [], failed: [] };
@@ -146,13 +160,13 @@ export async function createShipment(env, ctx, body) {
   // shipping more boxes than the system holds is allowed, but only knowingly
   if (tot.shortageBoxes && body.allowShortage !== true) throw new HttpError(409, { error: "shortage_confirmation_required", totals: tot });
 
-  const year = riyadhDay(now()).slice(0, 4), t = now();
+  const year = riyadhDay(now()).slice(0, 4), t = now(), prep = body.prepSource || (await getShippingSettings(db)).prepSource;
   let batchId = null;
   for (let i = 0; i < 3 && !batchId; i++) {
     try {
-      const r = await db.prepare(`INSERT INTO shipment_batches (batch_no, carrier, name, notes, request_id, created_by, user_id, created_at)
-        SELECT 'SENA-' || ?1 || '-' || printf('%04d', COALESCE(MAX(CAST(substr(batch_no, 11) AS INTEGER)), 0) + 1), 'SENA', ?2, ?3, ?4, ?5, ?6, ?7
-        FROM shipment_batches WHERE batch_no LIKE 'SENA-' || ?1 || '-%'`).bind(year, name, notes, requestId, ctx.user.username, ctx.user.id, t).run();
+      const r = await db.prepare(`INSERT INTO shipment_batches (batch_no, carrier, name, notes, request_id, created_by, user_id, created_at, prep_source)
+        SELECT 'SENA-' || ?1 || '-' || printf('%04d', COALESCE(MAX(CAST(substr(batch_no, 11) AS INTEGER)), 0) + 1), 'SENA', ?2, ?3, ?4, ?5, ?6, ?7, ?8
+        FROM shipment_batches WHERE batch_no LIKE 'SENA-' || ?1 || '-%'`).bind(year, name, notes, requestId, ctx.user.username, ctx.user.id, t, prep).run();
       batchId = r.meta.last_row_id || (await db.prepare("SELECT id FROM shipment_batches WHERE request_id = ?").bind(requestId).first()).id;
     } catch (e) {
       if (/UNIQUE constraint failed: shipment_batches\.request_id/i.test(e.message)) {     // the same click arrived twice
@@ -185,7 +199,7 @@ export async function createShipment(env, ctx, body) {
     }
   }
   if (!shipped.length) await db.prepare("DELETE FROM shipment_batches WHERE id = ? AND NOT EXISTS (SELECT 1 FROM shipment_orders WHERE batch_id = ?)").bind(batchId, batchId).run();
-  await audit(env, ctx, "shipment_exported", "shipment", batch.batch_no, null, { name, orders: shipped.length, boxes: tot.boxes, amount: tot.amount,
+  await audit(env, ctx, "shipment_exported", "shipment", batch.batch_no, null, { name, prepSource: prep, orders: shipped.length, boxes: tot.boxes, amount: tot.amount,
     shipped, failed: failed.map(f => f.orderNumber), ...(tot.shortageBoxes ? { shortageBoxes: tot.shortageBoxes } : {}) });
   return { replay: false, batch: shipped.length ? await batchSummary(db, batchId) : null, shipped, failed };
 }
@@ -200,7 +214,7 @@ const AGG = `COUNT(s.id) n, COALESCE(SUM(s.boxes), 0) boxes, COALESCE(SUM(s.amou
 const batchView = b => ({ id: b.id, batchNo: b.batch_no, carrier: b.carrier, name: b.name, notes: b.notes, createdBy: b.created_by, createdAt: b.created_at,
   downloads: b.downloads, lastDownloadAt: b.last_download_at, orders: b.n, boxes: b.boxes, amount: b.amount,
   delivered: b.delivered, inTransit: b.in_transit, failed: b.failed, other: b.other, deliveredAmount: b.delivered_amount, transitAmount: b.transit_amount,
-  removed: b.removed || 0, state: b.in_transit ? "IN_TRANSIT" : "DONE" });
+  prepSource: b.prep_source, removed: b.removed || 0, state: b.in_transit ? "IN_TRANSIT" : "DONE" });
 async function batchSummary(db, id) {
   const b = await db.prepare(`SELECT b.*, ${AGG}, (SELECT COUNT(*) FROM shipment_orders x WHERE x.batch_id = b.id AND x.removed_at IS NOT NULL) removed FROM shipment_batches b LEFT JOIN shipment_orders s ON s.batch_id = b.id AND s.removed_at IS NULL LEFT JOIN orders o ON o.id = s.order_id WHERE b.id = ? GROUP BY b.id`).bind(id).first();
   return b ? batchView(b) : null;
@@ -227,14 +241,15 @@ export async function listShipments(env, ctx, params) {
 
 export async function shipmentDetail(env, ctx, id) {
   canView(ctx);
-  const db = env.DB, batch = await batchSummary(db, Number(id)), fb = (await getShippingSettings(db)).naFallback;
+  const db = env.DB, batch = await batchSummary(db, Number(id)), set = await getShippingSettings(db), fb = set.naFallback;
   if (!batch) throw new HttpError(404, { error: "not_found" });
+  batch.prepSource = batch.prepSource || set.prepSource;
   const rows = (await db.prepare(`SELECT s.*, o.order_number, o.customer_name, o.customer_phone, o.city, o.district, o.status, o.anonymized_at, o.national_address, o.updated_at order_updated_at,
-      (SELECT MAX(h.created_at) FROM order_status_history h WHERE h.order_id = o.id AND h.new_status = o.status) status_at
+      (SELECT MAX(h.created_at) FROM order_status_history h WHERE h.order_id = o.id AND h.new_status = o.status) status_at, ${DUP_OF} dup_of
     FROM shipment_orders s JOIN orders o ON o.id = s.order_id WHERE s.batch_id = ? ORDER BY s.id`).bind(batch.id).all()).results;
   const view = r => ({ orderNumber: r.order_number, shipmentRef: r.shipment_ref, customer: r.customer_name, phone: localPhone(r.customer_phone),
     city: r.city, district: r.district, boxes: r.boxes, amount: r.amount, statusBefore: r.status_before, status: r.status, statusAt: r.status_at, anonymized: !!r.anonymized_at,
-    nationalAddress: r.national_address || null, naApprox: r.national_address ? null : fallbackFor(r.city, fb), orderUpdatedAt: r.order_updated_at,
+    nationalAddress: r.national_address || null, naApprox: r.national_address ? null : fallbackFor(r.city, fb), orderUpdatedAt: r.order_updated_at, duplicateOf: dupList(r.dup_of),
     ...(r.removed_at ? { removedAt: r.removed_at, removedBy: r.removed_by, removedReason: r.removed_reason } : {}) });
   return { batch, orders: rows.filter(r => !r.removed_at).map(view), removed: rows.filter(r => r.removed_at).map(view), canManage: ctx.perms.has("shipments.manage") };
 }
@@ -247,20 +262,20 @@ export async function shipmentFile(env, ctx, id) {
   const s = await getShippingSettings(db);
   const rows = (await db.prepare(`SELECT s.shipment_ref, s.boxes sboxes, s.amount, o.* FROM shipment_orders s JOIN orders o ON o.id = s.order_id WHERE s.batch_id = ? AND s.removed_at IS NULL ORDER BY s.id`).bind(b.id).all()).results;
   const kg = n => Math.round(n * s.boxWeightKg * 100) / 100;
+  const prep = b.prep_source || s.prepSource, fromStock = prep === FROM_SENA_STOCK;
+  // the mobile as a number without its leading 0, and a digits-only SKU / barcode as a whole number: as in the file approved for import
+  const mobile = p => /^05\d{8}$/.test(p) ? Number(p.slice(1)) : p;
+  const code = v => !fromStock || !v ? null : /^[1-9]\d{0,14}$/.test(v) ? { n: Number(v), s: 1 } : v;
   const shipments = [], items = [];
   for (const o of rows) {
     const address = [o.district ? "حي " + o.district.replace(/^حي\s+/, "") : "", o.address, o.customer_notes ? "ملاحظة: " + o.customer_notes : "",
       o.location_latitude != null ? `الموقع: https://maps.google.com/?q=${o.location_latitude},${o.location_longitude}` : ""].filter(Boolean).join("، ");
-    // A اسم المستلم · B المدينة · C الزون · D العنوان · E الجوال · F رقم الطلب · G مرجع الشحنة · H القيمة · I الوزن · J العنوان الوطني · K مصدر التجهيز · L–N أكياس/ببلز/كراتين · O رقم الزون
-    shipments.push([o.anonymized_at ? "—" : o.customer_name, o.city, s.zone, o.anonymized_at ? "—" : address, o.anonymized_at ? "" : localPhone(o.customer_phone),
-      o.order_number, o.shipment_ref, o.amount, kg(o.sboxes), o.national_address || fallbackFor(o.city, s.naFallback) || "", s.prepSource, 0, 0, 0, null]);
-    // one line per order item, counted in boxes (what is packed): quantity = boxes, price = per box (quantity × price = line value),
-    // the offer the customer chose («علبتان · برنامج شهرين» × 1) goes in the description
-    for (const i of (await db.prepare("SELECT * FROM order_items WHERE order_id = ? ORDER BY id").bind(o.id).all()).results) {
-      const boxes = i.boxes_per_unit * i.quantity;
-      items.push([o.order_number, "CalmGastro — علبة", null, null, boxes, Math.round(i.line_total / boxes * 100) / 100,
-        i.quantity > 1 ? `${i.product_name_snapshot} × ${i.quantity}` : i.product_name_snapshot, kg(boxes)]);
-    }
+    // A اسم المستلم · B المدينة · C الزون · D العنوان · E الجوال · F رقم الطلب · G مرجع الشحنة · H القيمة · I الوزن · J العنوان الوطني · K مصدر التجهيز · L–N أكياس/ببلز/كراتين (لمخزون SENA فقط) · O رقم الزون
+    shipments.push([o.anonymized_at ? "—" : o.customer_name, o.city, s.zone, o.anonymized_at ? "—" : address, o.anonymized_at ? "" : mobile(localPhone(o.customer_phone)),
+      o.order_number, o.shipment_ref, o.amount, kg(o.sboxes), o.national_address || fallbackFor(o.city, s.naFallback) || "", prep,
+      fromStock ? s.bags : 0, fromStock ? s.bubbles : 0, fromStock ? s.cartons : 0, null]);
+    // one line per order: the product and its boxes. SKU / barcode only from SENA's stock, where they deduct it (their rule 11); prepared by the merchant the line is a description (rule 12)
+    items.push([o.order_number, s.itemName, code(s.sku), code(s.barcode), o.sboxes, s.itemPrice, `${o.sboxes} علبة في الوحدة`, kg(o.sboxes)]);
   }
   await db.prepare("UPDATE shipment_batches SET downloads = downloads + 1, last_download_at = ? WHERE id = ?").bind(now(), b.id).run();
   await audit(env, ctx, "shipment_file_downloaded", "shipment", b.batch_no, null, { orders: rows.length });

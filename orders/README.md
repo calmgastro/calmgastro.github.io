@@ -216,11 +216,16 @@ anything changed since the review (`expectedCount` / `expectedBoxes`).
 **The file** (`GET /shipments/{id}/file.xlsx`, downloadable again any time, counted and audited) is the carrier's own
 template filled: `src/sena_template.js` is generated from their .xlsx by `build_sena_template.py` (all sheets, dropdown
 lists, zones, hidden options sheet and instructions kept; the 2,495 per-cell copies of their 5 validation rules written as
-5 ranges). Columns: name · city · zone (from their list, setting) · address (district, address, delivery note, map link) ·
-mobile 05… (text) · order number · shipment ref · amount to collect · weight (boxes × box weight, setting) · national
-address (`orders.national_address`, see below) · «الشحنة مجهزة من التاجر» · 0 bags/bubbles/cartons.
-Items sheet: one line per order item, linked by order number, counted in boxes (quantity = boxes, price per box, the chosen
-offer in the description). Regenerate the module if the carrier changes the template.
+5 ranges). The output matches, cell for cell, the merchant's approved edit of SENA-2026-0001. Columns: name · city · zone
+(from their list, setting) · address (district, address, delivery note, map link) · mobile as a number without the leading 0
+(5XXXXXXXX) · order number · shipment ref · amount to collect · weight (boxes × box weight, setting) · national address
+(`orders.national_address`, see below) · preparation source · bags / bubbles / cartons (settings, default 1 / 0 / 0).
+Items sheet: one line per order, linked by order number: item name, SKU, barcode (settings; digits-only codes are numbers with
+format «0»), quantity = boxes, item price (setting, default 0; the cash to collect is the amount column), «N علبة في الوحدة», weight.
+**Preparation source** (migration `0008`): «من مخزون SENA» by default, or «الشحنة مجهزة من التاجر», chosen on the review page and
+kept on the batch (`prep_source`; older batches follow the setting). From SENA's stock the packaging counts and SKU / barcode are
+written (their rules 8, 11; saving the settings with neither code is refused); prepared by the merchant they are left out, so nothing
+is deducted (rule 12), and a pick-up address must be chosen on SENA's import page. Regenerate the module if the carrier changes the template.
 
 **Delivery.** Admin → الشحن → a batch: select orders (or paste the numbers / shipment refs from the carrier's report) →
 «تأكيد التوصيل» / «خرج للتوصيل» / «تعذّر التوصيل» with «هل أنت متأكد؟». Same status change as elsewhere: delivered
@@ -238,6 +243,14 @@ numbers, expectedCount, note }`, permission `shipments.manage` (taking an order 
 it, so the override permission is not needed); the customer is notified of a cancellation only; audited as
 `shipment_orders_removed`. The batch page lists removed orders under «أُزيلت من الشحنة»; download the file again after an edit.
 On deploy the migration marks rows of orders that were already cancelled (SENA-2026-0001: CG-2026-000036 → 14 orders, 22 boxes).
+
+**Possible duplicates** (migration `0008`): an open order with another order on the same mobile placed within 3 days of it
+(`DUP_*` in `admin.js`; cancelled, failed, archived and anonymized orders do not count, a delivered one can be the other order
+but is not flagged itself). Admin only, nothing is blocked and the customer sees nothing: «⚠ قد يكون مكرراً» under the order number (orders,
+batch page), the chip «قد تكون مكررة» (`?dup=1`, combines with other filters, list response `duplicates`), a dashboard alert, a card on the
+order page with the other orders, WhatsApp (message naming them) and «اتصال», a warning on the export review (with «استبعاد من الشحنة», and
+repeated in the confirmation) and in the admin new-order preview. `POST /orders/{n}/duplicate { cleared }` (`orders.notes`, audited): «ليس مكرراً»
+stops it on the order and the ones flagged with it, a later order on that mobile is flagged again; cancelling the extra order stops it too.
 
 **National address** (migration `0006`): the Saudi short code (4 letters + 4 digits, e.g. RRRD2929) on `orders` and
 `customers` (CHECK on the shape). Checkout requires it **or** the customer's map location («تحديد موقعي تلقائياً»; `requireNationalAddress` on website

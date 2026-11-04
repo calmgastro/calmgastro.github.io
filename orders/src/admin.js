@@ -42,6 +42,18 @@ const STATUS_GROUPS = {
   TO_SHIP: ["RECEIVED", "CONFIRMED", "PREPARING"],
   WITH_CARRIER: ["SHIPPED", "OUT_FOR_DELIVERY"]
 };
+/* Maybe a duplicate: another order with the same mobile placed within 3 days of it, so the admin can call the customer before
+   shipping. A cancelled, failed or archived order does not count; only an order still open is flagged, until an admin marks it
+   «ليس مكرراً». Nothing is blocked and the customer sees nothing. (These fragments need the order as `o`.) */
+const DUP_DAYS = 3;
+const DUP_PEER = `x.customer_phone = o.customer_phone AND x.id <> o.id AND x.status NOT IN ('CANCELLED','FAILED') AND x.archived_at IS NULL AND x.anonymized_at IS NULL
+  AND ABS(julianday(x.created_at) - julianday(o.created_at)) <= ${DUP_DAYS}`;
+const DUP_OPEN = `o.status IN ('RECEIVED','CONFIRMED','PREPARING','SHIPPED','OUT_FOR_DELIVERY','ON_HOLD') AND o.duplicate_cleared_at IS NULL AND o.archived_at IS NULL AND o.anonymized_at IS NULL`;
+const DUP_FLAGGED = `${DUP_OPEN} AND EXISTS (SELECT 1 FROM orders x WHERE ${DUP_PEER})`;
+export const DUP_OF = `CASE WHEN ${DUP_OPEN} THEN (SELECT GROUP_CONCAT(x.order_number) FROM orders x WHERE ${DUP_PEER}) END`;
+export const dupList = v => v ? v.split(",") : [];
+const countDuplicates = async db => (await db.prepare(`SELECT COUNT(*) n FROM orders o WHERE ${DUP_FLAGGED}`).first()).n;
+
 const listParam = (params, k) => String(params.get(k) || "").split(",").map(s => s.trim()).filter(Boolean).slice(0, 20);
 
 function orderFilter(params, spellings = null) {
@@ -61,6 +73,7 @@ function orderFilter(params, spellings = null) {
   // status=RECEIVED,SHIPPED → either one; a group name (OPEN / TO_SHIP / WITH_CARRIER) stands for its statuses
   const statuses = [...new Set(listParam(params, "status").flatMap(s => STATUSES.includes(s) ? [s] : STATUS_GROUPS[s] || []))];
   if (statuses.length) add("o.status IN (" + statuses.map(() => "?").join(",") + ")", ...statuses);
+  if (params.get("dup") === "1") where.push(DUP_FLAGGED);
   const shipment = parseInt(params.get("shipment"), 10);
   if (shipment > 0) add("EXISTS (SELECT 1 FROM shipment_orders so WHERE so.order_id = o.id AND so.batch_id = ? AND so.removed_at IS NULL)", shipment);
   const payment = params.get("payment");
@@ -102,19 +115,20 @@ export async function listOrders(env, ctx, params) {
   const per = [25, 50, 100].includes(Number(params.get("per"))) ? Number(params.get("per")) : 25;
   const page = Math.max(1, Math.min(100000, parseInt(params.get("page"), 10) || 1));
   const sort = params.get("sort") === "updated" ? "o.updated_at DESC" : "o.id DESC";
-  const [rows, count, counts] = await Promise.all([
-    env.DB.prepare(`SELECT o.order_number, o.created_at, o.updated_at, o.customer_name, o.customer_phone, o.city, o.district, o.boxes,
+  const [rows, count, counts, duplicates] = await Promise.all([
+    env.DB.prepare(`SELECT ${DUP_OF} dup_of, o.order_number, o.created_at, o.updated_at, o.customer_name, o.customer_phone, o.city, o.district, o.boxes,
         o.total_amount, o.currency, o.payment_method, o.status, o.archived_at, o.source,
         (SELECT r.status FROM inventory_reservations r WHERE r.order_id = o.id LIMIT 1) inv_status
       FROM orders o ${f.sql} ORDER BY ${sort} LIMIT ${per} OFFSET ${(page - 1) * per}`).bind(...f.binds).all(),
     env.DB.prepare(`SELECT COUNT(*) AS n FROM orders o ${f.sql}`).bind(...f.binds).first(),
-    env.DB.prepare("SELECT status, COUNT(*) AS n FROM orders WHERE archived_at IS NULL GROUP BY status").all()
+    env.DB.prepare("SELECT status, COUNT(*) AS n FROM orders WHERE archived_at IS NULL GROUP BY status").all(),
+    countDuplicates(env.DB)
   ]);
   return {
     orders: rows.results.map(r => ({ orderNumber: r.order_number, createdAt: r.created_at, updatedAt: r.updated_at, customerName: r.customer_name,
       phone: localPhone(r.customer_phone), city: r.city, district: r.district, boxes: r.boxes, total: r.total_amount, currency: r.currency,
-      paymentMethod: r.payment_method, status: r.status, archived: !!r.archived_at, source: r.source, inventoryStatus: r.inv_status || null })),
-    total: count.n, page, per, counts: Object.fromEntries(counts.results.map(r => [r.status, r.n]))
+      paymentMethod: r.payment_method, status: r.status, archived: !!r.archived_at, source: r.source, inventoryStatus: r.inv_status || null, duplicateOf: dupList(r.dup_of) })),
+    total: count.n, page, per, duplicates, counts: Object.fromEntries(counts.results.map(r => [r.status, r.n]))
   };
 }
 
@@ -155,18 +169,36 @@ async function getOrderOr404(env, number) {
   return full;
 }
 
+const duplicatePeers = (db, id) => db.prepare(`SELECT x.id, x.order_number, x.created_at, x.status, x.boxes, x.total_amount FROM orders x JOIN orders o ON o.id = ? WHERE ${DUP_PEER} ORDER BY x.id`).bind(id).all();
+
+/* «ليس مكرراً» after calling the customer: stops the warning on this order and the ones it was flagged with. A later order with
+   the same mobile is flagged again. cleared: false brings the warning back on this order. */
+export async function markDuplicate(env, ctx, number, body) {
+  need(ctx, "orders.notes");
+  const o = (await getOrderOr404(env, number)).order, cleared = !(body && body.cleared === false), t = new Date().toISOString();
+  if (o.anonymized_at) throw new HttpError(409, { error: "anonymized" });
+  const ids = cleared ? [o.id, ...(await duplicatePeers(env.DB, o.id)).results.map(x => x.id)] : [o.id];
+  await env.DB.batch([
+    env.DB.prepare(`UPDATE orders SET duplicate_cleared_at = ?, duplicate_cleared_by = ? WHERE id IN (${ids.map(() => "?").join(",")})`).bind(cleared ? t : null, cleared ? ctx.user.username : null, ...ids),
+    auditStmt(env, ctx, cleared ? "order_duplicate_cleared" : "order_duplicate_flagged", "order", o.order_number, null, { orders: ids.length })
+  ]);
+  return orderDetail(env, ctx, o.order_number);
+}
+
 export async function orderDetail(env, ctx, number) {
   need(ctx, "orders.view");
   const full = await getOrderOr404(env, number), o = full.order, fin = ctx.perms.has("finance.view");
-  const [notes, auditRows, reservations, invTx, shipments] = await Promise.all([
+  const [notes, auditRows, reservations, invTx, shipments, peers] = await Promise.all([
     env.DB.prepare("SELECT note, created_by, created_at FROM order_notes WHERE order_id = ?1 ORDER BY id").bind(o.id).all(),
     ctx.perms.has("audit.view") || ctx.perms.has("orders.edit_customer")
       ? env.DB.prepare("SELECT username, action, old_value, new_value, created_at FROM audit_logs WHERE entity_type = 'order' AND entity_id = ?1 ORDER BY id DESC LIMIT 200").bind(o.order_number).all()
       : Promise.resolve({ results: [] }),
     ctx.perms.has("inventory.view") ? env.DB.prepare("SELECT * FROM inventory_reservations WHERE order_id = ?1").bind(o.id).all() : Promise.resolve({ results: [] }),
     ctx.perms.has("inventory.view") ? env.DB.prepare("SELECT * FROM inventory_transactions WHERE order_id = ?1 ORDER BY id").bind(o.id).all() : Promise.resolve({ results: [] }),
-    env.DB.prepare("SELECT s.shipment_ref, s.created_at, s.removed_at, s.removed_reason, b.id, b.batch_no, b.name FROM shipment_orders s JOIN shipment_batches b ON b.id = s.batch_id WHERE s.order_id = ?1 ORDER BY s.id").bind(o.id).all()
+    env.DB.prepare("SELECT s.shipment_ref, s.created_at, s.removed_at, s.removed_reason, b.id, b.batch_no, b.name FROM shipment_orders s JOIN shipment_batches b ON b.id = s.batch_id WHERE s.order_id = ?1 ORDER BY s.id").bind(o.id).all(),
+    o.anonymized_at ? Promise.resolve({ results: [] }) : duplicatePeers(env.DB, o.id)
   ]);
+  const flagged = (await env.DB.prepare(`SELECT ${DUP_FLAGGED} f FROM orders o WHERE o.id = ?`).bind(o.id).first()).f === 1;
   const delivered = o.status === "DELIVERED", closed = ["CANCELLED", "FAILED"].includes(o.status);
   return {
     id: o.id, orderNumber: o.order_number, status: o.status, createdAt: o.created_at, updatedAt: o.updated_at, lang: o.lang,
@@ -181,6 +213,8 @@ export async function orderDetail(env, ctx, number) {
       unitPrice: i.unit_price, priceOverridden: !!i.price_overridden, quantity: i.quantity, lineTotal: i.line_total })),
     history: full.history.map(h => ({ from: h.previous_status, to: h.new_status, by: h.changed_by, note: h.note, visibility: h.visibility, bulk: !!h.bulk_id, at: h.created_at })),
     notes: notes.results.map(x => ({ note: x.note, by: x.created_by, at: x.created_at })),
+    duplicates: { flagged, clearedAt: o.duplicate_cleared_at, clearedBy: o.duplicate_cleared_by,
+      peers: peers.results.map(x => ({ orderNumber: x.order_number, createdAt: x.created_at, status: x.status, boxes: x.boxes, total: x.total_amount })) },
     shipments: shipments.results.map(r => ({ batchId: r.id, batchNo: r.batch_no, name: r.name, shipmentRef: r.shipment_ref, at: r.created_at, removedAt: r.removed_at, removedReason: r.removed_reason })),
     audit: auditRows.results.map(a => ({ by: a.username, action: a.action, old: a.old_value, new: a.new_value, at: a.created_at })),
     inventory: ctx.perms.has("inventory.view") ? {
@@ -467,13 +501,13 @@ export async function dashboard(env, ctx, params = new URLSearchParams()) {
   const [byStatus, todayRow, latest] = await Promise.all([
     env.DB.prepare(`SELECT status, COUNT(*) n FROM orders WHERE archived_at IS NULL${cityClause(sp, "city", 1)} GROUP BY status`).bind(...cb).all(),
     env.DB.prepare(`SELECT COUNT(*) n FROM orders WHERE created_at >= ?1${cityClause(sp, "city", 2)}`).bind(today, ...cb).first(),
-    env.DB.prepare(`SELECT order_number, customer_name, customer_phone, city, total_amount, currency, payment_method, status, created_at, updated_at, archived_at
-      FROM orders WHERE 1${cityClause(sp, "city", 1)} ORDER BY id DESC LIMIT 8`).bind(...cb).all()
+    env.DB.prepare(`SELECT ${DUP_OF} dup_of, o.order_number, o.customer_name, o.customer_phone, o.city, o.total_amount, o.currency, o.payment_method, o.status, o.created_at, o.updated_at, o.archived_at
+      FROM orders o WHERE 1${cityClause(sp, "o.city", 1)} ORDER BY o.id DESC LIMIT 8`).bind(...cb).all()
   ]);
   const inventory = ctx.perms.has("inventory.view") ? await stockSummary(env, ctx) : null;
-  return { today: todayRow.n, byStatus: Object.fromEntries(byStatus.results.map(r => [r.status, r.n])), inventory,
+  return { today: todayRow.n, byStatus: Object.fromEntries(byStatus.results.map(r => [r.status, r.n])), inventory, duplicates: ctx.perms.has("orders.view") ? await countDuplicates(env.DB) : 0,
     latest: latest.results.map(r => ({ orderNumber: r.order_number, customerName: r.customer_name, phone: localPhone(r.customer_phone), city: r.city, total: r.total_amount,
-      currency: r.currency, paymentMethod: r.payment_method, status: r.status, createdAt: r.created_at, updatedAt: r.updated_at, archived: !!r.archived_at })) };
+      currency: r.currency, paymentMethod: r.payment_method, status: r.status, createdAt: r.created_at, updatedAt: r.updated_at, archived: !!r.archived_at, duplicateOf: dupList(r.dup_of) })) };
 }
 
 /* ?st= which orders the reports count (default: everything except cancelled / failed, so cancelled test orders stay out).
@@ -697,7 +731,7 @@ export async function backup(env, ctx) {
   const tables = ["orders", "order_items", "order_status_history", "order_notes", "notification_outbox", "order_counters", "audit_logs", "roles", "permissions", "role_permissions", "catalog_cache",
     "customers", "products", "inventory_settings", "inventory_balances", "inventory_batches", "inventory_reservations", "inventory_consumptions", "inventory_adjustments",
     "inventory_transactions", "inventory_alerts", "expense_categories", "expenses", "shipping_settings", "shipment_batches", "shipment_orders"];
-  const out = { exportedAt: now(), exportedBy: ctx.user.username, schema: "0007", tables: {} };
+  const out = { exportedAt: now(), exportedBy: ctx.user.username, schema: "0008", tables: {} };
   for (const t of tables) out.tables[t] = (await env.DB.prepare(`SELECT * FROM ${t} ORDER BY rowid LIMIT 100000`).all()).results;
   out.tables.users = (await env.DB.prepare("SELECT id, username, display_name, role_id, is_active, created_at, updated_at FROM users ORDER BY id").all()).results;
   await audit(env, ctx, "backup_downloaded", "system", null, null, Object.fromEntries(Object.entries(out.tables).map(([k, v]) => [k, v.length])));
@@ -739,7 +773,11 @@ export async function adminOrder(env, ctx, body) {
   const totals = { boxes: q.boxes, lines: q.lines.map(l => ({ name: l.name, quantity: l.quantity, unitPrice: l.unitPrice, lineTotal: l.lineTotal })),
     subtotal: q.subtotal, offerDiscount: q.discount, manualDiscount: manual, discount: q.discount + manual, shipping: q.shipping, total: q.subtotal - q.discount - manual + q.shipping, currency: q.currency };
   const customer = existing ? { existing: true, id: existing.id, name: existing.name, city: existing.city, district: existing.district, address: existing.address, nationalAddress: existing.national_address || null } : { existing: false };
-  if (body.preview === true) return { preview: true, status, source: "ADMIN", totals, stock, customer };
+  if (body.preview === true) {
+    const recent = (await env.DB.prepare(`SELECT x.order_number, x.created_at, x.status FROM orders x WHERE x.customer_phone = ? AND x.status NOT IN ('CANCELLED','FAILED')
+      AND x.archived_at IS NULL AND x.anonymized_at IS NULL AND julianday('now') - julianday(x.created_at) <= ${DUP_DAYS} ORDER BY x.id`).bind(o.customer.phone).all()).results;
+    return { preview: true, status, source: "ADMIN", totals, stock, customer, duplicates: recent.map(x => ({ orderNumber: x.order_number, createdAt: x.created_at, status: x.status })) };
+  }
 
   if (stock.initialized && stock.shortage > 0 && body.allowShortage !== true)
     throw new HttpError(409, { error: "insufficient_stock", requested: boxes, available: stock.available, shortage: stock.shortage, toReserve: stock.toReserve });

@@ -200,10 +200,10 @@ async function adminApi(request, env, url) {
   if (m && method === "POST") return json(await S.ackAlert(env, ctx, m[1]));
   m = path.match(/^\/inventory\/batches\/(\d{1,9})\/cost$/);
   if (m && method === "POST") return json(await S.setBatchCost(env, ctx, m[1], body));
-  m = path.match(/^\/orders\/([A-Za-z0-9-]{6,24})(?:\/(status|customer|items|notes|archive|revoke-link|anonymize|allocate))?$/);
+  m = path.match(/^\/orders\/([A-Za-z0-9-]{6,24})(?:\/(status|customer|items|notes|archive|revoke-link|anonymize|allocate|duplicate))?$/);
   if (m && method === "GET" && !m[2]) return json(await A.orderDetail(env, ctx, m[1]));
   if (m && method === "POST") {
-    const h = { status: A.changeStatus, customer: A.editCustomer, items: A.editItems, notes: A.addNote, archive: A.setArchived, "revoke-link": A.revokeLink, anonymize: A.anonymize, allocate: (e, c, n) => S.allocateOrder(e, c, n) }[m[2]];
+    const h = { status: A.changeStatus, customer: A.editCustomer, items: A.editItems, notes: A.addNote, archive: A.setArchived, "revoke-link": A.revokeLink, anonymize: A.anonymize, duplicate: A.markDuplicate, allocate: (e, c, n) => S.allocateOrder(e, c, n) }[m[2]];
     if (h) return json(await h(env, ctx, m[1], body));
   }
   throw new HttpError(404, { error: "not_found" });

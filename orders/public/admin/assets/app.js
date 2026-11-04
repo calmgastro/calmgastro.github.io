@@ -311,6 +311,8 @@ async function pageDashboard() {
   const note = city ? h("p", { class: "note-box" }, "معروض لمدينة: ", h("b", { class: "js-city-name", text: "…" }), " · ", h("a", { href: "/admin/dashboard", "data-link": true, text: "عرض كل المدن" })) : null;
   if (note) cityName(city).then(n => { note.querySelector(".js-city-name").textContent = n || "مدينة بدون طلبات"; });
   put(main, head, note,
+    d.duplicates ? h("a", { class: "warn-box dup-alert", href: "/admin/orders?dup=1", "data-link": true, role: "alert" },
+      `⚠ انتبه: ${dupCount(d.duplicates)} (نفس الجوال خلال 3 أيام). راجعها وتواصل مع العملاء قبل الشحن ←`) : null,
     h("div", { class: "tiles" },
       tile("طلبات اليوم", d.today, "/admin/orders?range=today"),
       tile("طلبات جديدة", s.RECEIVED || 0, "/admin/orders?status=RECEIVED", "بانتظار التأكيد"),
@@ -343,7 +345,7 @@ function orderTable(orders, { selectable, onToggle } = {}) {
       const cb = selectable ? h("input", { type: "checkbox", "aria-label": "تحديد " + o.orderNumber, checked: selected.has(o.orderNumber) }) : null;
       if (cb) cb.addEventListener("change", () => { cb.checked ? selected.add(o.orderNumber) : selected.delete(o.orderNumber); onToggle && onToggle(); });
       return h("tr", null, selectable ? h("td", { class: "sel" }, cb) : null,
-        h("td", null, h("a", { href: "/admin/orders/" + o.orderNumber, "data-link": true, class: "num", text: o.orderNumber })),
+        h("td", null, h("a", { href: "/admin/orders/" + o.orderNumber, "data-link": true, class: "num", text: o.orderNumber }), dupTag(o.duplicateOf)),
         h("td", { text: o.customerName }), h("td", { class: "num", text: o.phone || "" }), h("td", { text: o.city || "" }), h("td", { class: "num", text: o.boxes != null ? fmtN(o.boxes) : "" }), h("td", { text: when(o.createdAt) }),
         h("td", { text: money(o.total) }), h("td", { text: o.paymentMethod === "cod" || !o.paymentMethod ? "عند الاستلام" : o.paymentMethod }),
         h("td", null, badge(o.status), o.archived ? h("span", { class: "tag", text: " مؤرشف" }) : null,
@@ -397,7 +399,7 @@ async function pageOrders() {
   const main = shell("orders");
   const state = { q: P.get("q") || "", status: P.get("status") || "", payment: P.get("payment") || "", range: P.get("range") || "", from: P.get("from") || "", to: P.get("to") || "",
                   archived: P.get("archived") || "", phone: P.get("phone") || "", city: P.get("city") || "", per: P.get("per") || "25", page: P.get("page") || "1",
-                  source: P.get("source") || "", inv: P.get("inv") || "", pay: P.get("pay") || "", shipment: P.get("shipment") || "" };
+                  source: P.get("source") || "", inv: P.get("inv") || "", pay: P.get("pay") || "", shipment: P.get("shipment") || "", dup: P.get("dup") === "1" ? "1" : "" };
   const qs = (extra = {}) => { const u = new URLSearchParams(); Object.entries({ ...state, ...extra }).forEach(([k, v]) => { if (v && !(k === "per" && v === "25") && !(k === "page" && v === "1")) u.set(k, v); }); return u.toString(); };
   const reload = (extra = {}) => { Object.assign(state, extra); history.replaceState(null, "", "/admin/orders" + (qs() ? "?" + qs() : "")); load(); };
 
@@ -507,6 +509,8 @@ async function pageOrders() {
     const on = st.value();
     put(chips, h("button", { type: "button", class: "chip", "aria-pressed": String(!on.length), onclick: () => { st.set([]); apply(); } }, "الكل", h("b", { class: "num", text: fmtN(total) })),
       ORDER.filter(s => last.counts[s] || s === "RECEIVED" || on.includes(s)).map(s => h("button", { type: "button", class: "chip", "aria-pressed": String(on.includes(s)), onclick: () => { st.flip(s); apply(); } }, STATUS[s], h("b", { class: "num", text: fmtN(last.counts[s] || 0) }))),
+      last.duplicates || state.dup ? h("button", { type: "button", class: "chip chip-dup", "aria-pressed": String(state.dup === "1"), title: "طلبات لها طلب آخر بنفس الجوال خلال 3 أيام",
+        onclick: () => reload({ dup: state.dup === "1" ? "" : "1", page: "1" }) }, "⚠ قد تكون مكررة", h("b", { class: "num", text: fmtN(last.duplicates) })) : null,
       h("span", { class: "muted small chips-hint", text: on.length > 1 ? `تعرض ${on.length === 2 ? "حالتين" : fmtN(on.length) + " حالات"} معاً — اضغط حالة لإزالتها` : "اضغط أكثر من حالة لعرضها معاً" }));
   }
   async function load() {
@@ -521,6 +525,11 @@ async function pageOrders() {
   }
   load();
 }
+
+// تنبيه التكرار: نفس الجوال خلال 3 أيام — للمراجعة والتواصل مع العميل، لا يمنع شيئاً
+const dupTag = list => list && list.length ? h("span", { class: "tag dup", title: "نفس رقم الجوال خلال 3 أيام: " + list.join("، "), text: "⚠ قد يكون مكرراً" }) : null;
+const dupCount = n => n === 1 ? "طلب واحد قد يكون مكرراً" : `${ordersCount(n)} قد تكون مكررة`;
+const orderLinks = list => list.map((n, i) => [i ? "، " : "", h("a", { href: "/admin/orders/" + n, "data-link": true, class: "num", text: n })]);
 
 const PAGE_SIZES = ["25", "50", "100"];
 const ordersCount = n => n === 1 ? "طلب واحد" : n === 2 ? "طلبين" : n <= 10 ? `${fmtN(n)} طلبات` : `${fmtN(n)} طلبًا`;
@@ -549,6 +558,21 @@ async function pageOrder(number) {
       h("div", { class: "row" }, badge(o.status), o.locked ? h("span", { class: "tag", text: "المنتجات مقفلة (تم الشحن)" }) : null, o.archived ? h("span", { class: "tag", text: "مؤرشف" }) : null, o.anonymized ? h("span", { class: "tag", text: "بيانات شخصية محذوفة" }) : null)));
     const left = h("div"), right = h("div");
     put(main, h("div", { class: "o-grid" }, left, right));
+    const D = o.duplicates, dupSave = (e, cleared, msg) => run(e.currentTarget, "جارٍ الحفظ…", () => api(`/orders/${o.orderNumber}/duplicate`, { body: { cleared } }), msg);
+    if (D.flagged) {
+      const all = [o.orderNumber, ...D.peers.map(x => x.orderNumber)].join(" و"), c = o.customer;
+      put(left, h("section", { class: "card warn-card dup-card", role: "alert" }, h("h2", { text: "⚠ انتبه: قد يكون هذا الطلب مكرراً" }),
+        h("p", { class: "small", text: `نفس رقم الجوال له ${D.peers.length === 1 ? "طلب آخر" : fmtN(D.peers.length) + " طلبات أخرى"} خلال 3 أيام. تواصل مع العميل وتأكد قبل الشحن.` }),
+        tbl(["الطلب", "التاريخ", "العلب", "الإجمالي", "الحالة"], D.peers.map(x => [h("a", { href: "/admin/orders/" + x.orderNumber, "data-link": true, class: "num", text: x.orderNumber }), when(x.createdAt), fmtN(x.boxes), money(x.total), badge(x.status)])),
+        h("div", { class: "row" },
+          h("a", { class: "btn ghost sm", href: "https://wa.me/" + c.phoneIntl + "?text=" + encodeURIComponent(`مرحباً ${c.name}، لاحظنا أكثر من طلب برقمك من CalmGastro (${all}). هل تريدها كلها أم أن أحدها مكرر؟`), target: "_blank", rel: "noopener noreferrer", text: "واتساب العميل" }),
+          h("a", { class: "btn ghost sm", href: "tel:" + c.phone, text: "اتصال" }),
+          o.can.notes ? h("button", { type: "button", class: "btn primary sm", text: "ليس مكرراً (تأكدت من العميل)", onclick: e => dupSave(e, true, "لن يظهر التنبيه لهذه الطلبات.") }) : null),
+        h("p", { class: "muted small", text: "إن كان مكرراً: ألغِ الطلب الزائد من «تغيير الحالة»؛ فيتوقف التنبيه وتعود علبه للمستودع." })));
+    } else if (D.clearedAt && D.peers.length && !o.anonymized) {
+      put(left, h("p", { class: "note-box small" }, `راجعه ${D.clearedBy} (${when(D.clearedAt)}): ليس مكرراً، مع `, orderLinks(D.peers.map(x => x.orderNumber)), ". ",
+        o.can.notes ? h("button", { type: "button", class: "btn ghost sm", text: "إعادة التنبيه", onclick: e => dupSave(e, false, "أُعيد التنبيه.") }) : null));
+    }
     if (o.shipments && o.shipments.length) put(left, h("p", { class: "note-box" }, "شُحن مع سينا: ", o.shipments.map((x, i) => [i ? " · " : "",
       h("a", { href: "/admin/shipments/" + x.batchId, "data-link": true, class: "num", text: x.batchNo }), ` «${x.name}» — مرجع الشحنة `, h("b", { class: "num", text: x.shipmentRef }),
       x.removedAt ? h("span", { class: "tag", text: x.removedReason === "CANCELLED" ? ` أُزيل من الشحنة (ملغي) ${day(x.removedAt)}` : ` أُزيل من الشحنة (أُعيد للتجهيز) ${day(x.removedAt)}` }) : null])));
@@ -759,7 +783,7 @@ const AUDIT = {
   order_item_price_changed: "تغيير سعر", order_totals_recalculated: "إعادة حساب الإجمالي", order_note_added: "ملاحظة داخلية",
   order_archived: "أرشفة طلب", order_unarchived: "إلغاء أرشفة", order_link_revoked: "إلغاء رابط الطلب", order_anonymized: "حذف بيانات شخصية",
   orders_exported: "تصدير الطلبات", backup_downloaded: "تنزيل نسخة احتياطية",
-  shipment_exported: "تصدير شحنة لسينا", shipment_orders_removed: "إزالة طلبات من شحنة", stock_claimed: "أخذ علب من المستودع عند الشحن", shipment_file_downloaded: "تنزيل ملف شحنة", shipment_delivery_confirmed: "تأكيد توصيل جماعي",
+  order_duplicate_cleared: "ليس مكرراً (بعد المراجعة)", order_duplicate_flagged: "إعادة تنبيه التكرار", shipment_exported: "تصدير شحنة لسينا", shipment_orders_removed: "إزالة طلبات من شحنة", stock_claimed: "أخذ علب من المستودع عند الشحن", shipment_file_downloaded: "تنزيل ملف شحنة", shipment_delivery_confirmed: "تأكيد توصيل جماعي",
   shipment_delivery_failed: "تعذّر توصيل (شحنة)", shipment_out_for_delivery: "خرج للتوصيل (شحنة)", shipping_settings_changed: "إعدادات الشحن",
   order_created_by_admin: "طلب من لوحة التحكم", expense_created: "إضافة مصروف", expense_edited: "تعديل مصروف", expense_voided: "إلغاء مصروف",
   stock_received: "إضافة مخزون (شراء)", purchase_edited: "تعديل شراء مخزون", purchase_voided: "إلغاء شراء مخزون", batch_cost_set: "إدخال تكلفة دفعة",
@@ -1651,6 +1675,7 @@ async function pageNewOrder() {
         h("dt", { text: "التوصيل" }), h("dd", { text: T.shipping ? money(T.shipping) : "مجاني" }),
         h("dt", { text: "الإجمالي" }), h("dd", null, h("b", { text: money(T.total) })),
         h("dt", { text: "المصدر" }), h("dd", { text: "لوحة التحكم" }), h("dt", { text: "الحالة الأولى" }), h("dd", null, badge(r.status))),
+      r.duplicates && r.duplicates.length ? h("p", { class: "warn-box dup-note", role: "alert" }, "⚠ انتبه: لهذا الجوال طلب خلال آخر 3 أيام: ", orderLinks(r.duplicates.map(x => x.orderNumber)), ". قد يكون مكرراً — تأكد من العميل قبل الإنشاء.") : null,
       S.initialized ? h("div", { class: short ? "warn-box" : "note-box" },
         short ? h("p", null, h("b", { text: "المتبقي في المستودع لا يكفي الآن. " }), `يحتاج ${S.requested} علبة والمتبقي بعد الطلبات السابقة ${Math.max(0, S.available)}. يُنشأ الطلب عادياً ويُشحن عند توفر العلب.`)
           : h("p", { text: `المتبقي في المستودع ${S.available} علبة · بعد هذا الطلب ${S.availableAfter} علبة.` }))
@@ -1897,6 +1922,8 @@ function shipSettingsCard(open = false) {
     const zone = h("select", null, d.zones.map(z => h("option", { value: z.label, text: z.label, selected: z.label === d.settings.zone })));
     const prep = h("select", null, d.prepSources.map(p => h("option", { value: p, text: p, selected: p === d.settings.prepSource })));
     const w = h("input", { inputmode: "decimal", value: d.settings.boxWeightKg });
+    const itemName = h("input", { maxlength: 120, value: d.settings.itemName }), sku = h("input", { dir: "ltr", maxlength: 64, value: d.settings.sku }), barcode = h("input", { dir: "ltr", maxlength: 64, value: d.settings.barcode });
+    const itemPrice = h("input", { inputmode: "decimal", value: d.settings.itemPrice }), bags = h("input", { inputmode: "numeric", value: d.settings.bags }), bubbles = h("input", { inputmode: "numeric", value: d.settings.bubbles }), cartons = h("input", { inputmode: "numeric", value: d.settings.cartons });
     const err = h("p", { class: "err", role: "alert" }), btn = h("button", { type: "button", class: "btn primary", text: "حفظ" });
     // العنوان الوطني البديل لكل مدينة (تقريبي): لطلب ليس له عنوان وطني، في ملف سينا فقط
     const fbRows = h("div", { class: "fb-rows" });
@@ -1911,22 +1938,28 @@ function shipSettingsCard(open = false) {
     btn.addEventListener("click", () => busy(btn, "جارٍ الحفظ…", async () => {
       err.textContent = "";
       try {
-        await api("/shipments/settings", { body: { zone: zone.value, prepSource: prep.value, boxWeightKg: num(w.value), naFallback: fbValue() } });
+        await api("/shipments/settings", { body: { zone: zone.value, prepSource: prep.value, boxWeightKg: num(w.value), naFallback: fbValue(), itemName: itemName.value.trim(), sku: sku.value.trim(), barcode: barcode.value.trim(),
+          itemPrice: num(itemPrice.value), bags: num(bags.value), bubbles: num(bubbles.value), cartons: num(cartons.value) } });
         let back = false; try { back = JSON.parse(sessionStorage.getItem(SHIP_SEL_KEY) || "[]").length > 0; } catch (_) {}
         toast("تم حفظ إعدادات الشحن." + (back ? " ارجع لمراجعة التصدير لترى العناوين التقريبية." : ""));
         if (back) put(err, h("a", { class: "btn primary sm", href: "/admin/shipments/new", "data-link": true, text: "العودة لمراجعة التصدير" }));
       }
-      catch (e) { const f = e.data && e.data.fields || {}; err.textContent = f.boxWeightKg ? "وزن العلبة بين 0.01 و 30 كجم." : f.naFallback ? "كل عنوان بديل يحتاج اسم المدينة وعنواناً وطنياً صحيحاً (4 حروف و4 أرقام)." : fieldsText(e); }
+      catch (e) { const f = e.data && e.data.fields || {}; err.textContent = f.boxWeightKg ? "وزن العلبة بين 0.01 و 30 كجم." : f.itemName ? "اكتب اسم الصنف." : f.sku || f.barcode ? "«من مخزون SENA» يحتاج SKU أو باركود ليُخصم المخزون." : f.itemPrice ? "سعر الصنف رقم صفر أو أكثر." : f.bags || f.bubbles || f.cartons ? "عدد الأكياس والببلز والكراتين رقم صحيح من 0 إلى 999." : f.naFallback ? "كل عنوان بديل يحتاج اسم المدينة وعنواناً وطنياً صحيحاً (4 حروف و4 أرقام)." : fieldsText(e); }
     }));
     box.textContent = "";
     put(box, h("div", { class: "grid3" }, h("label", { class: "f" }, "المنطقة / الزون (من قائمة سينا)", zone), h("label", { class: "f" }, "مصدر التجهيز", prep),
       h("label", { class: "f" }, "وزن العلبة الواحدة (كجم)", w, h("small", { text: "يُضرب في عدد العلب لعمود «الوزن كجم»" }))),
+      h("h3", { text: "الصنف في شيت «الأصناف»" }),
+      h("div", { class: "grid2" }, h("label", { class: "f" }, "اسم الصنف", itemName), h("label", { class: "f" }, "سعر الصنف", itemPrice, h("small", { text: "يُكتب كما هو لكل سطر. قيمة التحصيل تأتي من عمود «قيمة الطلب»" })),
+        h("label", { class: "f" }, "SKU", sku), h("label", { class: "f" }, "الباركود", barcode, h("small", { text: "مع «من مخزون SENA» يخصم سينا مخزونه بأحدهما" }))),
+      h("h3", { text: "التغليف لكل شحنة (من مخزون SENA فقط)" }),
+      h("div", { class: "grid3" }, h("label", { class: "f" }, "عدد الأكياس", bags), h("label", { class: "f" }, "عدد الببلز", bubbles), h("label", { class: "f" }, "عدد الكراتين", cartons)),
       h("h3", { text: "العنوان الوطني البديل لكل مدينة (تقريبي)" }),
       h("p", { class: "muted small", text: "يُكتب في ملف سينا للطلب الذي ليس له عنوان وطني، حسب مدينة العميل، ولا يُحفظ في الطلب (فيبقى بإمكانك إضافة عنوان العميل الحقيقي). اختر عنواناً حقيقياً لمكان عام معروف في المدينة (مركز تجاري أو مكتب بريد) من خريطة منصة العنوان الوطني. اكتب أسماء المدينة مفصولة بفواصل كما يكتبها العملاء. المدينة بلا عنوان تُتجاهل." }),
       fbRows, h("button", { type: "button", class: "btn ghost sm", text: "+ مدينة", onclick: () => addRow() }),
       err, h("div", { class: "row" }, btn));
   })();
-  return h("details", { class: "card", id: "ship-settings", open: open || null }, h("summary", { text: "إعدادات ملف سينا (الزون، مصدر التجهيز، وزن العلبة، العنوان الوطني البديل)" }), box);
+  return h("details", { class: "card", id: "ship-settings", open: open || null }, h("summary", { text: "إعدادات ملف سينا (الزون، مصدر التجهيز، الصنف والباركود، التغليف، وزن العلبة، العنوان الوطني البديل)" }), box);
 }
 const NA_CITY_ROWS = ["جدة، جده، Jeddah", "مكة المكرمة، مكة، مكه، Makkah، Mecca", "الرياض، Riyadh", "الدمام، Dammam", "المدينة المنورة، المدينه، Madinah",
   "أبو عريش، ابو عريش", "جازان، جيزان، Jazan", "خميس مشيط، Khamis Mushait"];
@@ -1942,6 +1975,12 @@ async function pageShipmentNew() {
   const ok = d.rows.filter(r => r.eligible), bad = d.rows.filter(r => !r.eligible), T = d.totals, S = d.stock, requestId = reqId();
   const name = h("input", { maxlength: 80, value: d.suggestedName, "aria-label": "اسم التصدير" }), notes = h("input", { maxlength: 300, placeholder: "اختياري — مثال: الدفعة الصباحية", "aria-label": "ملاحظة" });
   const err = h("p", { class: "err", role: "alert" });
+  const prepSel = h("select", { "aria-label": "مصدر التجهيز" }, d.prepSources.map(x => h("option", { value: x, text: x, selected: x === d.settings.prepSource })));
+  const prepHint = h("small"), drawPrep = () => { prepHint.textContent = prepSel.value === d.prepSources[1]
+    ? `يخصم سينا من مخزونه بالباركود ${d.settings.barcode || d.settings.sku} · ${fmtN(d.settings.bags)} كيس لكل شحنة.` : "تذكّر: اختر عنوان الاستلام في صفحة الاستيراد بسينا قبل رفع الملف. لا تُكتب أكياس ولا SKU."; };
+  prepSel.addEventListener("change", drawPrep); drawPrep();
+  const dups = ok.filter(r => r.duplicateOf && r.duplicateOf.length);
+  const exclude = n => { try { sessionStorage.setItem(SHIP_SEL_KEY, JSON.stringify(numbers.filter(x => x !== n))); } catch (_) {} selected.delete(n); pageShipmentNew(); };
   const go_ = h("button", { type: "button", class: "btn primary big", text: `تصدير ${fmtN(T.orders)} طلب إلى سينا`, disabled: !T.orders });
   const naMissing = () => ok.filter(r => !r.nationalAddress && !r.naApprox).length, naApprox = () => ok.filter(r => !r.nationalAddress && r.naApprox).length, naNote = h("div");
   function drawNaNote() {
@@ -1964,6 +2003,10 @@ async function pageShipmentNew() {
       S ? tile2("في المستودع الآن", fmtN(S.inWarehouse) + " علبة", S.withCarrier ? `و${fmtN(S.withCarrier)} علبة لدى شركة الشحن` : "حسب النظام") : null,
       S ? (S.inWarehouseAfter < 0 ? tile2("في المستودع بعد الشحن", "0 علبة", `ينقص ${fmtN(-S.inWarehouseAfter)} علبة في النظام`, "tile-warn")
         : tile2("في المستودع بعد الشحن", fmtN(S.inWarehouseAfter) + " علبة", `${fmtN(S.inWarehouse)} − ${fmtN(T.boxes)}`)) : null),
+    dups.length ? h("section", { class: "card warn-card dup-card", role: "alert" }, h("h2", { text: `⚠ انتبه: ${dupCount(dups.length)}` }),
+      h("p", { class: "small", text: "لها طلب آخر بنفس الجوال خلال 3 أيام. تواصل مع العميل قبل الشحن. لا يمنع هذا التصدير؛ ويمكنك استبعاد الطلب من هذه الشحنة." }),
+      tbl(["الطلب", "العميل", "الجوال", "مع الطلب", ""], dups.map(r => [h("a", { href: "/admin/orders/" + r.orderNumber, "data-link": true, class: "num", text: r.orderNumber }), r.customer, h("span", { class: "num", text: r.phone }),
+        h("span", null, orderLinks(r.duplicateOf)), h("button", { type: "button", class: "btn ghost sm", text: "استبعاد من الشحنة", onclick: () => exclude(r.orderNumber) })]))) : null,
     T.shortageBoxes ? h("section", { class: "card warn-card" }, h("h2", { text: `ستشحن ${fmtN(T.shortageBoxes)} علبة أكثر مما هو مسجّل في المستودع` }),
       h("p", { class: "small", text: "يمكنك التصدير إن كانت العلب موجودة فعلاً لديك (مثلاً وصل مخزون لم يُسجَّل بعد). سجّل استلامه من «المخزون ← إضافة مخزون» قبل تأكيد التوصيل." })) : null,
     bad.length ? h("section", { class: "card warn-card" }, h("h2", { text: `${bad.length} طلب لن يُصدَّر` }),
@@ -1977,8 +2020,9 @@ async function pageShipmentNew() {
         h("b", { class: "num", text: fmtN(r.boxes) }),
         money(r.amount), badge(r.status), r.steps.map(s => STATUS[s]).join(" ← ")]))),
     h("section", { class: "card" }, h("h2", { text: "اسم التصدير" }),
-      h("div", { class: "grid2" }, h("label", { class: "f" }, "اسم الشحنة (يظهر في سجل الشحن واسم الملف)", name), h("label", { class: "f" }, "ملاحظة", notes)),
-      h("p", { class: "muted small", text: `الملف: قالب سينا نفسه (شيت «الشحنات» و«الأصناف»)، الزون: ${d.settings.zone} · وزن العلبة ${d.settings.boxWeightKg} كجم.` }),
+      h("div", { class: "grid2" }, h("label", { class: "f" }, "اسم الشحنة (يظهر في سجل الشحن واسم الملف)", name), h("label", { class: "f" }, "ملاحظة", notes),
+        h("label", { class: "f" }, "مصدر التجهيز لهذه الشحنة", prepSel, prepHint)),
+      h("p", { class: "muted small", text: `الملف: قالب سينا نفسه (شيت «الشحنات» و«الأصناف»)، الزون: ${d.settings.zone} · وزن العلبة ${d.settings.boxWeightKg} كجم · الصنف: ${d.settings.itemName}.` }),
       err, h("div", { class: "row" }, go_)));
   go_.addEventListener("click", async () => {
     err.textContent = "";
@@ -1987,6 +2031,8 @@ async function pageShipmentNew() {
       h("p", null, "سيُصدَّر ", h("b", { text: `${fmtN(T.orders)} طلب (${fmtN(T.boxes)} علبة، ${money(T.amount)})` }), " إلى ملف سينا باسم ", h("b", { text: `«${name.value.trim()}»` }), "."),
       h("ul", { class: "change-list" }, h("li", { text: "تتغير حالة هذه الطلبات إلى «تم الشحن» (مع تسجيل خطوات التأكيد والتجهيز في سجل كل طلب)." }),
         h("li", { text: "يُبلَّغ كل عميل برسالة «تم تسليم طلبك لشركة الشحن»." }), h("li", { text: "يُنزَّل ملف Excel جاهزاً للرفع في نظام سينا، ويمكن تنزيله مرة أخرى من صفحة الشحنة." })),
+      h("p", { class: "small" }, "مصدر التجهيز: ", h("b", { text: prepSel.value })),
+      dups.length ? h("p", { class: "warn-box", text: `⚠ ${dupCount(dups.length)} (نفس الجوال خلال 3 أيام).` }) : null,
       bad.length ? h("p", { class: "muted small", text: `لن يشمل الملف ${bad.length} طلباً مستبعداً.` }) : null,
       naMissing() ? h("p", { class: "warn-box", text: `${fmtN(naMissing())} طلب بدون عنوان وطني — سيبقى عموده فارغاً في الملف.` }) : null,
       naApprox() ? h("p", { class: "small", text: `${fmtN(naApprox())} طلب بعنوان وطني تقريبي (عنوان مدينته البديل).` }) : null,
@@ -1994,7 +2040,7 @@ async function pageShipmentNew() {
       h("p", { class: "warn-box", text: "لا يمكن التراجع عن «تم الشحن» إلا بتغيير استثنائي للحالة." })], { okText: "نعم، صدّر وغيّر الحالة" }))) return;
     await busy(go_, "جارٍ التصدير…", async () => {
       try {
-        const r = await api("/shipments", { body: { name: name.value.trim(), notes: notes.value.trim(), numbers: ok.map(x => x.orderNumber), requestId, expectedCount: T.orders, expectedBoxes: T.boxes,
+        const r = await api("/shipments", { body: { name: name.value.trim(), notes: notes.value.trim(), numbers: ok.map(x => x.orderNumber), requestId, expectedCount: T.orders, expectedBoxes: T.boxes, prepSource: prepSel.value,
           allowShortage: T.shortageBoxes > 0 } });
         if (!r.batch) { err.textContent = "لم يُصدَّر أي طلب: " + r.failed.map(f => `${f.orderNumber} (${SHIP_REASON[f.reason] || f.reason})`).join("، "); return; }
         try { sessionStorage.removeItem(SHIP_SEL_KEY); } catch (_) {}
@@ -2026,7 +2072,7 @@ async function pageShipment(id) {
       const cb = can_ ? h("input", { type: "checkbox", "aria-label": "تحديد " + o.orderNumber, checked: pick.has(o.orderNumber) }) : null;
       if (cb) cb.addEventListener("change", () => { cb.checked ? pick.add(o.orderNumber) : pick.delete(o.orderNumber); drawBar(); });
       body.append(h("tr", { class: pick.has(o.orderNumber) ? "row-editing" : null }, h("td", { class: "sel" }, cb),
-        h("td", null, h("a", { href: "/admin/orders/" + o.orderNumber, "data-link": true, class: "num", text: o.orderNumber })), h("td", { class: "num small", text: o.shipmentRef }),
+        h("td", null, h("a", { href: "/admin/orders/" + o.orderNumber, "data-link": true, class: "num", text: o.orderNumber }), dupTag(o.duplicateOf)), h("td", { class: "num small", text: o.shipmentRef }),
         h("td", null, naCell(o, drawNa)),
         h("td", { text: o.customer }), h("td", { class: "num", text: o.phone }), h("td", { text: o.city }), h("td", { class: "num", text: fmtN(o.boxes) }), h("td", { text: money(o.amount) }),
         h("td", null, badge(o.status)), h("td", { class: "small", text: when(o.statusAt) })));
@@ -2100,7 +2146,7 @@ async function pageShipment(id) {
       h("div", null, h("a", { href: "/admin/shipments", "data-link": true, class: "small", text: "→ الشحن" }), h("h1", null, h("span", { class: "num", text: B.batchNo }), " — ", B.name)),
       h("div", { class: "row" }, shipState(B), d.canManage ? h("a", { class: "btn primary", href: shipFileUrl(B.id), download: "", text: "تنزيل ملف سينا (Excel)" }) : null,
         h("a", { class: "btn ghost", href: "/admin/orders?shipment=" + B.id, "data-link": true, text: "في صفحة الطلبات" }))),
-    h("p", { class: "muted small", text: `صدّرها ${B.createdBy} · ${when(B.createdAt)}` + (B.notes ? ` · ${B.notes}` : "") + ` · نُزّل الملف ${fmtN(B.downloads)} مرة` + (B.lastDownloadAt ? ` (آخرها ${when(B.lastDownloadAt)})` : "") }),
+    h("p", { class: "muted small", text: `صدّرها ${B.createdBy} · ${when(B.createdAt)}` + (B.notes ? ` · ${B.notes}` : "") + ` · مصدر التجهيز: ${B.prepSource} · نُزّل الملف ${fmtN(B.downloads)} مرة` + (B.lastDownloadAt ? ` (آخرها ${when(B.lastDownloadAt)})` : "") }),
     h("div", { class: "tiles" }, tile2("الطلبات", fmtN(B.orders), B.removed ? `بعد إزالة ${fmtN(B.removed)}` : null), tile2("العلب", fmtN(B.boxes) + " علبة"), tile2("القيمة", money(B.amount)),
       tile2("تم التوصيل", fmtN(B.delivered), money(B.deliveredAmount), B.delivered === B.orders ? "tile-good" : ""), tile2("لدى شركة الشحن", fmtN(B.inTransit), money(B.transitAmount), B.inTransit ? "tile-total" : ""),
       B.failed ? tile2("تعذّر التوصيل", fmtN(B.failed), null, "tile-warn") : null), naBox,
