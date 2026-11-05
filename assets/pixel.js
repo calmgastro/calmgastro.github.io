@@ -68,7 +68,7 @@ if (window.snaptr) {
       e = d.getElementsByTagName("script")[0];
       e.parentNode.insertBefore(n, e);
     };
-    ttq.load("DBLN9KRC77UFMFQA9520");
+    ttq.load("DBLQAQJC77U4J2JQUQAG");
     ttq.page();
   }
   // نفس حماية مفتاح رابط الطلب الآمن في بكسل Meta أعلاه
