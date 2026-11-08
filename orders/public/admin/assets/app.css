@@ -291,3 +291,6 @@ html.col-resizing, html.col-resizing *{cursor:col-resize !important; user-select
 .row-remove{display:block; margin-top:.25em; min-height:32px; padding:0 .7em; border:1px solid var(--line); border-radius:999px; background:var(--surface); color:var(--danger); font:inherit; font-size:.8rem; font-weight:600; cursor:pointer}
 .row-remove:hover{border-color:var(--danger)}
 .row-remove:focus-visible{outline:2px solid var(--teal-deep); outline-offset:2px}
+/* حذف نهائي */
+.del-fields{display:grid; gap:.5rem; margin-top:.4rem}
+.del-why{align-self:center}

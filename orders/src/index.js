@@ -151,6 +151,8 @@ async function adminApi(request, env, url) {
       return new Response(await A.exportCsv(env, ctx, p), { headers: { ...BASE_HEADERS, "Content-Type": "text/csv; charset=utf-8",
         "Content-Disposition": `attachment; filename="orders-${new Date().toISOString().slice(0, 10)}.csv"` } });
     case "POST /orders/bulk-status": return json(await A.bulkStatus(env, ctx, body));
+    case "POST /orders/delete": return json(await A.deleteOrders(env, ctx, body));
+    case "POST /customers/delete": return json(await A.deleteCustomer(env, ctx, body));
     case "GET /customers": return json(await A.customers(env, ctx, p));
     case "GET /customers/search": return json(await A.customerLookup(env, ctx, p));
     case "POST /orders/new": return json(await A.adminOrder(env, ctx, body));

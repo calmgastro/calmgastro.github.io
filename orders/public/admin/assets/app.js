@@ -47,7 +47,8 @@ const ERR = {
   weak_password: "كلمة المرور ضعيفة: 12 حرفاً على الأقل، ولا تحتوي اسم المستخدم أو كلمات شائعة.", invalid_username: "اسم المستخدم: 3–32 حرفاً إنجليزياً أو أرقاماً أو . _ -",
   username_taken: "اسم المستخدم مستخدم.", last_super_admin: "لا يمكن إزالة آخر مدير عام نشط.", cannot_disable_self: "لا يمكنك تعطيل حسابك.",
   invalid_code: "الرمز غير صحيح.", invalid_setup_key: "كلمة مرور الإعداد غير صحيحة.", setup_done: "تم الإعداد مسبقاً. سجّل الدخول.",
-  too_many: "الحد الأقصى 500 طلب في المرة الواحدة.", selection_changed: "تغيّر التحديد. أعد المحاولة.", nothing_selected: "لم تحدد أي طلب.",
+  too_many: "الحد الأقصى 500 طلب في المرة الواحدة.",
+  confirmation_required: "لم تُكتب كلمة التأكيد كما هي، فلم يُحذف شيء.", customer_has_kept_orders: "لم يُحذف العميل: بعض طلباته لا يمكن حذفها.", invalid_phone: "رقم الجوال غير صحيح.", selection_changed: "تغيّر التحديد. أعد المحاولة.", nothing_selected: "لم تحدد أي طلب.",
   empty_note: "اكتب الملاحظة أولاً.", only_finished_orders: "الأرشفة للطلبات المنتهية فقط (تم التوصيل، ملغي، متعذّر).",
   validation: "تحقق من البيانات المدخلة.", not_found: "غير موجود.", password_change_required: "يجب تغيير كلمة المرور أولاً.",
   insufficient_stock: "المخزون المتوفر لا يكفي لهذه العملية.", reservation_mismatch: "كمية الحجز لا تطابق الطلب. حدّث الصفحة.",
@@ -59,6 +60,15 @@ const ERR = {
   opening_cannot_void: "لا يُلغى الرصيد الافتتاحي؛ عدّل كميته أو سعره.", purchase_used: "لا يمكن إلغاء شراء استُخدم منه؛ عدّل كميته.",
   quantity_below_used: "لا يمكن أن تقل الكمية عن المستخدم منها.", edit_exceeds_available: "لا يمكن إنقاص المخزون بهذا القدر: الباقي محجوز لطلبات مفتوحة.", catalog_unavailable: "تعذّر قراءة أسعار الموقع الآن. حاول بعد قليل."
 };
+// لماذا لا يُحذف طلب (الخادم يعيد السبب)
+const DELETE_REASON = { not_cancelled: "ليس ملغياً أو متعذراً", in_shipment_file: "كان في ملف شحن نُزّل لسينا، فيبقى في سجل الشحنة",
+  stock_moved: "تحرك له مخزون فعلي (بيع أو إرجاع)", has_expense: "مرتبط بمصروف مسجل", not_found: "غير موجود", order_changed: "تغيّر أثناء الحذف، أعد المحاولة" };
+// نافذة حذف نهائي: حقل كلمة التأكيد + السبب
+function deleteFields(confirmHint, reasonHint) {
+  const input = h("input", { placeholder: confirmHint, dir: "auto", "aria-label": "كلمة التأكيد", autocomplete: "off" });
+  const reason = h("input", { placeholder: reasonHint, maxlength: 200, "aria-label": "السبب" });
+  return { input, reason, fields: h("div", { class: "del-fields" }, input, reason) };
+}
 const errText = e => (e && e.data && e.data.error === "validation" && e.data.fields && e.data.fields.reason) ? "اكتب سبب تغيير السعر."
   : e && e.message === "inventory_shortage" ? `لا يمكن تسليم الطلب: المسجّل في المستودع لا يكفي (ينقص ${e.data.shortage} علبة). سجّل استلام المخزون ثم أعد المحاولة.`
   : ERR[e && e.message] || "تعذّر تنفيذ العملية. حاول مرة أخرى.";
@@ -462,6 +472,7 @@ async function pageOrders() {
       } }),
       h("button", { type: "button", class: "btn ghost sm", text: "إلغاء تحديد الكل", onclick: () => { selected.clear(); render(); } }),
       can("orders.status.bulk") ? h("button", { type: "button", class: "btn primary sm", text: "تغيير الحالة", onclick: bulkChange }) : null,
+      can("orders.delete") ? h("button", { type: "button", class: "btn danger sm", text: "حذف نهائياً", onclick: bulkDelete }) : null,
       can("shipments.manage") ? h("button", { type: "button", class: "btn primary sm", text: "تصدير لشركة الشحن (سينا)", onclick: () => {
         try { sessionStorage.setItem(SHIP_SEL_KEY, JSON.stringify([...selected])); } catch (_) {}
         go("/admin/shipments/new");
@@ -485,6 +496,18 @@ async function pageOrders() {
         s.reason === "already" ? "في هذه الحالة مسبقاً" : s.reason === "not_found" ? "غير موجود" : s.reason === "anonymized" ? "بيانات محذوفة" : `لا يمكن الانتقال من «${STATUS[s.status] || s.status}»`))), { okText: "حسناً" });
       selected.clear(); load();
     } catch (x) { if (x.message !== "unauthorized") toast("تعذر تحديث الطلبات. " + errText(x), true); }
+  }
+  async function bulkDelete() {
+    const n = selected.size, d = deleteFields("حذف", "السبب (مثال: طلبات تجريبية)");
+    if (!(await confirmBox("حذف الطلبات المحددة نهائياً", [h("p", { class: "warn-box", text: "يُحذف الطلب الملغي أو المتعذّر فقط مع منتجاته وسجله، ولا يمكن التراجع. تُتخطى بقية الطلبات، والطلب الذي كان في ملف شحن نُزّل لسينا." }),
+      `المحدد: ${ordersCount(n)}. اكتب «حذف» للتأكيد:`, d.fields], { okText: "حذف نهائياً", danger: true, fields: d.fields }))) return;
+    toast("جاري حذف الطلبات…");
+    try {
+      const r = await api("/orders/delete", { body: { numbers: [...selected], expectedCount: n, confirm: d.input.value.trim(), reason: d.reason.value } });
+      toast(r.deleted.length ? `تم حذف ${ordersCount(r.deleted.length)} نهائياً.` : "لم يُحذف أي طلب.", !r.deleted.length);
+      if (r.skipped.length) await confirmBox("طلبات لم تُحذف", h("div", { class: "audit-mini" }, r.skipped.slice(0, 50).map(x => h("div", null, h("span", { class: "num", text: x.orderNumber }), " — ", DELETE_REASON[x.reason] || x.reason))), { okText: "حسناً" });
+      selected.clear(); load();
+    } catch (x) { if (x.message !== "unauthorized") toast("تعذر حذف الطلبات. " + errText(x), true); }
   }
   function render() {
     if (!last) return;
@@ -768,6 +791,20 @@ async function pageOrder(number) {
       if (!(await confirmBox("حذف البيانات الشخصية للطلب", [h("p", { class: "warn-box", text: "لا يُحذف الطلب نفسه. يُمسح الاسم والجوال والعنوان نهائياً وتبقى المبالغ والسجل. لا يمكن التراجع." }), "اكتب رقم الطلب للتأكيد:", input, reason], { okText: "حذف البيانات", danger: true }))) return;
       run(btn, "جاري…", () => api(`/orders/${o.orderNumber}/anonymize`, { body: { confirm: input.value.trim().toUpperCase(), reason: reason.value } }), "تم حذف البيانات الشخصية.");
     } }));
+    if (can("orders.delete") && ["CANCELLED", "FAILED"].includes(o.status)) put(acts, o.can.delete ? h("button", { type: "button", class: "btn danger sm", text: "حذف الطلب نهائياً", onclick: async e => {
+      const btn = e.currentTarget, d = deleteFields(o.orderNumber, "السبب (مثال: طلب تجريبي)");
+      d.input.dir = "ltr";
+      if (!(await confirmBox("حذف الطلب نهائياً", [h("p", { class: "warn-box", text: "يُحذف الطلب مع منتجاته وسجله وملاحظاته، ولا يمكن التراجع. يبقى في سجل التدقيق أنه حُذف ومن حذفه ومتى." }), "اكتب رقم الطلب للتأكيد:", d.fields],
+        { okText: "حذف نهائياً", danger: true, fields: d.fields }))) return;
+      if (normNA(d.input.value) !== normNA(o.orderNumber)) { toast("رقم الطلب غير مطابق، فلم يُحذف شيء.", true); return; }
+      await busy(btn, "جاري الحذف…", async () => {
+        try {
+          const r = await api("/orders/delete", { body: { numbers: [o.orderNumber], expectedCount: 1, confirm: "حذف", reason: d.reason.value } });
+          if (r.deleted.length) { toast("تم حذف الطلب نهائياً."); go("/admin/orders"); }
+          else toast("لم يُحذف الطلب: " + (DELETE_REASON[(r.skipped[0] || {}).reason] || ""), true);
+        } catch (x) { if (x.message !== "unauthorized") toast(errText(x), true); }
+      });
+    } }) : h("span", { class: "muted small del-why", text: "لا يمكن حذف هذا الطلب: " + (DELETE_REASON[o.deleteBlock] || o.deleteBlock || "") }));
     return card;
   }
 
@@ -783,7 +820,7 @@ const AUDIT = {
   order_status_changed: "تغيير حالة طلب", order_cancelled: "إلغاء طلب", bulk_status_update: "تحديث جماعي للحالات",
   order_customer_changed: "تعديل بيانات العميل", order_item_added: "إضافة منتج", order_item_removed: "حذف منتج", order_item_quantity_changed: "تغيير كمية",
   order_item_price_changed: "تغيير سعر", order_totals_recalculated: "إعادة حساب الإجمالي", order_note_added: "ملاحظة داخلية",
-  order_archived: "أرشفة طلب", order_unarchived: "إلغاء أرشفة", order_link_revoked: "إلغاء رابط الطلب", order_anonymized: "حذف بيانات شخصية",
+  order_archived: "أرشفة طلب", order_unarchived: "إلغاء أرشفة", order_link_revoked: "إلغاء رابط الطلب", order_anonymized: "حذف بيانات شخصية", order_deleted: "حذف طلب نهائياً", customer_deleted: "حذف عميل نهائياً",
   orders_exported: "تصدير الطلبات", backup_downloaded: "تنزيل نسخة احتياطية",
   order_duplicate_cleared: "ليس مكرراً (بعد المراجعة)", order_duplicate_flagged: "إعادة تنبيه التكرار", shipment_exported: "تصدير شحنة لسينا", shipment_orders_removed: "إزالة طلبات من شحنة", shipment_orders_added: "إضافة طلبات إلى شحنة", stock_claimed: "أخذ علب من المستودع عند الشحن", shipment_file_downloaded: "تنزيل ملف شحنة", shipment_delivery_confirmed: "تأكيد توصيل جماعي",
   shipment_delivery_failed: "تعذّر توصيل (شحنة)", shipment_out_for_delivery: "خرج للتوصيل (شحنة)", shipping_settings_changed: "إعدادات الشحن",
@@ -840,18 +877,34 @@ async function pageCustomers() {
   const main = shell("customers");
   let page = 1;
   const q = h("input", { type: "search", placeholder: "الاسم أو الجوال", "aria-label": "بحث" }), box = h("div"), pager = h("div", { class: "pager" });
-  put(main, h("h1", { text: "العملاء" }), h("p", { class: "muted small", text: "العملاء مجمّعون برقم الجوال من طلباتهم." }),
+  put(main, h("h1", { text: "العملاء" }), h("p", { class: "muted small", text: "العملاء مجمّعون برقم الجوال من طلباتهم." + (can("orders.delete") ? " زر «حذف» يظهر للعميل الذي يمكن حذف كل طلباته (ملغية أو متعذرة)، مثل العملاء التجريبيين." : "") }),
     h("form", { class: "filters", onsubmit: e => { e.preventDefault(); page = 1; load(); } }, q, h("button", { type: "submit", class: "btn primary", text: "بحث" })), box, pager);
   async function load() {
     let d; try { d = await api("/customers?" + new URLSearchParams({ q: q.value.trim(), page })); } catch (e) { if (e.message !== "unauthorized") box.textContent = errText(e); return; }
     box.textContent = "";
     put(box, d.customers.length ? h("div", { class: "table-wrap" }, h("table", null, h("thead", null, h("tr", null, ["الاسم", "الجوال", "المدينة", "عدد الطلبات", "إجمالي المشتريات", "آخر طلب", ""].map(t => h("th", { text: t })))),
       h("tbody", null, d.customers.map(c => h("tr", null, h("td", { text: c.name }), h("td", { class: "num", text: c.phone }), h("td", { text: c.city }), h("td", { class: "num", text: c.orders }),
-        h("td", { text: money(c.spent) }), h("td", { text: day(c.lastOrder) }), h("td", null, h("a", { class: "btn ghost sm", href: "/admin/orders?phone=" + c.phone, "data-link": true, text: "طلباته" }))))))) : h("div", { class: "empty", text: "لا يوجد عملاء." }));
+        h("td", { text: money(c.spent) }), h("td", { text: day(c.lastOrder) }), h("td", null, h("div", { class: "row" }, h("a", { class: "btn ghost sm", href: "/admin/orders?phone=" + c.phone, "data-link": true, text: "طلباته" }),
+          c.deletable ? h("button", { type: "button", class: "btn danger sm", text: "حذف", "aria-label": `حذف العميل ${c.name}`, onclick: e => removeCustomer(e.currentTarget, c) }) : null))))))) : h("div", { class: "empty", text: "لا يوجد عملاء." }));
     const pages = Math.ceil(d.total / d.per); pager.textContent = "";
     put(pager, h("span", { class: "muted", text: `${fmtN(d.total)} عميل` }), h("span", { class: "row" },
       h("button", { type: "button", class: "btn ghost sm", text: "السابق", disabled: page <= 1, onclick: () => { page--; load(); } }),
       h("button", { type: "button", class: "btn ghost sm", text: "التالي", disabled: page >= pages, onclick: () => { page++; load(); } })));
+  }
+  async function removeCustomer(btn, c) {
+    const d = deleteFields("حذف", "السبب (مثال: عميل تجريبي)");
+    if (!(await confirmBox(`حذف العميل «${c.name}»`, [h("p", { class: "warn-box", text: `يُحذف العميل و${c.orders === 1 ? "طلبه" : "طلباته"} (${ordersCount(c.orders)}، كلها ملغية أو متعذرة) نهائياً، ولا يمكن التراجع.` }),
+      "اكتب «حذف» للتأكيد:", d.fields], { okText: "حذف نهائياً", danger: true, fields: d.fields }))) return;
+    await busy(btn, "جاري الحذف…", async () => {
+      try {
+        const r = await api("/customers/delete", { body: { phone: c.phone, confirm: d.input.value.trim(), reason: d.reason.value } });
+        toast(`تم حذف العميل و${ordersCount(r.deleted.length)}.`); load();
+      } catch (x) {
+        if (x.message === "unauthorized") return;
+        if (x.message === "customer_has_kept_orders" && x.data && x.data.orders) await confirmBox("لم يُحذف العميل", h("div", { class: "audit-mini" }, x.data.orders.map(k => h("div", null, h("span", { class: "num", text: k.orderNumber }), " — ", DELETE_REASON[k.reason] || k.reason))), { okText: "حسناً" });
+        else toast(errText(x), true);
+      }
+    });
   }
   load();
 }

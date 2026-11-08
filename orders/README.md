@@ -81,7 +81,7 @@ Orders keep the city exactly as typed: `?city=<key>` is resolved to the spelling
 | Input / output | bound SQL parameters only; LIKE wildcards escaped; control/bidi characters stripped; admin UI renders with `textContent`; strict CSP (`script-src 'self'`, no inline script, no third-party resources), `frame-ancestors 'none'`, `noindex`. CSV export neutralises spreadsheet formulas. |
 | Customer access | tracking needs order number **and** the order's mobile; secure link uses an HMAC token (revocable via `token_version`); unknown order, wrong phone and wrong token give the same `404`; internal ids, internal notes and admin names never reach customers. |
 | Audit | `audit_logs` and `order_status_history` are append-only (database triggers block UPDATE/DELETE). Logged: logins (ok/failed/locked), logout, setup, password/2FA changes, admin create/update, customer field changes (before → after), item add/remove/quantity/price (with reason), totals recalculation, status changes (incl. overrides), bulk updates, cancellation, notes, archive, link revocation, privacy erase, export, backup — with IP and user agent. |
-| Deletion | orders are never deleted. Super Admin can archive finished orders or erase personal data for a privacy request (amounts and history stay). |
+| Deletion | only a cancelled or failed order can be deleted (Super Admin, `orders.delete`, see «Deleting cancelled orders»). Other orders are archived, or their personal data erased for a privacy request (amounts and history stay). |
 
 ## API
 
@@ -283,6 +283,27 @@ it, press it again to remove it, «الكل» clears. List, «تحديد كل ا
 
 **Orders table columns** can be resized by dragging the edge of a header (or ←/→ on the focused edge); widths are kept per
 browser (`localStorage` `cg-cols:orders`), double-click an edge to reset. Permission `shipments.manage` (Super Admin, Order Manager) plus the normal status permissions.
+
+## Deleting cancelled orders and test customers (migration `0010`)
+
+Super Admin (`orders.delete`) can delete a **cancelled or failed** order for good: from its page («حذف الطلب نهائياً», type
+the order number), from the orders list (select, «حذف نهائياً», type «حذف»), or a whole customer from «العملاء» («حذف»,
+offered only when every order on that mobile can be deleted). A reason is optional. `POST /admin/api/orders/delete`
+`{numbers, expectedCount, confirm: "حذف", reason}` → `{deleted, skipped:[{orderNumber, reason}]}`;
+`POST /admin/api/customers/delete` `{phone, confirm, reason}` (409 `customer_has_kept_orders` with the list).
+
+Kept, with the reason shown: an order that was in a shipment file downloaded for SENA (`in_shipment_file`: it stays in its
+batch for reconciling with SENA), one with real stock movement — sale, return or a reservation not released (`stock_moved`),
+one tied to an expense (`has_expense`). Deleted with the order: items, status history, notes, notifications, its released
+reservation and its RESERVATION/RELEASE ledger rows (they add up to zero, so stock and the reconcile check do not change),
+a removed shipment row that was never in a downloaded file, and the saved customer if no order is left. Order numbers are
+not reused. The audit log keeps `order_deleted` (who, when, reason, status, total, boxes, date, source — no name or mobile)
+and `customer_deleted` (masked mobile, the orders); earlier audit entries of the order stay.
+
+Database guards: status history and ledger rows stay undeletable unless their order carries a `purge_token`, which only a
+cancelled or failed order can carry and which the delete sets in the same transaction; an order without one cannot be
+deleted; SALE/RETURN ledger rows and the audit log can never be deleted. Batches of 50 (D1's 100-parameter limit).
+Tests: `e2e/orders_delete.mjs` (51), `e2e/rehearse_0010.mjs` (on a production copy).
 
 ## Backup and recovery
 

@@ -188,7 +188,7 @@ export async function markDuplicate(env, ctx, number, body) {
 export async function orderDetail(env, ctx, number) {
   need(ctx, "orders.view");
   const full = await getOrderOr404(env, number), o = full.order, fin = ctx.perms.has("finance.view");
-  const [notes, auditRows, reservations, invTx, shipments, peers] = await Promise.all([
+  const [notes, auditRows, reservations, invTx, shipments, peers, delRow] = await Promise.all([
     env.DB.prepare("SELECT note, created_by, created_at FROM order_notes WHERE order_id = ?1 ORDER BY id").bind(o.id).all(),
     ctx.perms.has("audit.view") || ctx.perms.has("orders.edit_customer")
       ? env.DB.prepare("SELECT username, action, old_value, new_value, created_at FROM audit_logs WHERE entity_type = 'order' AND entity_id = ?1 ORDER BY id DESC LIMIT 200").bind(o.order_number).all()
@@ -196,7 +196,8 @@ export async function orderDetail(env, ctx, number) {
     ctx.perms.has("inventory.view") ? env.DB.prepare("SELECT * FROM inventory_reservations WHERE order_id = ?1").bind(o.id).all() : Promise.resolve({ results: [] }),
     ctx.perms.has("inventory.view") ? env.DB.prepare("SELECT * FROM inventory_transactions WHERE order_id = ?1 ORDER BY id").bind(o.id).all() : Promise.resolve({ results: [] }),
     env.DB.prepare("SELECT s.shipment_ref, s.created_at, s.removed_at, s.removed_reason, b.id, b.batch_no, b.name FROM shipment_orders s JOIN shipment_batches b ON b.id = s.batch_id WHERE s.order_id = ?1 ORDER BY s.id").bind(o.id).all(),
-    o.anonymized_at ? Promise.resolve({ results: [] }) : duplicatePeers(env.DB, o.id)
+    o.anonymized_at ? Promise.resolve({ results: [] }) : duplicatePeers(env.DB, o.id),
+    ctx.perms.has("orders.delete") ? env.DB.prepare(`SELECT ${DELETE_BLOCK} block FROM orders o WHERE o.id = ?1`).bind(o.id).first() : Promise.resolve(null)
   ]);
   const flagged = (await env.DB.prepare(`SELECT ${DUP_FLAGGED} f FROM orders o WHERE o.id = ?`).bind(o.id).first()).f === 1;
   const delivered = o.status === "DELIVERED", closed = ["CANCELLED", "FAILED"].includes(o.status);
@@ -227,7 +228,8 @@ export async function orderDetail(env, ctx, number) {
     } : null,
     nextStatuses: o.anonymized_at ? [] : nextOptions(ctx.perms, o.status),
     can: Object.fromEntries(["orders.edit_customer", "orders.edit_items", "orders.edit_price", "orders.notes", "orders.revoke_link", "orders.archive", "orders.anonymize"]
-      .map(p => [p.split(".")[1], ctx.perms.has(p) && !o.anonymized_at]))
+      .map(p => [p.split(".")[1], ctx.perms.has(p) && !o.anonymized_at]).concat([["delete", !!delRow && !delRow.block]])),
+    deleteBlock: delRow ? delRow.block : null
   };
 }
 /* ---------- status change: one transition, used by the single and the bulk change ----------
@@ -479,6 +481,87 @@ export async function anonymize(env, ctx, number, body) {
   return orderDetail(env, ctx, o.order_number);
 }
 
+/* ---------- deleting cancelled orders for good (test orders, duplicates) ----------
+   Only a cancelled or failed order, and not one SENA received in a shipment file, one with real stock movement or one tied to an
+   expense: those stay for the shipment, stock and finance records. The audit log keeps who deleted which order, when and why. */
+const DELETE_BLOCKS = [
+  ["in_shipment_file", "EXISTS (SELECT 1 FROM shipment_orders s WHERE s.order_id = o.id AND s.downloaded_at IS NOT NULL)"],
+  ["stock_moved", `(EXISTS (SELECT 1 FROM inventory_consumptions c WHERE c.order_id = o.id)
+    OR EXISTS (SELECT 1 FROM inventory_transactions t WHERE t.order_id = o.id AND t.type NOT IN ('RESERVATION','RELEASE'))
+    OR EXISTS (SELECT 1 FROM inventory_reservations r WHERE r.order_id = o.id AND r.status <> 'RELEASED'))`],
+  ["has_expense", "EXISTS (SELECT 1 FROM expenses e WHERE e.order_id = o.id)"]
+];
+const DELETABLE = `o.status IN ('CANCELLED','FAILED') AND NOT ${DELETE_BLOCKS.map(b => b[1]).join(" AND NOT ")}`;
+// why an order cannot be deleted, or NULL when it can
+const DELETE_BLOCK = `CASE WHEN o.status NOT IN ('CANCELLED','FAILED') THEN 'not_cancelled' ${DELETE_BLOCKS.map(([k, sql]) => `WHEN ${sql} THEN '${k}'`).join(" ")} END`;
+const DELETE_CHUNK = 50;     // D1 binds at most 100 parameters a query
+const DELETE_WORD = "حذف";
+const forDelete = (db, where, binds) => db.prepare(`SELECT o.id, o.order_number, o.status, o.customer_id, o.customer_phone, o.total_amount, o.boxes,
+  o.created_at, o.source, ${DELETE_BLOCK} block FROM orders o WHERE ${where} ORDER BY o.id`).bind(...binds).all().then(r => r.results);
+
+// One transaction: mark the orders (only those still deletable), record each in the audit log, remove what belongs to them, then
+// the orders and any saved customer left with none. Returns the numbers actually deleted.
+async function purgeOrders(env, ctx, rows, reason, via) {
+  const token = crypto.randomUUID(), ids = rows.map(r => r.id), IN = ids.map((_, i) => "?" + (i + 2)).join(",");
+  const mine = "SELECT id FROM orders WHERE purge_token = ?1", del = sql => env.DB.prepare(sql).bind(token);
+  const phones = [...new Set(rows.map(r => r.customer_phone))], custIds = [...new Set(rows.map(r => r.customer_id).filter(x => x != null))];
+  const res = await env.DB.batch([
+    env.DB.prepare(`UPDATE orders SET purge_token = ?1 WHERE id IN (SELECT o.id FROM orders o WHERE o.id IN (${IN}) AND ${DELETABLE})`).bind(token, ...ids),
+    ...rows.map(r => auditStmt(env, ctx, "order_deleted", "order", r.order_number,
+      { status: r.status, total: r.total_amount, boxes: r.boxes, createdAt: r.created_at, source: r.source }, { reason: reason || undefined, via },
+      { sql: "EXISTS (SELECT 1 FROM orders WHERE id = ?11 AND purge_token = ?12)", binds: [r.id, token] })),
+    ...["shipment_orders", "inventory_transactions", "inventory_reservations", "notification_outbox", "order_notes", "order_status_history", "order_items"]
+      .map(t => del(`DELETE FROM ${t} WHERE order_id IN (${mine})`)),
+    del("DELETE FROM orders WHERE purge_token = ?1"),
+    env.DB.prepare(`DELETE FROM customers WHERE (phone IN (${phones.map((_, i) => "?" + (i + 1)).join(",")})${custIds.length ? ` OR id IN (${custIds.map((_, i) => "?" + (phones.length + i + 1)).join(",")})` : ""})
+      AND NOT EXISTS (SELECT 1 FROM orders x WHERE x.customer_id = customers.id OR x.customer_phone = customers.phone)`).bind(...phones, ...custIds)
+  ]);
+  if (!res[0].meta.changes) return [];
+  const left = new Set((await env.DB.prepare(`SELECT order_number FROM orders WHERE id IN (${ids.map((_, i) => "?" + (i + 1)).join(",")})`).bind(...ids).all()).results.map(r => r.order_number));
+  return rows.map(r => r.order_number).filter(n => !left.has(n));
+}
+
+export async function deleteOrders(env, ctx, body) {
+  need(ctx, "orders.delete");
+  const numbers = [...new Set((Array.isArray(body && body.numbers) ? body.numbers : []).map(normalizeOrderNumber).filter(Boolean))];
+  if (!numbers.length) throw new HttpError(422, { error: "nothing_selected" });
+  if (numbers.length > BULK_MAX) throw new HttpError(422, { error: "too_many", max: BULK_MAX });
+  if (body.expectedCount != null && Number(body.expectedCount) !== numbers.length) throw new HttpError(409, { error: "selection_changed" });
+  if (String(body.confirm || "").trim() !== DELETE_WORD) throw new HttpError(422, { error: "confirmation_required" });
+  const reason = clean(body.reason, 200), deleted = [], skipped = [];
+  for (let i = 0; i < numbers.length; i += DELETE_CHUNK) {
+    const part = numbers.slice(i, i + DELETE_CHUNK);
+    const rows = await forDelete(env.DB, `o.order_number IN (${part.map((_, j) => "?" + (j + 1)).join(",")})`, part), found = new Map(rows.map(r => [r.order_number, r]));
+    for (const n of part) { const r = found.get(n); if (!r) skipped.push({ orderNumber: n, reason: "not_found" }); else if (r.block) skipped.push({ orderNumber: n, reason: r.block, status: r.status }); }
+    const go = rows.filter(r => !r.block);
+    if (!go.length) continue;
+    const done = await purgeOrders(env, ctx, go, reason, "orders");
+    deleted.push(...done);
+    for (const r of go) if (!done.includes(r.order_number)) skipped.push({ orderNumber: r.order_number, reason: "order_changed" });
+  }
+  return { deleted, skipped };
+}
+
+// A customer (all orders on one mobile number) is deleted only when every one of those orders can be.
+export async function deleteCustomer(env, ctx, body) {
+  need(ctx, "orders.delete");
+  const phone = normalizePhone(body && body.phone);
+  if (!phone) throw new HttpError(422, { error: "invalid_phone" });
+  if (String(body.confirm || "").trim() !== DELETE_WORD) throw new HttpError(422, { error: "confirmation_required" });
+  const rows = await forDelete(env.DB, "o.customer_phone = ?1", [phone]);
+  if (rows.length > DELETE_CHUNK) throw new HttpError(422, { error: "too_many", max: DELETE_CHUNK });
+  const kept = rows.filter(r => r.block);
+  if (kept.length) throw new HttpError(409, { error: "customer_has_kept_orders", orders: kept.map(r => ({ orderNumber: r.order_number, reason: r.block, status: r.status })) });
+  const reason = clean(body.reason, 200), masked = localPhone(phone).slice(0, 3) + "•••••" + localPhone(phone).slice(-2);
+  const deleted = rows.length ? await purgeOrders(env, ctx, rows, reason, "customer") : [];
+  if (deleted.length !== rows.length) throw new HttpError(409, { error: "order_changed", deleted });
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM customers WHERE phone = ?1 AND NOT EXISTS (SELECT 1 FROM orders x WHERE x.customer_id = customers.id OR x.customer_phone = customers.phone)").bind(phone),
+    auditStmt(env, ctx, "customer_deleted", "customer", masked, { orders: deleted }, { reason: reason || undefined })
+  ]);
+  return { deleted, phone: localPhone(phone) };
+}
+
 /* ---------- dashboard and reports (optional ?city=<key>) ---------- */
 // " AND city IN (?n, …)" numbered after the query's own parameters; " AND 0" for a city without orders; "" without a filter
 function cityClause(spellings, col, first) {
@@ -569,11 +652,13 @@ export async function customers(env, ctx, params) {
   const [rows, count] = await Promise.all([
     env.DB.prepare(`SELECT customer_phone, (SELECT customer_name FROM orders x WHERE x.customer_phone = o.customer_phone ORDER BY id DESC LIMIT 1) name,
         (SELECT city FROM orders x WHERE x.customer_phone = o.customer_phone ORDER BY id DESC LIMIT 1) city,
-        COUNT(*) orders, COALESCE(SUM(CASE WHEN status NOT IN ('CANCELLED','FAILED') THEN total_amount END), 0) spent, MAX(created_at) last_order
+        COUNT(*) orders, COALESCE(SUM(CASE WHEN status NOT IN ('CANCELLED','FAILED') THEN total_amount END), 0) spent, MAX(created_at) last_order,
+        SUM(CASE WHEN ${DELETE_BLOCK} IS NULL THEN 0 ELSE 1 END) kept
       FROM orders o ${w} GROUP BY customer_phone ORDER BY last_order DESC LIMIT ${per} OFFSET ${(page - 1) * per}`).bind(...binds).all(),
     env.DB.prepare(`SELECT COUNT(DISTINCT customer_phone) n FROM orders ${w}`).bind(...binds).first()
   ]);
-  return { customers: rows.results.map(r => ({ phone: localPhone(r.customer_phone), name: r.name, city: r.city, orders: r.orders, spent: r.spent, lastOrder: r.last_order })),
+  return { customers: rows.results.map(r => ({ phone: localPhone(r.customer_phone), name: r.name, city: r.city, orders: r.orders, spent: r.spent, lastOrder: r.last_order,
+      deletable: ctx.perms.has("orders.delete") && !r.kept })),
     total: count.n, page, per };
 }
 
@@ -731,7 +816,7 @@ export async function backup(env, ctx) {
   const tables = ["orders", "order_items", "order_status_history", "order_notes", "notification_outbox", "order_counters", "audit_logs", "roles", "permissions", "role_permissions", "catalog_cache",
     "customers", "products", "inventory_settings", "inventory_balances", "inventory_batches", "inventory_reservations", "inventory_consumptions", "inventory_adjustments",
     "inventory_transactions", "inventory_alerts", "expense_categories", "expenses", "shipping_settings", "shipment_batches", "shipment_orders"];
-  const out = { exportedAt: now(), exportedBy: ctx.user.username, schema: "0009", tables: {} };
+  const out = { exportedAt: now(), exportedBy: ctx.user.username, schema: "0010", tables: {} };
   for (const t of tables) out.tables[t] = (await env.DB.prepare(`SELECT * FROM ${t} ORDER BY rowid LIMIT 100000`).all()).results;
   out.tables.users = (await env.DB.prepare("SELECT id, username, display_name, role_id, is_active, created_at, updated_at FROM users ORDER BY id").all()).results;
   await audit(env, ctx, "backup_downloaded", "system", null, null, Object.fromEntries(Object.entries(out.tables).map(([k, v]) => [k, v.length])));
