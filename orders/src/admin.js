@@ -646,12 +646,14 @@ export async function customers(env, ctx, params) {
   if (q) {
     const digits = latinDigits(q).replace(/\D/g, "");
     if (digits.length >= 4) { where.push(`customer_phone LIKE ?${binds.push("%" + digits.replace(/^0/, "").replace(/^966/, "") + "%")}`); }
-    else where.push(`customer_name LIKE ?${binds.push("%" + q.replace(/[\\%_]/g, c => "\\" + c) + "%")} ESCAPE '\\'`);
+    else { const like = "%" + q.replace(/[\\%_]/g, c => "\\" + c) + "%";
+      where.push(`(customer_name LIKE ?${binds.push(like)} ESCAPE '\\' OR customer_phone IN (SELECT phone FROM customers WHERE name LIKE ?${binds.push(like)} ESCAPE '\\'))`); }
   }
   const w = "WHERE " + where.join(" AND ");
+  // name and city: the saved customer first (edited on the customer page), else the latest order
   const [rows, count] = await Promise.all([
-    env.DB.prepare(`SELECT customer_phone, (SELECT customer_name FROM orders x WHERE x.customer_phone = o.customer_phone ORDER BY id DESC LIMIT 1) name,
-        (SELECT city FROM orders x WHERE x.customer_phone = o.customer_phone ORDER BY id DESC LIMIT 1) city,
+    env.DB.prepare(`SELECT customer_phone, COALESCE((SELECT c.name FROM customers c WHERE c.phone = o.customer_phone), (SELECT customer_name FROM orders x WHERE x.customer_phone = o.customer_phone ORDER BY id DESC LIMIT 1)) name,
+        COALESCE((SELECT NULLIF(c.city, '') FROM customers c WHERE c.phone = o.customer_phone), (SELECT city FROM orders x WHERE x.customer_phone = o.customer_phone ORDER BY id DESC LIMIT 1)) city,
         COUNT(*) orders, COALESCE(SUM(CASE WHEN status NOT IN ('CANCELLED','FAILED') THEN total_amount END), 0) spent, MAX(created_at) last_order,
         SUM(CASE WHEN ${DELETE_BLOCK} IS NULL THEN 0 ELSE 1 END) kept
       FROM orders o ${w} GROUP BY customer_phone ORDER BY last_order DESC LIMIT ${per} OFFSET ${(page - 1) * per}`).bind(...binds).all(),
@@ -660,6 +662,110 @@ export async function customers(env, ctx, params) {
   return { customers: rows.results.map(r => ({ phone: localPhone(r.customer_phone), name: r.name, city: r.city, orders: r.orders, spent: r.spent, lastOrder: r.last_order,
       deletable: ctx.perms.has("orders.delete") && !r.kept })),
     total: count.n, page, per };
+}
+
+/* ---------- one customer: saved profile (shipping details), orders, edit ----------
+   The saved customer (table customers, one per mobile number) is what the customer page shows and edits, and what a quick
+   order from that page uses. Orders keep their own copy of the details; an edit can be applied to the customer's orders that
+   have not left for the carrier yet (never to one in a shipment or already delivered: SENA has those details). A changed
+   mobile number moves with all the customer's orders, so they stay under one customer and tracking uses the new number. */
+const OPEN_UNSHIPPED = `o.anonymized_at IS NULL AND o.status IN ('RECEIVED','CONFIRMED','PREPARING','ON_HOLD')
+  AND NOT EXISTS (SELECT 1 FROM shipment_orders s WHERE s.order_id = o.id AND s.removed_at IS NULL)`;
+// key → [customers column, orders column, max length, min length]
+const PROFILE_FIELDS = { name: ["name", "customer_name", 60, 2], phone: ["phone", "customer_phone", 20, 0], city: ["city", "city", 60, 2], district: ["district", "district", 60, 2],
+  address: ["address", "address", 200, 3], nationalAddress: ["national_address", "national_address", 20, 0], notes: ["notes", "customer_notes", 500, 0] };
+
+async function savedCustomer(env, phone) {
+  const c = await env.DB.prepare("SELECT * FROM customers WHERE phone = ?").bind(phone).first();
+  if (c) return c;
+  // a number with orders but no saved record (older data): create it from its latest order
+  const o = await env.DB.prepare("SELECT * FROM orders WHERE customer_phone = ? AND anonymized_at IS NULL ORDER BY id DESC LIMIT 1").bind(phone).first();
+  if (!o) throw new HttpError(404, { error: "not_found" });
+  await env.DB.batch([
+    env.DB.prepare(`INSERT INTO customers (phone, name, city, district, address, created_by, created_at, updated_at, national_address, notes) VALUES (?1, ?2, ?3, ?4, ?5, 'customer', ?6, ?6, ?7, ?8)
+      ON CONFLICT (phone) DO NOTHING`).bind(phone, o.customer_name, o.city || "", o.district || "", o.address || "", o.created_at, o.national_address || null, o.customer_notes || ""),
+    env.DB.prepare("UPDATE orders SET customer_id = (SELECT id FROM customers WHERE phone = ?1) WHERE customer_phone = ?1 AND customer_id IS NULL AND anonymized_at IS NULL").bind(phone)
+  ]);
+  return env.DB.prepare("SELECT * FROM customers WHERE phone = ?").bind(phone).first();
+}
+
+export async function customerDetail(env, ctx, phoneParam) {
+  need(ctx, "customers.view");
+  const phone = normalizePhone(phoneParam);
+  if (!phone) throw new HttpError(404, { error: "not_found" });
+  const c = await savedCustomer(env, phone);
+  const rows = (await env.DB.prepare(`SELECT o.order_number, o.created_at, o.updated_at, o.status, o.boxes, o.total_amount, o.source, o.archived_at,
+      o.location_latitude lat, o.location_longitude lng, CASE WHEN ${OPEN_UNSHIPPED} THEN 1 ELSE 0 END open_unshipped, ${DELETE_BLOCK} del
+    FROM orders o WHERE o.customer_phone = ? AND o.anonymized_at IS NULL ORDER BY o.id DESC`).bind(phone).all()).results;
+  const live = rows.filter(r => !["CANCELLED", "FAILED"].includes(r.status)), loc = rows.find(r => r.lat != null && r.lng != null);
+  const deletable = ctx.perms.has("orders.delete") && rows.length > 0 && rows.every(r => !r.del);
+  return {
+    customer: { id: c.id, name: c.name, phone: localPhone(c.phone), phoneIntl: c.phone, city: c.city, district: c.district, address: c.address,
+      nationalAddress: c.national_address || null, notes: c.notes || "", createdAt: c.created_at, createdBy: c.created_by, updatedAt: c.updated_at,
+      location: loc ? { lat: loc.lat, lng: loc.lng } : null },
+    stats: { orders: rows.length, spent: live.reduce((a, r) => a + r.total_amount, 0), boxes: live.reduce((a, r) => a + r.boxes, 0),
+      delivered: rows.filter(r => r.status === "DELIVERED").length, open: rows.filter(r => r.open_unshipped).length,
+      firstOrder: rows.length ? rows[rows.length - 1].created_at : null, lastOrder: rows.length ? rows[0].created_at : null },
+    orders: rows.map(r => ({ orderNumber: r.order_number, createdAt: r.created_at, status: r.status, boxes: r.boxes, total: r.total_amount, source: r.source,
+      archived: !!r.archived_at, openUnshipped: !!r.open_unshipped })),
+    can: { edit: ctx.perms.has("orders.edit_customer"), createOrder: ctx.perms.has("orders.create"),
+      confirm: ctx.perms.has("orders.status") || ctx.perms.has("orders.status.limited"), discount: ctx.perms.has("orders.discount"), delete: deletable }
+  };
+}
+
+export async function editCustomerProfile(env, ctx, phoneParam, body) {
+  need(ctx, "orders.edit_customer");
+  body = body || {};
+  const phone = normalizePhone(phoneParam);
+  if (!phone) throw new HttpError(404, { error: "not_found" });
+  const c = await savedCustomer(env, phone);
+  if (body.expectedUpdatedAt && body.expectedUpdatedAt !== c.updated_at) throw new HttpError(409, { error: "record_changed" });
+  const input = body.customer && typeof body.customer === "object" ? body.customer : {};
+  const changes = [], errors = {};
+  for (const [key, [col, ocol, max, min]] of Object.entries(PROFILE_FIELDS)) {
+    if (!(key in input)) continue;
+    let v;
+    if (key === "nationalAddress") {
+      const raw = clean(input.nationalAddress, max);
+      v = raw ? normalizeNationalAddress(raw) : null;
+      if (raw && !v) { errors.nationalAddress = "invalid"; continue; }
+      if (v !== (c.national_address || null)) changes.push({ key, col, ocol, old: c.national_address || null, new: v });
+      continue;
+    }
+    if (key === "phone") { v = normalizePhone(input.phone); if (!v) { errors.phone = "invalid_phone"; continue; } }
+    else v = clean(input[key], max);
+    if (key === "name" && !/\p{L}/u.test(v)) { errors.name = "required"; continue; }
+    if (v.length < min) { errors[key] = "required"; continue; }
+    if (v !== (c[col] ?? "")) changes.push({ key, col, ocol, old: c[col] ?? "", new: v });
+  }
+  if (Object.keys(errors).length) throw new HttpError(422, { error: "validation", fields: errors });
+  if (!changes.length) return { ...(await customerDetail(env, ctx, phone)), applied: [] };
+
+  const phoneChange = changes.find(x => x.key === "phone"), fields = changes.filter(x => x.key !== "phone");
+  if (phoneChange) {
+    const taken = await env.DB.prepare(`SELECT 1 FROM customers WHERE phone = ?1 UNION ALL SELECT 1 FROM orders WHERE customer_phone = ?1 AND anonymized_at IS NULL LIMIT 1`).bind(phoneChange.new).first();
+    if (taken) throw new HttpError(409, { error: "phone_taken" });
+  }
+  // the customer's orders that take the edit: the new mobile number goes on all of them; the other details only on orders
+  // not with the carrier yet, and only when asked
+  const targets = (await env.DB.prepare(`SELECT o.id, o.order_number, o.customer_name, o.customer_phone, o.city, o.district, o.address, o.national_address, o.customer_notes,
+      CASE WHEN ${OPEN_UNSHIPPED} THEN 1 ELSE 0 END open_unshipped FROM orders o WHERE o.customer_phone = ? AND o.anonymized_at IS NULL ORDER BY o.id`).bind(phone).all()).results;
+  const t = now(), shown = (k, v) => k === "phone" ? localPhone(v) : v;
+  const stmts = [env.DB.prepare(`UPDATE customers SET ${changes.map((x, i) => `${x.col} = ?${i + 1}`).join(", ")}, updated_at = ?${changes.length + 1} WHERE id = ?${changes.length + 2}`)
+    .bind(...changes.map(x => x.new), t, c.id)];
+  const applied = [];
+  for (const o of targets) {
+    const per = [...(phoneChange ? [phoneChange] : []), ...(body.applyToOrders && o.open_unshipped ? fields : [])].filter(x => (o[x.ocol] ?? (x.key === "nationalAddress" ? null : "")) !== x.new);
+    if (!per.length) continue;
+    applied.push(o.order_number);
+    stmts.push(env.DB.prepare(`UPDATE orders SET ${per.map((x, i) => `${x.ocol} = ?${i + 1}`).join(", ")}, updated_at = ?${per.length + 1} WHERE id = ?${per.length + 2}`)
+      .bind(...per.map(x => x.new), t, o.id));
+    per.forEach(x => stmts.push(auditStmt(env, ctx, "order_customer_changed", "order", o.order_number, { field: x.key, value: shown(x.key, o[x.ocol]) }, { field: x.key, value: shown(x.key, x.new), via: "customer_page" })));
+  }
+  stmts.push(auditStmt(env, ctx, "customer_edited", "customer", localPhone(phoneChange ? phoneChange.new : phone),
+    Object.fromEntries(changes.map(x => [x.key, shown(x.key, x.old)])), { ...Object.fromEntries(changes.map(x => [x.key, shown(x.key, x.new)])), orders: applied }));
+  await env.DB.batch(stmts);
+  return { ...(await customerDetail(env, ctx, phoneChange ? phoneChange.new : phone)), applied };
 }
 
 export async function products(env, ctx) {
@@ -888,5 +994,5 @@ export async function customerLookup(env, ctx, params) {
   const rows = digits.length >= 4
     ? (await env.DB.prepare("SELECT * FROM customers WHERE phone LIKE ? ORDER BY updated_at DESC LIMIT 10").bind("%" + digits.replace(/^0/, "").replace(/^966/, "") + "%").all()).results
     : (await env.DB.prepare("SELECT * FROM customers WHERE name LIKE ? ESCAPE '\\' ORDER BY updated_at DESC LIMIT 10").bind("%" + q.replace(/[\\%_]/g, c => "\\" + c) + "%").all()).results;
-  return { customers: rows.map(c => ({ id: c.id, name: c.name, phone: localPhone(c.phone), city: c.city, district: c.district, address: c.address, nationalAddress: c.national_address || null })) };
+  return { customers: rows.map(c => ({ id: c.id, name: c.name, phone: localPhone(c.phone), city: c.city, district: c.district, address: c.address, nationalAddress: c.national_address || null, notes: c.notes || "" })) };
 }

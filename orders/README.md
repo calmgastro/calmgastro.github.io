@@ -305,6 +305,25 @@ cancelled or failed order can carry and which the delete sets in the same transa
 deleted; SALE/RETURN ledger rows and the audit log can never be deleted. Batches of 50 (D1's 100-parameter limit).
 Tests: `e2e/orders_delete.mjs` (51), `e2e/rehearse_0010.mjs` (on a production copy).
 
+## Customer page (migration `0011`)
+
+Admin → العملاء → a name (or «فتح») opens `/admin/customers/05XXXXXXXX`: the saved customer (table `customers`, one per mobile
+number) with every contact and shipping detail — name, mobile, city, district, address, national address and, since `0011`,
+delivery notes (`customers.notes`, filled once from each customer's latest order) — totals, and all the customer's orders.
+`GET /admin/api/customers/{phone}` (`customers.view`) · `POST /admin/api/customers/{phone}` `{customer:{…changed fields}, applyToOrders,
+expectedUpdatedAt}` (`orders.edit_customer`; 409 `record_changed` on an old version, 409 `phone_taken`).
+
+- **Edit:** saves the customer record. With «طبّق التعديل على طلباته التي لم تُشحن بعد» (on by default) the same details go on the
+  customer's orders that are Received / Confirmed / Preparing / On hold and in no active shipment row; shipped, delivered and
+  cancelled orders never change (SENA has their details). A new mobile number moves to **all** the customer's orders, so they stay
+  one customer and tracking works with the new number; a number that already belongs to another customer is refused. Audited as
+  `customer_edited` plus `order_customer_changed` per changed field on each order (`via: customer_page`).
+- **Quick order:** «طلب جديد لهذا العميل» — choose the number of boxes (1–6 buttons or ±), optional first status and internal note;
+  the price is previewed live and the order is created through `POST /orders/new` with the saved details (`saveProfile: false`,
+  one idempotency key per page load, so a double click creates one order).
+- Orders created from the admin form now save the delivery notes on a new customer record (and on «update the saved customer»);
+  website orders still never overwrite an existing record. Tests: `e2e/customer_page.mjs` (43), `e2e/rehearse_0011.mjs`.
+
 ## Backup and recovery
 
 - D1 **Time Travel**: restore the database to any minute of the last 7 days (free plan):

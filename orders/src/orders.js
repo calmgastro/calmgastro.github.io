@@ -163,18 +163,18 @@ export async function insertOrder(env, catalog, o, q, opts) {
   const orderId = "(SELECT id FROM orders WHERE idempotency_key = ?1)";
   // customer record per mobile number: website orders never overwrite it; an admin may choose to update it
   const customerSql = opts.saveProfile
-    ? `INSERT INTO customers (phone, name, city, district, address, created_by, created_at, updated_at, national_address) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8)
+    ? `INSERT INTO customers (phone, name, city, district, address, created_by, created_at, updated_at, national_address, notes) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8, ?9)
        ON CONFLICT (phone) DO UPDATE SET name = excluded.name, city = excluded.city, district = excluded.district, address = excluded.address,
-         national_address = COALESCE(excluded.national_address, customers.national_address), updated_at = excluded.updated_at`
+         national_address = COALESCE(excluded.national_address, customers.national_address), notes = excluded.notes, updated_at = excluded.updated_at`
     // website orders never overwrite the record; they only fill a national address it does not have yet
-    : `INSERT INTO customers (phone, name, city, district, address, created_by, created_at, updated_at, national_address) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8)
+    : `INSERT INTO customers (phone, name, city, district, address, created_by, created_at, updated_at, national_address, notes) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8, ?9)
        ON CONFLICT (phone) DO UPDATE SET national_address = COALESCE(customers.national_address, excluded.national_address)`;
   const inv = await creationStmts(db, { items: q.lines.map(l => ({ productId: l.productId, boxesPerUnit: l.boxesPerUnit, quantity: l.quantity })),
     oid: { sql: "(SELECT id FROM orders WHERE idempotency_key = ?)", binds: [o.key] }, actor: opts.actor, userId: opts.userId, t: now, key: o.key,
     label: opts.source === "ADMIN" ? "admin_order" : "website_order" });
   const stmts = [
     db.prepare("INSERT INTO order_counters (year, last_value) VALUES (?1, 1) ON CONFLICT(year) DO UPDATE SET last_value = last_value + 1").bind(year),
-    db.prepare(customerSql).bind(o.customer.phone, o.customer.name, o.customer.city, o.customer.district, o.customer.address, opts.actor, now, o.customer.nationalAddress),
+    db.prepare(customerSql).bind(o.customer.phone, o.customer.name, o.customer.city, o.customer.district, o.customer.address, opts.actor, now, o.customer.nationalAddress, o.customer.notes || ""),
     db.prepare(`INSERT INTO orders (order_number, idempotency_key, request_hash, customer_name, customer_phone, city, district, address,
         location_latitude, location_longitude, customer_notes, boxes, subtotal, discount_amount, shipping_amount, total_amount,
         currency, payment_method, status, lang, created_at, updated_at, source, created_by, created_by_user_id, customer_id, manual_discount, manual_discount_reason, national_address)

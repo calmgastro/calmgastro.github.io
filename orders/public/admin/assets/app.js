@@ -48,7 +48,7 @@ const ERR = {
   username_taken: "اسم المستخدم مستخدم.", last_super_admin: "لا يمكن إزالة آخر مدير عام نشط.", cannot_disable_self: "لا يمكنك تعطيل حسابك.",
   invalid_code: "الرمز غير صحيح.", invalid_setup_key: "كلمة مرور الإعداد غير صحيحة.", setup_done: "تم الإعداد مسبقاً. سجّل الدخول.",
   too_many: "الحد الأقصى 500 طلب في المرة الواحدة.",
-  confirmation_required: "لم تُكتب كلمة التأكيد كما هي، فلم يُحذف شيء.", customer_has_kept_orders: "لم يُحذف العميل: بعض طلباته لا يمكن حذفها.", invalid_phone: "رقم الجوال غير صحيح.", selection_changed: "تغيّر التحديد. أعد المحاولة.", nothing_selected: "لم تحدد أي طلب.",
+  confirmation_required: "لم تُكتب كلمة التأكيد كما هي، فلم يُحذف شيء.", customer_has_kept_orders: "لم يُحذف العميل: بعض طلباته لا يمكن حذفها.", invalid_phone: "رقم الجوال غير صحيح.", phone_taken: "رقم الجوال هذا مسجّل لعميل آخر، فلم يُحفظ شيء.", selection_changed: "تغيّر التحديد. أعد المحاولة.", nothing_selected: "لم تحدد أي طلب.",
   empty_note: "اكتب الملاحظة أولاً.", only_finished_orders: "الأرشفة للطلبات المنتهية فقط (تم التوصيل، ملغي، متعذّر).",
   validation: "تحقق من البيانات المدخلة.", not_found: "غير موجود.", password_change_required: "يجب تغيير كلمة المرور أولاً.",
   insufficient_stock: "المخزون المتوفر لا يكفي لهذه العملية.", reservation_mismatch: "كمية الحجز لا تطابق الطلب. حدّث الصفحة.",
@@ -186,6 +186,8 @@ async function route() {
   if (sa) return can("shipments.manage") ? pageShipmentAdd(sa[1]) : go("/admin/shipments/" + sa[1], true);
   const sm = path.match(/^\/admin\/shipments\/(\d{1,9})$/);
   if (sm && session.nav.includes("shipments")) return pageShipment(sm[1]);
+  const cm = path.match(/^\/admin\/customers\/(0?5\d{8})$/);
+  if (cm && session.nav.includes("customers")) return pageCustomer(cm[1]);
   const m = path.match(/^\/admin\/orders\/([A-Za-z0-9-]+)$/);
   if (m) return pageOrder(m[1]);
   const page = path.split("/")[2] || "";
@@ -820,7 +822,7 @@ const AUDIT = {
   order_status_changed: "تغيير حالة طلب", order_cancelled: "إلغاء طلب", bulk_status_update: "تحديث جماعي للحالات",
   order_customer_changed: "تعديل بيانات العميل", order_item_added: "إضافة منتج", order_item_removed: "حذف منتج", order_item_quantity_changed: "تغيير كمية",
   order_item_price_changed: "تغيير سعر", order_totals_recalculated: "إعادة حساب الإجمالي", order_note_added: "ملاحظة داخلية",
-  order_archived: "أرشفة طلب", order_unarchived: "إلغاء أرشفة", order_link_revoked: "إلغاء رابط الطلب", order_anonymized: "حذف بيانات شخصية", order_deleted: "حذف طلب نهائياً", customer_deleted: "حذف عميل نهائياً",
+  order_archived: "أرشفة طلب", order_unarchived: "إلغاء أرشفة", order_link_revoked: "إلغاء رابط الطلب", order_anonymized: "حذف بيانات شخصية", order_deleted: "حذف طلب نهائياً", customer_deleted: "حذف عميل نهائياً", customer_edited: "تعديل بيانات عميل",
   orders_exported: "تصدير الطلبات", backup_downloaded: "تنزيل نسخة احتياطية",
   order_duplicate_cleared: "ليس مكرراً (بعد المراجعة)", order_duplicate_flagged: "إعادة تنبيه التكرار", shipment_exported: "تصدير شحنة لسينا", shipment_orders_removed: "إزالة طلبات من شحنة", shipment_orders_added: "إضافة طلبات إلى شحنة", stock_claimed: "أخذ علب من المستودع عند الشحن", shipment_file_downloaded: "تنزيل ملف شحنة", shipment_delivery_confirmed: "تأكيد توصيل جماعي",
   shipment_delivery_failed: "تعذّر توصيل (شحنة)", shipment_out_for_delivery: "خرج للتوصيل (شحنة)", shipping_settings_changed: "إعدادات الشحن",
@@ -835,9 +837,9 @@ const KEY_AR = { status: "الحالة", note: "ملاحظة", visibility: "ال
   rows: "عدد الصفوف", mfa: "تحقق بخطوتين", active: "نشط", unlocked: "فك القفل", passwordReset: "كلمة مرور مؤقتة", twoFactorReset: "إعادة ضبط التحقق", displayName: "الاسم",
   amount: "المبلغ", category: "الفئة", date: "التاريخ", description: "الوصف", orderNumber: "الطلب", platform: "المنصة", campaign: "الحملة", reference: "المرجع",
   paymentMethod: "طريقة الدفع", notes: "ملاحظات", version: "الإصدار", batch: "الدفعة", receivedDate: "تاريخ الشراء", quantityOrdered: "الكمية في الفاتورة",
-  supplier: "المورد", location: "الموقع", unitCost: "سعر الوحدة", totalCost: "الإجمالي (ر.س)", newOnHand: "الموجود بعد", onHand: "الموجود" };
+  supplier: "المورد", location: "الموقع", name: "الاسم", phone: "الجوال", city: "المدينة", district: "الحي", address: "العنوان", nationalAddress: "العنوان الوطني", via: "عبر", unitCost: "سعر الوحدة", totalCost: "الإجمالي (ر.س)", newOnHand: "الموجود بعد", onHand: "الموجود" };
 const FIELD_AR = { name: "الاسم", phone: "الجوال", city: "المدينة", district: "الحي", address: "العنوان", nationalAddress: "العنوان الوطني", notes: "ملاحظات التوصيل" };
-const VAL_AR = v => STATUS[v] || ROLE[v] || FIELD_AR[v] || { DELIVERY: "التوصيل والشحن", ADVERTISING: "الإعلانات", OTHER: "أخرى" }[v] || { internal: "داخلية", customer: "يراها العميل", true: "نعم", false: "لا" }[String(v)] || v;
+const VAL_AR = v => v === "customer_page" ? "صفحة العميل" : STATUS[v] || ROLE[v] || FIELD_AR[v] || { DELIVERY: "التوصيل والشحن", ADVERTISING: "الإعلانات", OTHER: "أخرى" }[v] || { internal: "داخلية", customer: "يراها العميل", true: "نعم", false: "لا" }[String(v)] || v;
 function auditDiff(oldV, newV) {
   const p = v => { try { return JSON.parse(v); } catch (_) { return v; } };
   const o = p(oldV), n = p(newV), fmt = v => v == null ? "" : typeof v === "object" ? Object.entries(v).filter(([k, x]) => x !== undefined && x !== null && x !== "" && k !== "filter").map(([k, x]) => `${KEY_AR[k] || k}: ${Array.isArray(x) ? x.map(VAL_AR).join("، ") : typeof x === "object" ? JSON.stringify(x) : VAL_AR(x)}`).join(" · ") : String(v);
@@ -877,14 +879,14 @@ async function pageCustomers() {
   const main = shell("customers");
   let page = 1;
   const q = h("input", { type: "search", placeholder: "الاسم أو الجوال", "aria-label": "بحث" }), box = h("div"), pager = h("div", { class: "pager" });
-  put(main, h("h1", { text: "العملاء" }), h("p", { class: "muted small", text: "العملاء مجمّعون برقم الجوال من طلباتهم." + (can("orders.delete") ? " زر «حذف» يظهر للعميل الذي يمكن حذف كل طلباته (ملغية أو متعذرة)، مثل العملاء التجريبيين." : "") }),
+  put(main, h("h1", { text: "العملاء" }), h("p", { class: "muted small", text: "العملاء مجمّعون برقم الجوال من طلباتهم. اضغط اسم العميل أو «فتح» لعرض بياناته وتعديلها وإضافة طلب له." + (can("orders.delete") ? " زر «حذف» يظهر للعميل الذي يمكن حذف كل طلباته (ملغية أو متعذرة)، مثل العملاء التجريبيين." : "") }),
     h("form", { class: "filters", onsubmit: e => { e.preventDefault(); page = 1; load(); } }, q, h("button", { type: "submit", class: "btn primary", text: "بحث" })), box, pager);
   async function load() {
     let d; try { d = await api("/customers?" + new URLSearchParams({ q: q.value.trim(), page })); } catch (e) { if (e.message !== "unauthorized") box.textContent = errText(e); return; }
     box.textContent = "";
     put(box, d.customers.length ? h("div", { class: "table-wrap" }, h("table", null, h("thead", null, h("tr", null, ["الاسم", "الجوال", "المدينة", "عدد الطلبات", "إجمالي المشتريات", "آخر طلب", ""].map(t => h("th", { text: t })))),
-      h("tbody", null, d.customers.map(c => h("tr", null, h("td", { text: c.name }), h("td", { class: "num", text: c.phone }), h("td", { text: c.city }), h("td", { class: "num", text: c.orders }),
-        h("td", { text: money(c.spent) }), h("td", { text: day(c.lastOrder) }), h("td", null, h("div", { class: "row" }, h("a", { class: "btn ghost sm", href: "/admin/orders?phone=" + c.phone, "data-link": true, text: "طلباته" }),
+      h("tbody", null, d.customers.map(c => h("tr", null, h("td", null, h("a", { href: "/admin/customers/" + c.phone, "data-link": true, text: c.name })), h("td", { class: "num", text: c.phone }), h("td", { text: c.city }), h("td", { class: "num", text: c.orders }),
+        h("td", { text: money(c.spent) }), h("td", { text: day(c.lastOrder) }), h("td", null, h("div", { class: "row" }, h("a", { class: "btn primary sm", href: "/admin/customers/" + c.phone, "data-link": true, text: "فتح" }), h("a", { class: "btn ghost sm", href: "/admin/orders?phone=" + c.phone, "data-link": true, text: "طلباته" }),
           c.deletable ? h("button", { type: "button", class: "btn danger sm", text: "حذف", "aria-label": `حذف العميل ${c.name}`, onclick: e => removeCustomer(e.currentTarget, c) }) : null))))))) : h("div", { class: "empty", text: "لا يوجد عملاء." }));
     const pages = Math.ceil(d.total / d.per); pager.textContent = "";
     put(pager, h("span", { class: "muted", text: `${fmtN(d.total)} عميل` }), h("span", { class: "row" },
@@ -908,6 +910,193 @@ async function pageCustomers() {
   }
   load();
 }
+
+/* صفحة عميل واحد: بياناته المحفوظة (الشحن والتواصل) وتعديلها، طلب جديد بعدد العلب فقط، وكل طلباته */
+const PROFILE_LABEL = { name: "الاسم", phone: "الجوال", city: "المدينة", district: "الحي", address: "العنوان", nationalAddress: "العنوان الوطني", notes: "ملاحظات التوصيل" };
+const QTY_PICKS = [1, 2, 3, 4, 5, 6];
+// تاريخ الرياض بأرقام فقط (2026-11-08): يبقى مقروءاً في خط الأرقام الكبير
+const isoDay = iso => new Date(Date.parse(iso) + 3 * 3600e3).toISOString().slice(0, 10);
+const ago = iso => { const n = Math.round((Date.parse(todayRiyadh()) - Date.parse(isoDay(iso))) / 86400000); return n <= 0 ? "اليوم" : n === 1 ? "أمس" : n === 2 ? "قبل يومين" : `قبل ${n} ${n <= 10 ? "أيام" : "يوماً"}`; };
+async function pageCustomer(phone) {
+  const main = shell("customers", h("p", { class: "muted", text: "جارٍ التحميل…" }));
+  let d;
+  try { d = await api("/customers/" + encodeURIComponent(phone)); }
+  catch (e) { if (e.message !== "unauthorized") { main.textContent = ""; put(main, h("p", { class: "err", text: errText(e) }), h("a", { href: "/admin/customers", "data-link": true, text: "العودة للعملاء" })); } return; }
+  const orderKey = "admin-" + reqId();          // طلب واحد لكل فتح للصفحة: الضغط مرتين لا ينشئ طلبين
+  let editing = false;
+  render();
+
+  function render() {
+    const c = d.customer, S = d.stats;
+    document.title = c.name + " — إدارة CalmGastro";
+    main.textContent = "";
+    const wa = "https://wa.me/" + c.phoneIntl + "?text=" + encodeURIComponent(`مرحباً ${c.name}، معك فريق CalmGastro.`);
+    put(main, h("div", { class: "page-head" },
+        h("div", null, h("a", { href: "/admin/customers", "data-link": true, class: "small", text: "→ العملاء" }), h("h1", { text: c.name }),
+          h("span", { class: "num muted", text: c.phone })),
+        h("div", { class: "row" },
+          h("a", { class: "btn ghost sm", href: wa, target: "_blank", rel: "noopener noreferrer", text: "واتساب العميل" }),
+          h("a", { class: "btn ghost sm", href: "tel:" + c.phone, text: "اتصال" }),
+          c.location ? h("a", { class: "btn ghost sm", href: `https://www.google.com/maps?q=${c.location.lat},${c.location.lng}`, target: "_blank", rel: "noopener noreferrer", text: "الموقع على الخريطة" }) : null,
+          d.can.delete ? h("button", { type: "button", class: "btn danger sm", text: "حذف العميل", onclick: e => removeIt(e.currentTarget) }) : null)),
+      h("div", { class: "tiles" },
+        tile2("عدد الطلبات", fmtN(S.orders), S.open ? `${fmtN(S.open)} لم يُشحن بعد` : null),
+        tile2("إجمالي المشتريات", money(S.spent), "بدون الملغاة والمتعذّرة"),
+        tile2("العلب", fmtN(S.boxes) + " علبة"),
+        tile2("تم التوصيل", fmtN(S.delivered)),
+        h("div", { class: "tile" }, h("span", { class: "k", text: "آخر طلب" }), h("div", { class: "v", text: S.lastOrder ? ago(S.lastOrder) : "—" }), S.lastOrder ? h("span", { class: "s num", text: isoDay(S.lastOrder) }) : null)),
+      h("div", { class: "o-grid" }, h("div", null, editing ? editCard() : profileCard()), h("div", null, d.can.createOrder ? quickOrderCard() : null)),
+      ordersCard());
+  }
+
+  function profileCard() {
+    const c = d.customer;
+    return h("section", { class: "card" },
+      h("div", { class: "page-head" }, h("h2", { text: "بيانات العميل والشحن" }),
+        d.can.edit ? h("button", { type: "button", class: "btn primary sm", text: "تعديل البيانات", onclick: () => { editing = true; render(); } }) : null),
+      h("dl", { class: "kv" },
+        h("dt", { text: "الاسم" }), h("dd", { text: c.name }),
+        h("dt", { text: "الجوال" }), h("dd", { class: "num", text: c.phone }),
+        h("dt", { text: "المدينة" }), h("dd", { text: c.city || "—" }),
+        h("dt", { text: "الحي" }), h("dd", { text: c.district || "—" }),
+        h("dt", { text: "العنوان" }), h("dd", { text: c.address || "—" }),
+        h("dt", { text: "العنوان الوطني" }), h("dd", null, c.nationalAddress ? h("span", { class: "num", text: c.nationalAddress }) : h("span", { class: "danger-text small", text: "غير مسجّل — تطلبه سينا" })),
+        h("dt", { text: "ملاحظات التوصيل" }), h("dd", { text: c.notes || "—" }),
+        h("dt", { text: "أُضيف" }), h("dd", { class: "small", text: `${when(c.createdAt)} · ${c.createdBy === "customer" ? "من الموقع" : c.createdBy}` }),
+        h("dt", { text: "آخر تعديل" }), h("dd", { class: "small", text: when(c.updatedAt) })),
+      h("p", { class: "muted small", text: "هذه البيانات تُستخدم للطلبات الجديدة من هذه الصفحة ومن «+ طلب جديد». كل طلب يحتفظ بنسخته من البيانات وقت إنشائه." }));
+  }
+
+  function editCard() {
+    const c = d.customer, f = {};
+    const mk = (k, attrs = {}) => { f[k] = h(k === "notes" ? "textarea" : "input", { value: c[k] || "", "aria-label": PROFILE_LABEL[k], ...attrs }); return f[k]; };
+    const field_ = (k, label, attrs, hint) => h("label", { class: "f" }, label, mk(k, attrs), hint ? h("small", { text: hint }) : null);
+    const apply = h("input", { type: "checkbox", checked: d.stats.open > 0 });
+    const err = h("p", { class: "err", role: "alert" }), save = h("button", { type: "button", class: "btn primary", text: "حفظ البيانات" });
+    const card = h("section", { class: "card edit-card" }, h("h2", { text: "تعديل بيانات العميل والشحن" }),
+      h("div", { class: "grid2" }, field_("name", "الاسم", { maxlength: 60 }), field_("phone", "الجوال", { maxlength: 20, dir: "ltr", inputmode: "tel", placeholder: "05XXXXXXXX" }),
+        field_("city", "المدينة", { maxlength: 60, list: cityList() }), field_("district", "الحي", { maxlength: 60 })),
+      field_("address", "العنوان الكامل", { maxlength: 200 }),
+      field_("nationalAddress", "العنوان الوطني المختصر", { maxlength: 12, dir: "ltr", placeholder: "RRRD2929" }, "4 حروف ثم 4 أرقام — تطلبه سينا لشحنات السعودية. اتركه فارغاً لمسحه."),
+      field_("notes", "ملاحظات التوصيل", { maxlength: 500, placeholder: "مثال: الاتصال قبل التوصيل" }),
+      d.stats.open ? h("label", { class: "row small apply-orders" }, apply, `طبّق التعديل على طلباته التي لم تُشحن بعد (${ordersCount(d.stats.open)})`) : null,
+      h("p", { class: "muted small", text: "الطلبات المشحونة أو المُسلَّمة لا تتغير، لأن سينا لديها بياناتها. تغيير الجوال ينتقل إلى كل طلبات العميل." }),
+      err, h("div", { class: "row" }, save, h("button", { type: "button", class: "btn ghost", text: "إلغاء", onclick: () => { editing = false; render(); } })));
+    save.addEventListener("click", async () => {
+      err.textContent = "";
+      const val = k => k === "nationalAddress" ? normNA(f[k].value) : f[k].value.trim();
+      const changed = Object.keys(PROFILE_LABEL).filter(k => val(k) !== String(c[k] || "").trim());
+      if (!changed.length) { editing = false; render(); return; }
+      if (changed.includes("nationalAddress") && val("nationalAddress") && !NA_RE.test(val("nationalAddress"))) { err.textContent = "العنوان الوطني: 4 حروف ثم 4 أرقام، مثل RRRD2929."; f.nationalAddress.focus(); return; }
+      const toOrders = d.stats.open > 0 && apply.checked;
+      const msgs = [changeList(changed.map(k => [PROFILE_LABEL[k], c[k] || "", val(k)]))];
+      if (changed.includes("phone")) msgs.push(h("p", { class: "warn-box", text: `يتغير الجوال في كل طلبات العميل (${ordersCount(d.stats.orders)}) ليبقى عميلاً واحداً، ويتتبع طلباته بالرقم الجديد.` }));
+      if (changed.some(k => k !== "phone")) msgs.push(h("p", { class: "small", text: toOrders ? `تُطبَّق البيانات الجديدة أيضاً على ${ordersCount(d.stats.open)} لم تُشحن بعد.` : "تُحفظ للعميل فقط، ولا تتغير طلباته الحالية." }));
+      if (!(await confirmBox("هل أنت متأكد من حفظ التعديلات؟", msgs, { okText: "حفظ التعديلات" }))) return;
+      await busy(save, "جارٍ الحفظ…", async () => {
+        try {
+          const r = await api("/customers/" + encodeURIComponent(c.phone), { body: { customer: Object.fromEntries(changed.map(k => [k, val(k)])), applyToOrders: toOrders, expectedUpdatedAt: c.updatedAt } });
+          d = r; editing = false;
+          if (r.customer.phone !== phone) { phone = r.customer.phone; history.replaceState(null, "", "/admin/customers/" + phone); }
+          toast("تم حفظ بيانات العميل." + (r.applied.length ? ` وتحدّث ${ordersCount(r.applied.length)}.` : ""));
+          render();
+        } catch (e) {
+          if (e.message === "unauthorized") return;
+          err.textContent = e.data && e.data.fields ? "تحقق من: " + Object.entries(e.data.fields).map(([k, v]) => `${PROFILE_LABEL[k] || k} (${v === "invalid_phone" ? "رقم جوال سعودي غير صحيح" : k === "nationalAddress" ? "4 حروف ثم 4 أرقام" : "مطلوب"})`).join("، ") : errText(e);
+        }
+      });
+    });
+    setTimeout(() => f.name.focus(), 0);
+    return card;
+  }
+
+  function quickOrderCard() {
+    const c = d.customer;
+    const qty = h("input", { type: "number", min: 1, max: 99, step: 1, value: 1, inputmode: "numeric", class: "qty-input", "aria-label": "عدد العلب" });
+    const picks = h("div", { class: "qty-picks", role: "group", "aria-label": "اختيار سريع لعدد العلب" });
+    const status = d.can.confirm ? h("select", { "aria-label": "الحالة الأولى" }, h("option", { value: "RECEIVED", text: STATUS.RECEIVED }), h("option", { value: "CONFIRMED", text: STATUS.CONFIRMED })) : null;
+    const note = h("textarea", { maxlength: 1000, placeholder: "ملاحظة داخلية (اختياري) — مثال: طلب عبر واتساب." });
+    const out = h("div", { class: "qo-summary", "aria-live": "polite" }), err = h("p", { class: "err", role: "alert" });
+    const create = h("button", { type: "button", class: "btn primary big", text: "إنشاء الطلب", disabled: true });
+    let last = null, timer = 0, seq = 0;
+    const n = () => Math.max(1, Math.min(99, parseInt(latin(qty.value), 10) || 1));
+    const paintPicks = () => { picks.textContent = ""; put(picks, QTY_PICKS.map(v => h("button", { type: "button", class: "seg", "aria-pressed": String(n() === v), text: String(v), onclick: () => { qty.value = v; changed(); } }))); };
+    const step = dlt => h("button", { type: "button", class: "btn ghost qty-step", "aria-label": dlt > 0 ? "زيادة علبة" : "إنقاص علبة", text: dlt > 0 ? "+" : "−", onclick: () => { qty.value = Math.max(1, Math.min(99, n() + dlt)); changed(); } });
+    const customer = () => ({ name: c.name, phone: c.phone, city: c.city, district: c.district, address: c.address, nationalAddress: c.nationalAddress || "", notes: c.notes || "" });
+    const body = extra => ({ quantity: n(), status: status ? status.value : "RECEIVED", customer: customer(), internalNote: note.value, idempotencyKey: orderKey, saveProfile: false, ...extra });
+    function changed() { paintPicks(); clearTimeout(timer); timer = setTimeout(preview, 250); }
+    async function preview() {
+      const my = ++seq; create.disabled = true; err.textContent = "";
+      let r; try { r = await api("/orders/new", { body: body({ preview: true }) }); }
+      catch (e) {
+        if (my !== seq || e.message === "unauthorized") return;
+        last = null; out.textContent = "";
+        const miss = e.data && e.data.fields ? Object.keys(e.data.fields).filter(k => PROFILE_LABEL[k]) : [];
+        if (miss.length) put(out, h("p", { class: "warn-box" }, `بيانات العميل ناقصة: ${miss.map(k => PROFILE_LABEL[k]).join("، ")}. `,
+          d.can.edit ? h("button", { type: "button", class: "btn ghost sm", text: "أكمل البيانات", onclick: () => { editing = true; render(); } }) : "اطلب من مدير الطلبات إكمالها."));
+        else err.textContent = e.data && e.data.fields && e.data.fields.quantity ? `عدد العلب غير متاح${e.data.max ? ` (الحد الأقصى ${e.data.max})` : ""}.` : errText(e);
+        return;
+      }
+      if (my !== seq) return;
+      last = r; const T = r.totals, St = r.stock, short = St.initialized && St.shortage > 0;
+      out.textContent = "";
+      put(out, h("dl", { class: "kv" },
+          h("dt", { text: "التفاصيل" }), h("dd", { text: T.lines.map(l => `${l.name} × ${l.quantity}`).join(" + ") }),
+          h("dt", { text: "المجموع" }), h("dd", { text: money(T.subtotal) }),
+          T.offerDiscount ? [h("dt", { text: "خصم أفضل سعر" }), h("dd", { text: "− " + money(T.offerDiscount) })] : null,
+          h("dt", { text: "التوصيل" }), h("dd", { text: T.shipping ? money(T.shipping) : "مجاني" }),
+          h("dt", { text: "الإجمالي" }), h("dd", null, h("b", { class: "qo-total", text: money(T.total) })),
+          h("dt", { text: "الدفع" }), h("dd", { text: "عند الاستلام" })),
+        r.duplicates && r.duplicates.length ? h("p", { class: "warn-box", role: "alert" }, "⚠ لهذا العميل طلب خلال آخر 3 أيام: ", orderLinks(r.duplicates.map(x => x.orderNumber)), ". تأكد أنه لا يكرر الطلب.") : null,
+        St.initialized ? h("p", { class: short ? "warn-box" : "muted small", text: short ? `المتبقي في المستودع ${Math.max(0, St.available)} علبة فقط؛ يُنشأ الطلب ويُشحن عند توفر العلب.` : `المتبقي في المستودع بعد هذا الطلب ${St.availableAfter} علبة.` }) : null);
+      create.disabled = false; create.textContent = `إنشاء الطلب — ${money(T.total)}`;
+    }
+    create.addEventListener("click", async () => {
+      if (!last) return;
+      const T = last.totals, short = last.stock.initialized && last.stock.shortage > 0;
+      if (!(await confirmBox("إنشاء طلب جديد", [h("p", null, "طلب لـ ", h("b", { text: c.name }), ` بـ ${fmtN(T.boxes)} علبة، الإجمالي `, h("b", { text: money(T.total) }), " (الدفع عند الاستلام)."),
+        h("p", { class: "small", text: `يُرسل إلى: ${[c.city, c.district, c.address].filter(Boolean).join(" — ")}` + (c.nationalAddress ? ` · ${c.nationalAddress}` : "") }),
+        h("p", { class: "small", text: "الحالة الأولى: " + STATUS[status ? status.value : "RECEIVED"] })], { okText: "إنشاء الطلب" }))) return;
+      await busy(create, "جارٍ الإنشاء…", async () => {
+        try { const r = await api("/orders/new", { body: body({ allowShortage: short }) }); toast(r.replay ? "هذا الطلب أُنشئ مسبقاً." : "تم إنشاء الطلب " + r.orderNumber); go("/admin/orders/" + r.orderNumber); }
+        catch (e) { if (e.message !== "unauthorized") { toast(e.message === "insufficient_stock" ? `تغيّر المخزون: المتوفر الآن ${e.data.available}.` : errText(e), true); preview(); } }
+      });
+    });
+    qty.addEventListener("input", changed);
+    if (status) status.addEventListener("change", changed);
+    paintPicks(); preview();
+    return h("section", { class: "card quick-order" }, h("h2", { text: "طلب جديد لهذا العميل" }),
+      h("p", { class: "muted small", text: "اختر عدد العلب فقط. يُنشأ الطلب ببيانات العميل المحفوظة، والسعر من عروض الموقع الحالية." }),
+      h("label", { class: "f" }, "عدد العلب", h("div", { class: "qty-row" }, step(-1), qty, step(1))), picks,
+      status ? h("label", { class: "f" }, "الحالة الأولى", status) : null,
+      h("details", null, h("summary", { class: "small", text: "ملاحظة داخلية (اختياري)" }), note),
+      out, err, h("div", { class: "row" }, create));
+  }
+
+  function ordersCard() {
+    return h("section", { class: "card" }, h("div", { class: "page-head" }, h("h2", { text: `طلباته (${fmtN(d.orders.length)})` }),
+        h("a", { class: "btn ghost sm", href: "/admin/orders?phone=" + d.customer.phone, "data-link": true, text: "في صفحة الطلبات" })),
+      tbl(["الطلب", "التاريخ", "الحالة", "العلب", "الإجمالي", ""], d.orders.map(o => [
+        h("span", null, h("a", { href: "/admin/orders/" + o.orderNumber, "data-link": true, class: "num", text: o.orderNumber }), o.source === "ADMIN" ? h("span", { class: "tag cust", text: " لوحة التحكم" }) : null),
+        when(o.createdAt), h("span", null, badge(o.status), o.archived ? h("span", { class: "tag", text: " مؤرشف" }) : null), fmtN(o.boxes), money(o.total),
+        o.openUnshipped ? h("span", { class: "tag", text: "لم يُشحن بعد" }) : ""])));
+  }
+
+  async function removeIt(btn) {
+    const df = deleteFields("حذف", "السبب (مثال: عميل تجريبي)"), c = d.customer;
+    if (!(await confirmBox(`حذف العميل «${c.name}»`, [h("p", { class: "warn-box", text: `يُحذف العميل و${d.stats.orders === 1 ? "طلبه" : "طلباته"} (${ordersCount(d.stats.orders)}، كلها ملغية أو متعذرة) نهائياً، ولا يمكن التراجع.` }),
+      "اكتب «حذف» للتأكيد:", df.fields], { okText: "حذف نهائياً", danger: true, fields: df.fields }))) return;
+    await busy(btn, "جاري الحذف…", async () => {
+      try { const r = await api("/customers/delete", { body: { phone: c.phone, confirm: df.input.value.trim(), reason: df.reason.value } }); toast(`تم حذف العميل و${ordersCount(r.deleted.length)}.`); go("/admin/customers"); }
+      catch (x) {
+        if (x.message === "unauthorized") return;
+        if (x.message === "customer_has_kept_orders" && x.data && x.data.orders) await confirmBox("لم يُحذف العميل", h("div", { class: "audit-mini" }, x.data.orders.map(k => h("div", null, h("span", { class: "num", text: k.orderNumber }), " — ", DELETE_REASON[k.reason] || k.reason))), { okText: "حسناً" });
+        else toast(errText(x), true);
+      }
+    });
+  }
+}
+const latin = v => (window.CGParse ? window.CGParse.digits(String(v)) : String(v));
 
 async function pageProducts() {
   const main = shell("products", h("h1", { text: "المنتجات" }));
@@ -1702,7 +1891,7 @@ async function pageNewOrder() {
     if (search.value.trim().length < 2) return;
     try { const r = await api("/customers/search?q=" + encodeURIComponent(search.value.trim()));
       put(results, r.customers.length ? r.customers.map(c => h("button", { type: "button", class: "btn ghost sm", text: `${c.name} · ${c.phone} · ${c.city}`, onclick: () => {
-        f.name.value = c.name; f.phone.value = c.phone; f.city.value = c.city; f.district.value = c.district; f.address.value = c.address; f.nationalAddress.value = c.nationalAddress || ""; results.textContent = ""; save.hidden = false; toast("تم ملء بيانات العميل المحفوظة."); } }))
+        f.name.value = c.name; f.phone.value = c.phone; f.city.value = c.city; f.district.value = c.district; f.address.value = c.address; f.nationalAddress.value = c.nationalAddress || ""; if (c.notes) f.notes.value = c.notes; results.textContent = ""; save.hidden = false; toast("تم ملء بيانات العميل المحفوظة."); } }))
         : h("span", { class: "muted small", text: "لا يوجد عميل مطابق — أدخل بياناته وسيُنشأ له سجل." }));
     } catch (_) {}
   }, 300); });

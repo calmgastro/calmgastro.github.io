@@ -252,8 +252,8 @@ html.col-resizing, html.col-resizing *{cursor:col-resize !important; user-select
 .list-bar{display:flex; flex-wrap:wrap; gap:8px 16px; align-items:center; justify-content:space-between; margin:0 0 8px}
 .list-range{font-weight:600}
 .page-size{display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap}
-.page-size .seg{min-width:44px; min-height:36px; padding:.3em .8em; border:1px solid var(--line); background:var(--surface); border-radius:999px; font:inherit; font-weight:700; cursor:pointer; color:var(--teal-deep)}
-.page-size .seg[aria-pressed="true"]{background:var(--teal-deep); border-color:var(--teal-deep); color:#fff}
+.page-size .seg,.qty-picks .seg{min-width:44px; min-height:36px; padding:.3em .8em; border:1px solid var(--line); background:var(--surface); border-radius:999px; font:inherit; font-weight:700; cursor:pointer; color:var(--teal-deep)}
+.page-size .seg[aria-pressed="true"],.qty-picks .seg[aria-pressed="true"]{background:var(--teal-deep); border-color:var(--teal-deep); color:#fff}
 .page-size .seg:focus-visible{outline:2px solid var(--teal-deep); outline-offset:2px}
 /* اختيار متعدد في الفلاتر (الحالة، حالة المخزون) */
 .ms{position:relative}
@@ -294,3 +294,13 @@ html.col-resizing, html.col-resizing *{cursor:col-resize !important; user-select
 /* حذف نهائي */
 .del-fields{display:grid; gap:.5rem; margin-top:.4rem}
 .del-why{align-self:center}
+
+/* customer page: quick order by number of boxes */
+.quick-order .qty-row{display:flex; align-items:center; gap:8px}
+.quick-order .qty-input{width:90px; text-align:center; font-size:1.3rem; font-weight:800}
+.quick-order .qty-step{min-width:44px; font-size:1.3rem; padding:0}
+.qty-picks{display:flex; flex-wrap:wrap; gap:6px; margin:8px 0 12px}
+.qo-summary{margin:12px 0}
+.qo-total{font-size:1.15rem; color:var(--teal-deep)}
+.btn.big{min-height:48px; font-size:1.05rem}
+.apply-orders{margin:10px 0 2px; font-weight:700}

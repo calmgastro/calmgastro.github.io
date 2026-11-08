@@ -210,6 +210,9 @@ async function adminApi(request, env, url) {
     const h = { status: A.changeStatus, customer: A.editCustomer, items: A.editItems, notes: A.addNote, archive: A.setArchived, "revoke-link": A.revokeLink, anonymize: A.anonymize, duplicate: A.markDuplicate, allocate: (e, c, n) => S.allocateOrder(e, c, n) }[m[2]];
     if (h) return json(await h(env, ctx, m[1], body));
   }
+  m = path.match(/^\/customers\/(\+?\d{9,14})$/);            // one customer by mobile number (05XXXXXXXX)
+  if (m && method === "GET") return json(await A.customerDetail(env, ctx, m[1]));
+  if (m && method === "POST") return json(await A.editCustomerProfile(env, ctx, m[1], body));
   throw new HttpError(404, { error: "not_found" });
 }
 
