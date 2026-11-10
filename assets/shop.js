@@ -591,10 +591,10 @@
     if (!attempt || attempt.sig !== sig) attempt = { sig, key: uuid(), expectedTotal: serverQuote ? serverQuote.total : quote(cart).total };
     placing = true; placeBtn.disabled = true; placeBtn.classList.add("loading");
     placeBtn.textContent = t("جاري تأكيد الطلب...");
-    errBox.hidden = true; $("#priceNote").hidden = true;
+    errBox.hidden = true; $("#priceNote").hidden = true; repeatBox.hidden = true;
     let res = null, data = null, failure = "NET";
     try {
-      res = await postApi("/api/orders", { ...payload, idempotencyKey: attempt.key, expectedTotal: attempt.expectedTotal, hp: $("#f-hp").value }, 15000);
+      res = await postApi("/api/orders", { ...payload, idempotencyKey: attempt.key, expectedTotal: attempt.expectedTotal, hp: $("#f-hp").value, ...(attempt.confirmNew ? { confirmNewOrder: true } : {}) }, 15000);
       data = await res.json().catch(() => null);
     } catch (e) { res = null; failure = e && e.name === "AbortError" ? "TIMEOUT" : navigator.onLine === false ? "OFFLINE" : "NET"; }
     placing = false; placeBtn.disabled = false; placeBtn.classList.remove("loading");
@@ -611,6 +611,8 @@
       return;
     }
     renderSummary();
+    // the same mobile number has an order not delivered yet: nothing was created; ask the customer
+    if (res && res.status === 409 && data && data.error === "open_order_exists"){ showRepeat(data.count || 1); return; }
     if (res && res.status === 409 && data && data.error === "price_changed" && data.quote){
       serverQuote = data.quote; attempt = null;
       renderSummary();
@@ -632,6 +634,21 @@
     if (!res){ showError(t("تعذّر الاتصال بخادم الطلبات من شبكتك الحالية، ولم يتم تسجيل الطلب. أوقف الواي فاي وجرّب ببيانات الجوال، أو أرسل طلبك عبر واتساب وسنكمله لك."), failure); return; }
     showError(t("حدث خطأ أثناء إنشاء الطلب. لم يتم تسجيل الطلب."), "S" + res.status + (data && data.error ? "-" + data.error : ""));
   }
+  /* طلب سابق لم يُوصَّل بعد بنفس الجوال: نسأل العميل قبل إنشاء طلب جديد. الخادم لا يذكر رقم الطلب السابق ولا محتواه. */
+  const repeatBox = $("#repeatNote");
+  function showRepeat(n){
+    $("#repeatTitle").textContent = n > 1 ? t("عزيزي العميل، لديك {n} طلبات سابقة لم يتم توصيلها بعد.", { n }) : t("عزيزي العميل، لديك طلب سابق لم يتم توصيله بعد.");
+    $("#repeatAsk").hidden = false; $("#repeatDone").hidden = true;
+    repeatBox.hidden = false; placeBtn.hidden = true;
+    repeatBox.focus();
+  }
+  $("#repeatNew").addEventListener("click", () => { if (attempt) attempt.confirmNew = true; placeBtn.hidden = false; placeOrder(); });
+  $("#repeatKeep").addEventListener("click", () => {
+    $("#repeatAsk").hidden = true; $("#repeatDone").hidden = false; placeBtn.hidden = false;
+    $("#repeatWa").href = waLink(t("مرحباً، لدي طلب سابق لم يصلني بعد وأرغب في الاستفسار عنه."));
+    $("#repeatTrack").focus();
+  });
+  $("#repeatWa").addEventListener("click", () => track("whatsapp_click", { context: "repeat_order" }));
   function showError(msg, code){
     $("#orderErrorText").textContent = msg;
     $("#orderErrorCode").textContent = code ? t("رمز المشكلة: {c}", { c: code }) : "";

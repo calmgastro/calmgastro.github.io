@@ -781,6 +781,10 @@
   .order-error .oe-code{font-weight:400; font-size:.8rem; opacity:.8; margin:-.4rem 0 .7rem}
   .order-error .oe-code:empty{display:none}
   .oe-actions{display:flex; flex-wrap:wrap; gap:10px}
+  .repeat-note{background:#FFF7E6; border:1.5px solid #F2C46B; color:#5A3A00; border-radius:14px; padding:1rem; margin-bottom:1rem}
+  .repeat-note p{margin-bottom:.7rem; font-weight:600}
+  .repeat-note .rn-title{font-weight:800; font-size:1.05rem; margin-bottom:.35rem}
+  .order-form .repeat-note .oe-actions .btn{flex:1 1 180px; width:auto; font-size:1rem}
   .order-form .oe-actions .btn{flex:1 1 180px; width:auto; font-size:1rem}
   #placeOrder.loading{opacity:.75; cursor:progress}
 
@@ -1355,6 +1359,23 @@
             </fieldset>
             <p class="co-eta" id="coEta"></p>
             <p class="price-note" id="priceNote" role="alert" tabindex="-1" hidden></p>
+            <div class="repeat-note" id="repeatNote" role="alertdialog" aria-labelledby="repeatTitle" aria-describedby="repeatQ" tabindex="-1" hidden>
+              <p class="rn-title" id="repeatTitle">عزيزي العميل، لديك طلب سابق لم يتم توصيله بعد.</p>
+              <div id="repeatAsk">
+                <p id="repeatQ">هل هذا طلب جديد، أم تكتفي بطلبك السابق؟</p>
+                <div class="oe-actions">
+                  <button type="button" class="btn btn-primary" id="repeatNew">نعم، هذا طلب جديد</button>
+                  <button type="button" class="btn btn-ghost" id="repeatKeep">أكتفي بطلبي السابق</button>
+                </div>
+              </div>
+              <div id="repeatDone" hidden>
+                <p>تمام، لم نسجّل طلباً جديداً. طلبك السابق قيد التنفيذ وسيصلك قريباً.</p>
+                <div class="oe-actions">
+                  <a class="btn btn-primary" href="#/track" id="repeatTrack">تتبّع طلبي</a>
+                  <a class="btn btn-ghost" id="repeatWa" href="#" target="_blank" rel="noopener">تواصل معنا عبر واتساب</a>
+                </div>
+              </div>
+            </div>
             <p class="rv-notice">بالضغط على «تأكيد الطلب» يتم تسجيل طلبك لدينا مباشرة وتحصل على رقم الطلب. لا تحتاج لإرسال أي رسالة.</p>
             <div class="order-error" id="orderError" role="alert" tabindex="-1" hidden>
               <p id="orderErrorText">حدث خطأ أثناء إنشاء الطلب. لم يتم تسجيل الطلب.</p>
@@ -1733,9 +1754,9 @@
 }
 </script>
 
-<script src="assets/i18n-en.js?v=20261103c"></script>
+<script src="assets/i18n-en.js?v=20261109a"></script>
 <script src="assets/app.js?v=20261031a"></script>
-<script src="assets/shop.js?v=20261104b"></script>
+<script src="assets/shop.js?v=20261109a"></script>
 <!-- إشعارات عائمة: الإعدادات ← البيانات ← العرض ← الإدارة (assets/notifications/) -->
 <script src="assets/notifications/config/notificationConfig.js?v=20261031c"></script>
 <script src="assets/notifications/data/testimonials.js?v=20261031c"></script>

@@ -122,6 +122,8 @@ export function safeEqual(a, b) {
 }
 
 /* ---------- create ---------- */
+export const OPEN_STATUSES = "'RECEIVED','CONFIRMED','PREPARING','SHIPPED','OUT_FOR_DELIVERY','ON_HOLD'";   // not delivered, not closed
+const REPEAT_DAYS = 30;
 export class HttpError extends Error { constructor(status, body) { super(body.error); this.status = status; this.body = body; } }
 
 export async function createOrder(env, body) {
@@ -138,7 +140,12 @@ export async function createOrder(env, body) {
   if (replay) return replay;
   // The customer reviewed a total; if prices changed meanwhile, show the new numbers instead of charging silently.
   if (o.expectedTotal != null && o.expectedTotal !== q.total) throw new HttpError(409, { error: "price_changed", quote: publicQuote(q) });
-  return insertOrder(env, catalog, o, q, { source: "WEBSITE", actor: "customer" });
+  // The same mobile number has an order not delivered yet (last 30 days): nothing is created until the customer says this is a
+  // new order (confirmNewOrder). The answer says only that such an order exists: no number, date or content of it.
+  const open = (await env.DB.prepare(`SELECT COUNT(*) n FROM orders WHERE customer_phone = ?1 AND status IN (${OPEN_STATUSES}) AND archived_at IS NULL AND anonymized_at IS NULL AND created_at >= ?2`)
+    .bind(o.customer.phone, new Date(Date.now() - REPEAT_DAYS * 86400000).toISOString()).first()).n;
+  if (open && body.confirmNewOrder !== true) throw new HttpError(409, { error: "open_order_exists", count: open });
+  return insertOrder(env, catalog, o, q, { source: "WEBSITE", actor: "customer", repeatConfirmed: open > 0 });
 }
 
 // Same checkout attempt sent again (double click, slow network, retry): return the order already created.
@@ -177,18 +184,18 @@ export async function insertOrder(env, catalog, o, q, opts) {
     db.prepare(customerSql).bind(o.customer.phone, o.customer.name, o.customer.city, o.customer.district, o.customer.address, opts.actor, now, o.customer.nationalAddress, o.customer.notes || ""),
     db.prepare(`INSERT INTO orders (order_number, idempotency_key, request_hash, customer_name, customer_phone, city, district, address,
         location_latitude, location_longitude, customer_notes, boxes, subtotal, discount_amount, shipping_amount, total_amount,
-        currency, payment_method, status, lang, created_at, updated_at, source, created_by, created_by_user_id, customer_id, manual_discount, manual_discount_reason, national_address)
+        currency, payment_method, status, lang, created_at, updated_at, source, created_by, created_by_user_id, customer_id, manual_discount, manual_discount_reason, national_address, repeat_confirmed_at)
       VALUES (?1 || '-' || ?2 || '-' || printf('%06d', (SELECT last_value FROM order_counters WHERE year = ?2)),
-        ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?22, ?23, ?24, ?25, (SELECT id FROM customers WHERE phone = ?6), ?26, ?27, ?28)`)
+        ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?22, ?23, ?24, ?25, (SELECT id FROM customers WHERE phone = ?6), ?26, ?27, ?28, ?29)`)
       .bind(catalog.orderPrefix, year, o.key, o.requestHash, o.customer.name, o.customer.phone, o.customer.city, o.customer.district,
         o.customer.address, o.location ? o.location.lat : null, o.location ? o.location.lng : null, o.customer.notes,
         q.boxes, q.subtotal, discount, q.shipping, total, q.currency, o.payment, status, o.lang, now,
-        opts.source, opts.actor, opts.userId ?? null, manual, opts.manualReason || "", o.customer.nationalAddress),
+        opts.source, opts.actor, opts.userId ?? null, manual, opts.manualReason || "", o.customer.nationalAddress, opts.repeatConfirmed ? now : null),
     ...q.lines.map(l => db.prepare(`INSERT INTO order_items (order_id, product_id, product_name_snapshot, product_name_en_snapshot,
         boxes_per_unit, unit_price, quantity, line_total, created_at, updated_at) VALUES (${orderId}, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)`)
       .bind(o.key, l.productId, l.name, l.nameEn, l.boxesPerUnit, l.unitPrice, l.quantity, l.lineTotal, now)),
     db.prepare(`INSERT INTO order_status_history (order_id, previous_status, new_status, changed_by, user_id, note, visibility, created_at)
-      VALUES (${orderId}, NULL, ?2, ?3, ?4, ?5, 'internal', ?6)`).bind(o.key, status, opts.actor, opts.userId ?? null, opts.source === "ADMIN" ? "أُنشئ من لوحة التحكم" : "", now),
+      VALUES (${orderId}, NULL, ?2, ?3, ?4, ?5, 'internal', ?6)`).bind(o.key, status, opts.actor, opts.userId ?? null, opts.source === "ADMIN" ? "أُنشئ من لوحة التحكم" : opts.repeatConfirmed ? "أكّد العميل في الموقع أنه طلب جديد (لديه طلب سابق لم يُسلَّم)" : "", now),
     ...(opts.internalNote ? [db.prepare(`INSERT INTO order_notes (order_id, note, created_by, user_id, created_at) VALUES (${orderId}, ?2, ?3, ?4, ?5)`)
       .bind(o.key, opts.internalNote, opts.actor, opts.userId ?? null, now)] : []),
     ...inv.stmts,

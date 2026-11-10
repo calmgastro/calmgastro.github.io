@@ -324,6 +324,24 @@ expectedUpdatedAt}` (`orders.edit_customer`; 409 `record_changed` on an old vers
 - Orders created from the admin form now save the delivery notes on a new customer record (and on «update the saved customer»);
   website orders still never overwrite an existing record. Tests: `e2e/customer_page.mjs` (43), `e2e/rehearse_0011.mjs`.
 
+## Second order while the first is not delivered (migration `0012`)
+
+**Website.** `POST /api/orders` checks the mobile number after validation and the price check: if it has an order not delivered
+yet (Received, Confirmed, Preparing, Shipped, Out for delivery, On hold; not archived; placed in the last 30 days), nothing is
+created and the answer is `409 { error: "open_order_exists", count }` — no number, date or content of that order, so typing
+someone else's number reveals only that an order exists. The checkout shows «عزيزي العميل، لديك طلب سابق لم يتم توصيله بعد. هل هذا
+طلب جديد، أم تكتفي بطلبك السابق؟» (`#repeatNote`, «تأكيد الطلب» hidden until they answer):
+«نعم، هذا طلب جديد» resends the same attempt (same idempotency key) with `confirmNewOrder: true` → created, `orders.repeat_confirmed_at`
+set and noted in the first history line; «أكتفي بطلبي السابق» creates nothing and offers tracking (`#/track`) and WhatsApp.
+No Purchase pixel event fires unless an order is created. English in `assets/i18n-en.js` (text + ui).
+
+**Admin.** `PRIOR_OPEN` (admin.js): an earlier order of the same mobile not delivered yet, any age. Shown as «⚠ لم يستلم طلبه السابق»
+under the order number (orders list, add-to-shipment list), a card on the order page (with the customer's confirmation, WhatsApp,
+call, «ليس مكرراً») that replaces the 3-day duplicate card, a card in the SENA export review with «استبعاد من الشحنة» (a pair shown
+there is not repeated in the duplicates card), and a line in the export / add-to-shipment confirmations. The new-order preview
+(form and customer page) lists the customer's open orders (`openOrders`). Nothing is blocked; «ليس مكرراً» (duplicate_cleared_at)
+stops it. Tests: `e2e/repeat_order.mjs` (36).
+
 ## Backup and recovery
 
 - D1 **Time Travel**: restore the database to any minute of the last 7 days (free plan):

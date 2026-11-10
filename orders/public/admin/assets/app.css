@@ -304,3 +304,6 @@ html.col-resizing, html.col-resizing *{cursor:col-resize !important; user-select
 .qo-total{font-size:1.15rem; color:var(--teal-deep)}
 .btn.big{min-height:48px; font-size:1.05rem}
 .apply-orders{margin:10px 0 2px; font-weight:700}
+
+/* earlier order not delivered yet: same look as the duplicate tag (.tag.dup) */
+.prior-card .st{vertical-align:middle}

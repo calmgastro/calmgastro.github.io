@@ -359,7 +359,7 @@ function orderTable(orders, { selectable, onToggle } = {}) {
       const cb = selectable ? h("input", { type: "checkbox", "aria-label": "تحديد " + o.orderNumber, checked: selected.has(o.orderNumber) }) : null;
       if (cb) cb.addEventListener("change", () => { cb.checked ? selected.add(o.orderNumber) : selected.delete(o.orderNumber); onToggle && onToggle(); });
       return h("tr", null, selectable ? h("td", { class: "sel" }, cb) : null,
-        h("td", null, h("a", { href: "/admin/orders/" + o.orderNumber, "data-link": true, class: "num", text: o.orderNumber }), dupTag(o.duplicateOf)),
+        h("td", null, h("a", { href: "/admin/orders/" + o.orderNumber, "data-link": true, class: "num", text: o.orderNumber }), dupTag(o.duplicateOf), priorTag(o.priorOpen, o.repeatConfirmed)),
         h("td", { text: o.customerName }), h("td", { class: "num", text: o.phone || "" }), h("td", { text: o.city || "" }), h("td", { class: "num", text: o.boxes != null ? fmtN(o.boxes) : "" }), h("td", { text: when(o.createdAt) }),
         h("td", { text: money(o.total) }), h("td", { text: o.paymentMethod === "cod" || !o.paymentMethod ? "عند الاستلام" : o.paymentMethod }),
         h("td", null, badge(o.status), o.archived ? h("span", { class: "tag", text: " مؤرشف" }) : null,
@@ -555,6 +555,10 @@ async function pageOrders() {
 
 // تنبيه التكرار: نفس الجوال خلال 3 أيام — للمراجعة والتواصل مع العميل، لا يمنع شيئاً
 const dupTag = list => list && list.length ? h("span", { class: "tag dup", title: "نفس رقم الجوال خلال 3 أيام: " + list.join("، "), text: "⚠ قد يكون مكرراً" }) : null;
+// للعميل طلب سابق لم يُسلَّم بعد (أي عمر): قد يكون الطلب الجديد مكرراً — للمراجعة، لا يمنع شيئاً
+const priorTag = (list, confirmed) => list && list.length ? h("span", { class: "tag dup prior", title: "طلب سابق لم يُسلَّم: " + list.map(x => `${x.orderNumber} (${STATUS[x.status] || x.status})`).join("، ") + (confirmed ? " · أكّد العميل في الموقع أنه طلب جديد" : ""),
+  text: confirmed ? "⚠ لم يستلم طلبه السابق · أكّده العميل" : "⚠ لم يستلم طلبه السابق" }) : null;
+const priorLinks = list => list.map((x, i) => [i ? "، " : "", h("a", { href: "/admin/orders/" + x.orderNumber, "data-link": true, class: "num", text: x.orderNumber }), " ", badge(x.status)]);
 const dupCount = n => n === 1 ? "طلب واحد قد يكون مكرراً" : `${ordersCount(n)} قد تكون مكررة`;
 const orderLinks = list => list.map((n, i) => [i ? "، " : "", h("a", { href: "/admin/orders/" + n, "data-link": true, class: "num", text: n })]);
 
@@ -586,7 +590,8 @@ async function pageOrder(number) {
     const left = h("div"), right = h("div");
     put(main, h("div", { class: "o-grid" }, left, right));
     const D = o.duplicates, dupSave = (e, cleared, msg) => run(e.currentTarget, "جارٍ الحفظ…", () => api(`/orders/${o.orderNumber}/duplicate`, { body: { cleared } }), msg);
-    if (D.flagged) {
+    const P = o.priorOpen && o.priorOpen.length;      // «لم يستلم طلبه السابق» covers the 3-day warning: one card, not two
+    if (D.flagged && !P) {
       const all = [o.orderNumber, ...D.peers.map(x => x.orderNumber)].join(" و"), c = o.customer;
       put(left, h("section", { class: "card warn-card dup-card", role: "alert" }, h("h2", { text: "⚠ انتبه: قد يكون هذا الطلب مكرراً" }),
         h("p", { class: "small", text: `نفس رقم الجوال له ${D.peers.length === 1 ? "طلب آخر" : fmtN(D.peers.length) + " طلبات أخرى"} خلال 3 أيام. تواصل مع العميل وتأكد قبل الشحن.` }),
@@ -596,9 +601,21 @@ async function pageOrder(number) {
           h("a", { class: "btn ghost sm", href: "tel:" + c.phone, text: "اتصال" }),
           o.can.notes ? h("button", { type: "button", class: "btn primary sm", text: "ليس مكرراً (تأكدت من العميل)", onclick: e => dupSave(e, true, "لن يظهر التنبيه لهذه الطلبات.") }) : null),
         h("p", { class: "muted small", text: "إن كان مكرراً: ألغِ الطلب الزائد من «تغيير الحالة»؛ فيتوقف التنبيه وتعود علبه للمستودع." })));
-    } else if (D.clearedAt && D.peers.length && !o.anonymized) {
-      put(left, h("p", { class: "note-box small" }, `راجعه ${D.clearedBy} (${when(D.clearedAt)}): ليس مكرراً، مع `, orderLinks(D.peers.map(x => x.orderNumber)), ". ",
+    } else if (D.clearedAt && !P && !o.anonymized) {
+      put(left, h("p", { class: "note-box small" }, `راجعه ${D.clearedBy} (${when(D.clearedAt)}): ليس مكرراً`, D.peers.length ? [`، مع `, orderLinks(D.peers.map(x => x.orderNumber))] : null, ". ",
         o.can.notes ? h("button", { type: "button", class: "btn ghost sm", text: "إعادة التنبيه", onclick: e => dupSave(e, false, "أُعيد التنبيه.") }) : null));
+    }
+    if (o.priorOpen && o.priorOpen.length) {
+      const c = o.customer, prev = o.priorOpen.map(x => x.orderNumber).join(" و");
+      put(left, h("section", { class: "card warn-card dup-card prior-card", role: "alert" }, h("h2", { text: "⚠ العميل لم يستلم طلبه السابق بعد" }),
+        h("p", { class: "small" }, o.priorOpen.length === 1 ? "للعميل طلب سابق لم يُسلَّم بعد: " : `للعميل ${fmtN(o.priorOpen.length)} طلبات سابقة لم تُسلَّم بعد: `, priorLinks(o.priorOpen),
+          ". قد يكون هذا الطلب مكرراً — تواصل مع العميل وتأكد قبل الشحن."),
+        o.repeatConfirmedAt ? h("p", { class: "ok-msg small", text: `✓ أكّد العميل في الموقع أنه طلب جديد (${when(o.repeatConfirmedAt)}).` }) : null,
+        !o.anonymized ? h("div", { class: "row" },
+          h("a", { class: "btn ghost sm", href: "https://wa.me/" + c.phoneIntl + "?text=" + encodeURIComponent(`مرحباً ${c.name}، لديك طلب سابق من CalmGastro لم يصلك بعد (${prev}). هل طلبك ${o.orderNumber} طلب إضافي أم مكرر؟`), target: "_blank", rel: "noopener noreferrer", text: "واتساب العميل" }),
+          h("a", { class: "btn ghost sm", href: "tel:" + c.phone, text: "اتصال" }),
+          o.can.notes ? h("button", { type: "button", class: "btn primary sm", text: "ليس مكرراً (تأكدت من العميل)", onclick: e => dupSave(e, true, "لن يظهر التنبيه لهذا الطلب.") }) : null) : null,
+        h("p", { class: "muted small", text: "إن كان مكرراً: ألغِ هذا الطلب من «تحديث حالة الطلب»؛ فتعود علبه للمستودع." })));
     }
     if (o.shipments && o.shipments.length) put(left, h("p", { class: "note-box" }, "شُحن مع سينا: ", o.shipments.map((x, i) => [i ? " · " : "",
       h("a", { href: "/admin/shipments/" + x.batchId, "data-link": true, class: "num", text: x.batchNo }), ` «${x.name}» — مرجع الشحنة `, h("b", { class: "num", text: x.shipmentRef }),
@@ -612,6 +629,7 @@ async function pageOrder(number) {
       h("dt", { text: "الحالة الحالية" }), h("dd", null, badge(o.status)),
       h("dt", { text: "المصدر" }), h("dd", null, h("span", { class: "tag" + (o.source === "ADMIN" ? " cust" : ""), text: SOURCE[o.source] || o.source })),
       o.source === "ADMIN" ? [h("dt", { text: "أنشأه" }), h("dd", { text: o.createdBy })] : null,
+      o.repeatConfirmedAt ? [h("dt", { text: "طلب إضافي" }), h("dd", { text: "أكّد العميل في الموقع أنه طلب جديد رغم وجود طلب سابق لم يُسلَّم" })] : null,
       h("dt", { text: "طريقة الدفع" }), h("dd", { text: o.paymentMethod === "cod" ? "الدفع عند الاستلام" : o.paymentMethod }),
       h("dt", { text: "حالة الدفع" }), h("dd", { text: { COLLECTED: `تم التحصيل (${money(o.payment.collected)})`, PENDING: `لم يُحصَّل بعد — المستحق ${money(o.payment.outstanding)}`, NONE: "لا شيء مستحق" }[o.payment.status] }),
       h("dt", { text: "المجموع الفرعي" }), h("dd", { text: money(o.subtotal) }),
@@ -1047,6 +1065,7 @@ async function pageCustomer(phone) {
           h("dt", { text: "التوصيل" }), h("dd", { text: T.shipping ? money(T.shipping) : "مجاني" }),
           h("dt", { text: "الإجمالي" }), h("dd", null, h("b", { class: "qo-total", text: money(T.total) })),
           h("dt", { text: "الدفع" }), h("dd", { text: "عند الاستلام" })),
+        r.openOrders && r.openOrders.length ? h("p", { class: "warn-box", role: "alert" }, "⚠ لهذا العميل طلب لم يُسلَّم بعد: ", priorLinks(r.openOrders), ". تأكد أنه لا يكرر الطلب.") :
         r.duplicates && r.duplicates.length ? h("p", { class: "warn-box", role: "alert" }, "⚠ لهذا العميل طلب خلال آخر 3 أيام: ", orderLinks(r.duplicates.map(x => x.orderNumber)), ". تأكد أنه لا يكرر الطلب.") : null,
         St.initialized ? h("p", { class: short ? "warn-box" : "muted small", text: short ? `المتبقي في المستودع ${Math.max(0, St.available)} علبة فقط؛ يُنشأ الطلب ويُشحن عند توفر العلب.` : `المتبقي في المستودع بعد هذا الطلب ${St.availableAfter} علبة.` }) : null);
       create.disabled = false; create.textContent = `إنشاء الطلب — ${money(T.total)}`;
@@ -1919,6 +1938,7 @@ async function pageNewOrder() {
         h("dt", { text: "التوصيل" }), h("dd", { text: T.shipping ? money(T.shipping) : "مجاني" }),
         h("dt", { text: "الإجمالي" }), h("dd", null, h("b", { text: money(T.total) })),
         h("dt", { text: "المصدر" }), h("dd", { text: "لوحة التحكم" }), h("dt", { text: "الحالة الأولى" }), h("dd", null, badge(r.status))),
+      r.openOrders && r.openOrders.length ? h("p", { class: "warn-box dup-note", role: "alert" }, "⚠ لهذا العميل طلب لم يُسلَّم بعد: ", priorLinks(r.openOrders), ". قد يكون مكرراً — تأكد من العميل قبل الإنشاء.") :
       r.duplicates && r.duplicates.length ? h("p", { class: "warn-box dup-note", role: "alert" }, "⚠ انتبه: لهذا الجوال طلب خلال آخر 3 أيام: ", orderLinks(r.duplicates.map(x => x.orderNumber)), ". قد يكون مكرراً — تأكد من العميل قبل الإنشاء.") : null,
       S.initialized ? h("div", { class: short ? "warn-box" : "note-box" },
         short ? h("p", null, h("b", { text: "المتبقي في المستودع لا يكفي الآن. " }), `يحتاج ${S.requested} علبة والمتبقي بعد الطلبات السابقة ${Math.max(0, S.available)}. يُنشأ الطلب عادياً ويُشحن عند توفر العلب.`)
@@ -2223,7 +2243,10 @@ async function pageShipmentNew() {
   const prepHint = h("small"), drawPrep = () => { prepHint.textContent = prepSel.value === d.prepSources[1]
     ? `يخصم سينا من مخزونه بالباركود ${d.settings.barcode || d.settings.sku} · ${fmtN(d.settings.bags)} كيس لكل شحنة.` : "تذكّر: اختر عنوان الاستلام في صفحة الاستيراد بسينا قبل رفع الملف. لا تُكتب أكياس ولا SKU."; };
   prepSel.addEventListener("change", drawPrep); drawPrep();
-  const dups = ok.filter(r => r.duplicateOf && r.duplicateOf.length);
+  const priors = ok.filter(r => r.priorOpen && r.priorOpen.length);
+  // a pair already shown above (later order → its earlier one) is not listed again as «قد يكون مكرراً»
+  const shownPairs = new Set(priors.flatMap(r => r.priorOpen.map(x => x.orderNumber + ">" + r.orderNumber)));
+  const dups = ok.filter(r => r.duplicateOf && r.duplicateOf.length && !(r.priorOpen && r.priorOpen.length) && !r.duplicateOf.every(p => shownPairs.has(r.orderNumber + ">" + p)));
   const exclude = n => { try { sessionStorage.setItem(SHIP_SEL_KEY, JSON.stringify(numbers.filter(x => x !== n))); } catch (_) {} selected.delete(n); pageShipmentNew(); };
   const go_ = h("button", { type: "button", class: "btn primary big", text: `تصدير ${fmtN(T.orders)} طلب إلى سينا`, disabled: !T.orders });
   const naMissing = () => ok.filter(r => !r.nationalAddress && !r.naApprox).length, naApprox = () => ok.filter(r => !r.nationalAddress && r.naApprox).length, naNote = h("div");
@@ -2247,6 +2270,11 @@ async function pageShipmentNew() {
       S ? tile2("في المستودع الآن", fmtN(S.inWarehouse) + " علبة", S.withCarrier ? `و${fmtN(S.withCarrier)} علبة لدى شركة الشحن` : "حسب النظام") : null,
       S ? (S.inWarehouseAfter < 0 ? tile2("في المستودع بعد الشحن", "0 علبة", `ينقص ${fmtN(-S.inWarehouseAfter)} علبة في النظام`, "tile-warn")
         : tile2("في المستودع بعد الشحن", fmtN(S.inWarehouseAfter) + " علبة", `${fmtN(S.inWarehouse)} − ${fmtN(T.boxes)}`)) : null),
+    priors.length ? h("section", { class: "card warn-card dup-card prior-card", role: "alert" }, h("h2", { text: `⚠ لم يستلم العميل طلبه السابق بعد — ${ordersCount(priors.length)}` }),
+      h("p", { class: "small", text: "لكل طلب منها طلب أقدم لنفس العميل لم يُسلَّم بعد، فقد يكون مكرراً. تواصل مع العميل قبل الشحن. لا يمنع هذا التصدير؛ ويمكنك استبعاد الطلب من هذه الشحنة." }),
+      tbl(["الطلب", "العميل", "الجوال", "الطلب السابق", "العميل", ""], priors.map(r => [h("a", { href: "/admin/orders/" + r.orderNumber, "data-link": true, class: "num", text: r.orderNumber }), r.customer, h("span", { class: "num", text: r.phone }),
+        h("span", null, priorLinks(r.priorOpen)), r.repeatConfirmed ? h("span", { class: "ok-msg small", text: "✓ أكّد أنه طلب جديد" }) : "—",
+        h("button", { type: "button", class: "btn ghost sm", text: "استبعاد من الشحنة", onclick: () => exclude(r.orderNumber) })]))) : null,
     dups.length ? h("section", { class: "card warn-card dup-card", role: "alert" }, h("h2", { text: `⚠ انتبه: ${dupCount(dups.length)}` }),
       h("p", { class: "small", text: "لها طلب آخر بنفس الجوال خلال 3 أيام. تواصل مع العميل قبل الشحن. لا يمنع هذا التصدير؛ ويمكنك استبعاد الطلب من هذه الشحنة." }),
       tbl(["الطلب", "العميل", "الجوال", "مع الطلب", ""], dups.map(r => [h("a", { href: "/admin/orders/" + r.orderNumber, "data-link": true, class: "num", text: r.orderNumber }), r.customer, h("span", { class: "num", text: r.phone }),
@@ -2276,6 +2304,7 @@ async function pageShipmentNew() {
       h("ul", { class: "change-list" }, h("li", { text: "تتغير حالة هذه الطلبات إلى «تم الشحن» (مع تسجيل خطوات التأكيد والتجهيز في سجل كل طلب)." }),
         h("li", { text: "يُبلَّغ كل عميل برسالة «تم تسليم طلبك لشركة الشحن»." }), h("li", { text: "يُنزَّل ملف Excel جاهزاً للرفع في نظام سينا، ويمكن تنزيله مرة أخرى من صفحة الشحنة." })),
       h("p", { class: "small" }, "مصدر التجهيز: ", h("b", { text: prepSel.value })),
+      priors.length ? h("p", { class: "warn-box", text: `⚠ ${ordersCount(priors.length)} لعملاء لم يستلموا طلبهم السابق بعد: ${priors.map(r => r.orderNumber).join("، ")}.` }) : null,
       dups.length ? h("p", { class: "warn-box", text: `⚠ ${dupCount(dups.length)} (نفس الجوال خلال 3 أيام).` }) : null,
       bad.length ? h("p", { class: "muted small", text: `لن يشمل الملف ${bad.length} طلباً مستبعداً.` }) : null,
       naMissing() ? h("p", { class: "warn-box", text: `${fmtN(naMissing())} طلب بدون عنوان وطني — سيبقى عموده فارغاً في الملف.` }) : null,
@@ -2316,7 +2345,7 @@ async function pageShipmentAdd(id) {
       const cb = h("input", { type: "checkbox", "aria-label": "تحديد " + o.orderNumber, checked: pick.has(o.orderNumber) });
       cb.addEventListener("change", () => { cb.checked ? pick.add(o.orderNumber) : pick.delete(o.orderNumber); drawBar(); });
       body.append(h("tr", null, h("td", { class: "sel" }, cb),
-        h("td", null, h("a", { href: "/admin/orders/" + o.orderNumber, "data-link": true, class: "num", text: o.orderNumber }), dupTag(o.duplicateOf)),
+        h("td", null, h("a", { href: "/admin/orders/" + o.orderNumber, "data-link": true, class: "num", text: o.orderNumber }), dupTag(o.duplicateOf), priorTag(o.priorOpen, o.repeatConfirmed)),
         h("td", { text: o.customer }), h("td", { class: "num", text: o.phone }), h("td", { text: o.city }), h("td", { class: "num", text: fmtN(o.boxes) }), h("td", { text: money(o.amount) }), h("td", null, badge(o.status)), h("td", { text: when(o.createdAt) }),
         h("td", null, o.nationalAddress ? h("span", { class: "num small", text: o.nationalAddress }) : o.naApprox ? h("span", { class: "na-approx", text: "تقريبي " + o.naApprox }) : h("span", { class: "tag dup", text: "بدون عنوان وطني" }))));
     });
@@ -2333,11 +2362,12 @@ async function pageShipmentAdd(id) {
     let pv; try { pv = await api("/shipments/preview", { body: { numbers } }); } catch (e) { if (e.message !== "unauthorized") err.textContent = errText(e); return; }
     const notOk = pv.rows.filter(r => !r.eligible);
     if (notOk.length) { err.textContent = "لا يمكن شحن: " + notOk.map(r => `${r.orderNumber} (${SHIP_REASON[r.reason] || r.reason})`).join("، "); return; }
-    const T = pv.totals, dups = pv.rows.filter(r => r.duplicateOf.length), noNa = pv.rows.filter(r => !r.nationalAddress && !r.naApprox).length;
+    const T = pv.totals, priors = pv.rows.filter(r => r.priorOpen && r.priorOpen.length), dups = pv.rows.filter(r => r.duplicateOf.length && !(r.priorOpen && r.priorOpen.length)), noNa = pv.rows.filter(r => !r.nationalAddress && !r.naApprox).length;
     if (!(await confirmBox("هل أنت متأكد؟", [
       h("p", null, "سيُضاف ", h("b", { text: `${fmtN(T.orders)} طلب (${fmtN(T.boxes)} علبة، ${money(T.amount)})` }), ` إلى الشحنة ${B.batchNo}، فتصبح ${fmtN(B.orders + T.orders)} طلب و${fmtN(B.boxes + T.boxes)} علبة.`),
       h("ul", { class: "change-list" }, h("li", { text: "تتغير حالتها إلى «تم الشحن» (مع تسجيل خطوات التأكيد والتجهيز في سجل كل طلب)." }), h("li", { text: "يُبلَّغ كل عميل برسالة «تم تسليم طلبك لشركة الشحن»." })),
       B.downloads ? h("p", { class: "small", text: "بعدها نزّل «الطلبات المضافة فقط» من صفحة الشحنة وارفعها إلى سينا." }) : null,
+      priors.length ? h("p", { class: "warn-box", text: `⚠ ${ordersCount(priors.length)} لعملاء لم يستلموا طلبهم السابق بعد: ${priors.map(r => r.orderNumber).join("، ")}.` }) : null,
       dups.length ? h("p", { class: "warn-box", text: `⚠ ${dupCount(dups.length)} (نفس الجوال خلال 3 أيام): ${dups.map(r => r.orderNumber).join("، ")}.` }) : null,
       noNa ? h("p", { class: "warn-box", text: `${fmtN(noNa)} طلب بدون عنوان وطني — سيبقى عموده فارغاً في الملف.` }) : null,
       T.shortageBoxes ? h("p", { class: "warn-box", text: `ستشحن ${fmtN(T.shortageBoxes)} علبة أكثر مما هو مسجّل في المستودع — تأكد أنها موجودة لديك فعلاً.` }) : null],

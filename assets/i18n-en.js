@@ -265,7 +265,13 @@ window.I18N_EN = {
   "رقم الطلب يظهر في صفحة تأكيد الطلب، وفي «رابط طلبك الآمن» إذا حفظته بعد الطلب.": "Your order number is shown on the order confirmation page and in your “secure order link” if you saved it.",
   "العنوان الوطني المختصر": "Short national address",
   "4 حروف و4 أرقام، تجده في تطبيق «العنوان الوطني» أو في «أبشر». ليس لديك عنوان وطني؟ اضغط «تحديد موقعي تلقائياً» بالأسفل.": "4 letters and 4 digits, found in the National Address app or Absher. Don't have one? Tap “Locate me automatically” below.",
-  "لم تجده؟ فريقنا يساعدك بعد التحقق من هويتك.": "Can't find it? Our team will help after verifying your identity."
+  "لم تجده؟ فريقنا يساعدك بعد التحقق من هويتك.": "Can't find it? Our team will help after verifying your identity.",
+  "عزيزي العميل، لديك طلب سابق لم يتم توصيله بعد.": "Dear customer, you have an earlier order that hasn't been delivered yet.",
+  "هل هذا طلب جديد، أم تكتفي بطلبك السابق؟": "Is this a new order, or is your earlier order enough?",
+  "نعم، هذا طلب جديد": "Yes, this is a new order",
+  "أكتفي بطلبي السابق": "My earlier order is enough",
+  "تمام، لم نسجّل طلباً جديداً. طلبك السابق قيد التنفيذ وسيصلك قريباً.": "Done, no new order was placed. Your earlier order is on its way to you.",
+  "تتبّع طلبي": "Track my order"
  },
  "attr": {
   "رسم متحرك توضيحي: جسم يشرب كوب كالم كاسترو ثم تتفكك خلايا الدهون في البطن": "Illustrative animation: a body drinks a glass of CalmGastro, then the belly fat cells break apart",
@@ -496,6 +502,9 @@ window.I18N_EN = {
   "الشارع: {street}": "Street: {street}",
   "يمكنك تعديل المدينة والحي والعنوان إذا لم تكن دقيقة، وأضف رقم المبنى أو أقرب معلم.": "You can edit the city, district and address if they’re not accurate, and add the building number or nearest landmark.",
   "اكتب عنوانك الوطني المختصر، وإن لم يكن لديك فاضغط «تحديد موقعي تلقائياً» بالأسفل": "Enter your short national address, or if you don't have one, tap “Locate me automatically” below.",
-  "لا بأس إن لم يكن لديك عنوان وطني؛ سنعتمد موقعك على الخريطة.": "No national address? That's fine, we'll use your map location."
+  "لا بأس إن لم يكن لديك عنوان وطني؛ سنعتمد موقعك على الخريطة.": "No national address? That's fine, we'll use your map location.",
+  "عزيزي العميل، لديك طلب سابق لم يتم توصيله بعد.": "Dear customer, you have an earlier order that hasn't been delivered yet.",
+  "عزيزي العميل، لديك {n} طلبات سابقة لم يتم توصيلها بعد.": "Dear customer, you have {n} earlier orders that haven't been delivered yet.",
+  "مرحباً، لدي طلب سابق لم يصلني بعد وأرغب في الاستفسار عنه.": "Hello, I have an earlier order that hasn't arrived yet and I'd like to ask about it."
  }
 };

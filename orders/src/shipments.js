@@ -18,7 +18,7 @@
    the usual status change, so stock is consumed (FIFO cost), revenue counts and the history records who confirmed. */
 import { HttpError, loadOrder, normalizeOrderNumber, localPhone, normalizeNationalAddress } from "./orders.js";
 import { allowedTransition } from "./statuses.js";
-import { applyTransition, need, BULK_MAX, DUP_OF, dupList } from "./admin.js";
+import { applyTransition, need, BULK_MAX, DUP_OF, dupList, PRIOR_OPEN, priorList } from "./admin.js";
 import { audit } from "./auth.js";
 import { riyadhDay } from "./inventory.js";
 import { stockFlow } from "./stock_admin.js";
@@ -103,7 +103,7 @@ async function examine(env, ctx, numbers) {
     const full = await loadOrder(env.DB, n);
     if (!full) { rows.push({ orderNumber: n, eligible: false, reason: "not_found" }); continue; }
     const o = full.order;
-    const dup = await env.DB.prepare(`SELECT ${DUP_OF} d FROM orders o WHERE o.id = ?`).bind(o.id).first();
+    const dup = await env.DB.prepare(`SELECT ${DUP_OF} d, ${PRIOR_OPEN} p FROM orders o WHERE o.id = ?`).bind(o.id).first();
     const steps = PATH[o.status] || [];
     let reason = null;
     if (o.anonymized_at) reason = "anonymized";
@@ -113,7 +113,7 @@ async function examine(env, ctx, numbers) {
     else if (o.status === "ON_HOLD") reason = "on_hold";
     else if (!steps.every((s, i) => allowedTransition(ctx.perms, i ? steps[i - 1] : o.status, s) === "normal")) reason = "transition_not_allowed";
     rows.push({ orderNumber: o.order_number, customer: o.customer_name, phone: localPhone(o.customer_phone), city: o.city, district: o.district,
-      boxes: o.boxes, amount: o.total_amount, status: o.status, steps, eligible: !reason, reason, duplicateOf: dupList(dup.d),
+      boxes: o.boxes, amount: o.total_amount, status: o.status, steps, eligible: !reason, reason, duplicateOf: dupList(dup.d), priorOpen: priorList(dup.p), repeatConfirmed: !!o.repeat_confirmed_at,
       nationalAddress: o.national_address || null, naApprox: o.national_address ? null : fallbackFor(o.city, fb), createdAt: o.created_at });
   }
   return rows;
@@ -228,9 +228,9 @@ export async function shipmentCandidates(env, ctx, id) {
   const db = env.DB, batch = await batchSummary(db, Number(id)), set = await getShippingSettings(db);
   if (!batch) throw new HttpError(404, { error: "not_found" });
   batch.prepSource = batch.prepSource || set.prepSource;
-  const rows = (await db.prepare(`SELECT ${DUP_OF} dup_of, o.* FROM orders o WHERE o.status IN ('RECEIVED','CONFIRMED','PREPARING') AND o.anonymized_at IS NULL AND o.archived_at IS NULL ORDER BY o.id LIMIT ${MAX}`).all()).results;
+  const rows = (await db.prepare(`SELECT ${DUP_OF} dup_of, ${PRIOR_OPEN} prior_open, o.* FROM orders o WHERE o.status IN ('RECEIVED','CONFIRMED','PREPARING') AND o.anonymized_at IS NULL AND o.archived_at IS NULL ORDER BY o.id LIMIT ${MAX}`).all()).results;
   return { batch, stock: await stockPicture(db, 0), max: MAX, orders: rows.map(o => ({ orderNumber: o.order_number, customer: o.customer_name, phone: localPhone(o.customer_phone), city: o.city, boxes: o.boxes, amount: o.total_amount,
-    status: o.status, createdAt: o.created_at, nationalAddress: o.national_address || null, naApprox: o.national_address ? null : fallbackFor(o.city, set.naFallback), duplicateOf: dupList(o.dup_of) })) };
+    status: o.status, createdAt: o.created_at, nationalAddress: o.national_address || null, naApprox: o.national_address ? null : fallbackFor(o.city, set.naFallback), duplicateOf: dupList(o.dup_of), priorOpen: priorList(o.prior_open), repeatConfirmed: !!o.repeat_confirmed_at })) };
 }
 export async function addToShipment(env, ctx, id, body) {
   need(ctx, "shipments.manage");
