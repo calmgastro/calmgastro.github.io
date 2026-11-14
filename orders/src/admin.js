@@ -86,6 +86,7 @@ function orderFilter(params, spellings = null) {
   if (payment === "cod") add("o.payment_method = ?", payment);
   const source = params.get("source");
   if (source === "WEBSITE" || source === "ADMIN") add("o.source = ?", source);
+  else if (source === "AD_PAGE") add("o.channel = ?", source);                // ads order page (/offer/), a part of WEBSITE
   const inv = listParam(params, "inv"), invSt = ["RESERVED", "SHORTAGE", "COMMITTED", "RELEASED"].filter(s => inv.includes(s));
   const invParts = [invSt.length ? `EXISTS (SELECT 1 FROM inventory_reservations r WHERE r.order_id = o.id AND r.status IN (${invSt.map(() => "?").join(",")}))` : null,
     inv.includes("NONE") ? "NOT EXISTS (SELECT 1 FROM inventory_reservations r WHERE r.order_id = o.id)" : null].filter(Boolean);
@@ -123,7 +124,7 @@ export async function listOrders(env, ctx, params) {
   const sort = params.get("sort") === "updated" ? "o.updated_at DESC" : "o.id DESC";
   const [rows, count, counts, duplicates] = await Promise.all([
     env.DB.prepare(`SELECT ${DUP_OF} dup_of, ${PRIOR_OPEN} prior_open, o.repeat_confirmed_at, o.order_number, o.created_at, o.updated_at, o.customer_name, o.customer_phone, o.city, o.district, o.boxes,
-        o.total_amount, o.currency, o.payment_method, o.status, o.archived_at, o.source,
+        o.total_amount, o.currency, o.payment_method, o.status, o.archived_at, o.source, o.channel,
         (SELECT r.status FROM inventory_reservations r WHERE r.order_id = o.id LIMIT 1) inv_status
       FROM orders o ${f.sql} ORDER BY ${sort} LIMIT ${per} OFFSET ${(page - 1) * per}`).bind(...f.binds).all(),
     env.DB.prepare(`SELECT COUNT(*) AS n FROM orders o ${f.sql}`).bind(...f.binds).first(),
@@ -133,7 +134,7 @@ export async function listOrders(env, ctx, params) {
   return {
     orders: rows.results.map(r => ({ orderNumber: r.order_number, createdAt: r.created_at, updatedAt: r.updated_at, customerName: r.customer_name,
       phone: localPhone(r.customer_phone), city: r.city, district: r.district, boxes: r.boxes, total: r.total_amount, currency: r.currency,
-      paymentMethod: r.payment_method, status: r.status, archived: !!r.archived_at, source: r.source, inventoryStatus: r.inv_status || null, duplicateOf: dupList(r.dup_of), priorOpen: priorList(r.prior_open), repeatConfirmed: !!r.repeat_confirmed_at })),
+      paymentMethod: r.payment_method, status: r.status, archived: !!r.archived_at, source: r.source, channel: r.channel || null, inventoryStatus: r.inv_status || null, duplicateOf: dupList(r.dup_of), priorOpen: priorList(r.prior_open), repeatConfirmed: !!r.repeat_confirmed_at })),
     total: count.n, page, per, duplicates, counts: Object.fromEntries(counts.results.map(r => [r.status, r.n]))
   };
 }
@@ -211,7 +212,7 @@ export async function orderDetail(env, ctx, number) {
     id: o.id, orderNumber: o.order_number, status: o.status, createdAt: o.created_at, updatedAt: o.updated_at, lang: o.lang,
     paymentMethod: o.payment_method, boxes: o.boxes, subtotal: o.subtotal, discount: o.discount_amount, shipping: o.shipping_amount,
     total: o.total_amount, currency: o.currency, archived: !!o.archived_at, anonymized: !!o.anonymized_at, locked: LOCKED.includes(o.status),
-    source: o.source, createdBy: o.created_by, manualDiscount: o.manual_discount, manualDiscountReason: o.manual_discount_reason,
+    source: o.source, channel: o.channel || null, createdBy: o.created_by, manualDiscount: o.manual_discount, manualDiscountReason: o.manual_discount_reason,
     // cash on delivery: collected when the order is delivered; nothing is owed on a cancelled / failed order
     payment: { status: delivered ? "COLLECTED" : closed ? "NONE" : "PENDING", collected: delivered ? o.total_amount : 0, outstanding: delivered || closed ? 0 : o.total_amount },
     customer: { name: o.customer_name, phone: localPhone(o.customer_phone), phoneIntl: o.customer_phone, city: o.city, district: o.district,

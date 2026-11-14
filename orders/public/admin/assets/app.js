@@ -363,7 +363,8 @@ function orderTable(orders, { selectable, onToggle } = {}) {
         h("td", { text: o.customerName }), h("td", { class: "num", text: o.phone || "" }), h("td", { text: o.city || "" }), h("td", { class: "num", text: o.boxes != null ? fmtN(o.boxes) : "" }), h("td", { text: when(o.createdAt) }),
         h("td", { text: money(o.total) }), h("td", { text: o.paymentMethod === "cod" || !o.paymentMethod ? "عند الاستلام" : o.paymentMethod }),
         h("td", null, badge(o.status), o.archived ? h("span", { class: "tag", text: " مؤرشف" }) : null,
-          o.source === "ADMIN" ? h("span", { class: "tag cust", text: " لوحة التحكم" }) : null),
+          o.source === "ADMIN" ? h("span", { class: "tag cust", text: " لوحة التحكم" }) : null,
+          o.channel === "AD_PAGE" ? h("span", { class: "tag ad", text: " صفحة الإعلانات" }) : null),
         h("td", { text: o.updatedAt ? when(o.updatedAt) : "" }),
         h("td", null, h("a", { class: "btn ghost sm", href: "/admin/orders/" + o.orderNumber, "data-link": true, text: "عرض" })));
     }))), "orders"));
@@ -428,7 +429,7 @@ async function pageOrders() {
   const from = h("input", { type: "date", "aria-label": "من تاريخ", value: state.from }), to = h("input", { type: "date", "aria-label": "إلى تاريخ", value: state.to });
   const custom = h("span", { class: "row" }, "من", from, "إلى", to);
   const arch = h("select", { "aria-label": "الأرشيف" }, [["", "غير المؤرشفة"], ["1", "المؤرشفة"], ["all", "الكل"]].map(([v, t]) => h("option", { value: v, text: t, selected: state.archived === v })));
-  const srcSel = h("select", { "aria-label": "مصدر الطلب" }, [["", "كل المصادر"], ["WEBSITE", "الموقع"], ["ADMIN", "لوحة التحكم"]].map(([v, t]) => h("option", { value: v, text: t, selected: state.source === v })));
+  const srcSel = h("select", { "aria-label": "مصدر الطلب" }, [["", "كل المصادر"], ["WEBSITE", "الموقع"], ["AD_PAGE", "صفحة الإعلانات"], ["ADMIN", "لوحة التحكم"]].map(([v, t]) => h("option", { value: v, text: t, selected: state.source === v })));
   const paySel = h("select", { "aria-label": "حالة الدفع" }, [["", "كل حالات الدفع"], ["collected", "تم التحصيل"], ["outstanding", "لم يُحصَّل بعد"]].map(([v, t]) => h("option", { value: v, text: t, selected: state.pay === v })));
   if (!PAGE_SIZES.includes(state.per)) state.per = "25";
   const showCustom = () => { custom.hidden = range.value !== "custom"; };
@@ -627,7 +628,7 @@ async function pageOrder(number) {
       h("dt", { text: "تاريخ الإنشاء" }), h("dd", { text: when(o.createdAt) }),
       h("dt", { text: "آخر تحديث" }), h("dd", { text: when(o.updatedAt) }),
       h("dt", { text: "الحالة الحالية" }), h("dd", null, badge(o.status)),
-      h("dt", { text: "المصدر" }), h("dd", null, h("span", { class: "tag" + (o.source === "ADMIN" ? " cust" : ""), text: SOURCE[o.source] || o.source })),
+      h("dt", { text: "المصدر" }), h("dd", null, h("span", { class: "tag" + (o.source === "ADMIN" ? " cust" : o.channel === "AD_PAGE" ? " ad" : ""), text: o.channel === "AD_PAGE" ? "الموقع · صفحة الإعلانات" : SOURCE[o.source] || o.source })),
       o.source === "ADMIN" ? [h("dt", { text: "أنشأه" }), h("dd", { text: o.createdBy })] : null,
       o.repeatConfirmedAt ? [h("dt", { text: "طلب إضافي" }), h("dd", { text: "أكّد العميل في الموقع أنه طلب جديد رغم وجود طلب سابق لم يُسلَّم" })] : null,
       h("dt", { text: "طريقة الدفع" }), h("dd", { text: o.paymentMethod === "cod" ? "الدفع عند الاستلام" : o.paymentMethod }),

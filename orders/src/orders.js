@@ -47,7 +47,8 @@ export function normalizeOrderNumber(v) {
 }
 
 /* Returns { value } or { errors: { field: code } } */
-/* opts.requireNationalAddress (website checkout): the national address, or the customer's map location when they do not have it */
+/* opts.requireNationalAddress: the national address, or the customer's map location when they do not have it.
+   No caller asks for it since 2026-11-14: the team fills the national address from the admin panel. */
 export function validateOrderInput(body, catalog, opts = {}) {
   const errors = {};
   const c = body && typeof body.customer === "object" && body.customer ? body.customer : {};
@@ -132,7 +133,8 @@ export async function createOrder(env, body) {
   catch (e) { throw new HttpError(503, { error: "catalog_unavailable" }); }
   if (!catalog.inStock) throw new HttpError(409, { error: "out_of_stock" });
 
-  const v = validateOrderInput(body, catalog, { requireNationalAddress: true });
+  // national address optional (2026-11-14): the team fills it from the admin panel
+  const v = validateOrderInput(body, catalog);
   if (v.errors) throw new HttpError(422, { error: "validation", fields: v.errors });
   const o = v.value;
   const q = quote(o.items, catalog);
@@ -145,7 +147,9 @@ export async function createOrder(env, body) {
   const open = (await env.DB.prepare(`SELECT COUNT(*) n FROM orders WHERE customer_phone = ?1 AND status IN (${OPEN_STATUSES}) AND archived_at IS NULL AND anonymized_at IS NULL AND created_at >= ?2`)
     .bind(o.customer.phone, new Date(Date.now() - REPEAT_DAYS * 86400000).toISOString()).first()).n;
   if (open && body.confirmNewOrder !== true) throw new HttpError(409, { error: "open_order_exists", count: open });
-  return insertOrder(env, catalog, o, q, { source: "WEBSITE", actor: "customer", repeatConfirmed: open > 0 });
+  // channel: which website page took the order (AD_PAGE = the ads order page /offer/); null = the main page
+  const channel = body.channel === "ad_page" ? "AD_PAGE" : null;
+  return insertOrder(env, catalog, o, q, { source: "WEBSITE", actor: "customer", repeatConfirmed: open > 0, channel });
 }
 
 // Same checkout attempt sent again (double click, slow network, retry): return the order already created.
@@ -160,7 +164,7 @@ export async function findReplay(env, o, requestHash) {
 /* One order, one transaction: counter, customer record, order, items, history, optional internal note, stock reservation
    and (for admin orders) the audit entry. Website and admin orders both come through here, so inventory, revenue and
    COGS treat them identically; only source / created_by differ.
-   opts: { source, actor, userId, status, manualDiscount, manualReason, internalNote, saveProfile, auditStmt } */
+   opts: { source, actor, userId, status, manualDiscount, manualReason, internalNote, saveProfile, auditStmt, channel } */
 export async function insertOrder(env, catalog, o, q, opts) {
   const now = new Date().toISOString();
   const year = now.slice(0, 4);                // bound as text: D1 passes JS numbers as REAL, which would print "2026.0"
@@ -184,18 +188,18 @@ export async function insertOrder(env, catalog, o, q, opts) {
     db.prepare(customerSql).bind(o.customer.phone, o.customer.name, o.customer.city, o.customer.district, o.customer.address, opts.actor, now, o.customer.nationalAddress, o.customer.notes || ""),
     db.prepare(`INSERT INTO orders (order_number, idempotency_key, request_hash, customer_name, customer_phone, city, district, address,
         location_latitude, location_longitude, customer_notes, boxes, subtotal, discount_amount, shipping_amount, total_amount,
-        currency, payment_method, status, lang, created_at, updated_at, source, created_by, created_by_user_id, customer_id, manual_discount, manual_discount_reason, national_address, repeat_confirmed_at)
+        currency, payment_method, status, lang, created_at, updated_at, source, created_by, created_by_user_id, customer_id, manual_discount, manual_discount_reason, national_address, repeat_confirmed_at, channel)
       VALUES (?1 || '-' || ?2 || '-' || printf('%06d', (SELECT last_value FROM order_counters WHERE year = ?2)),
-        ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?22, ?23, ?24, ?25, (SELECT id FROM customers WHERE phone = ?6), ?26, ?27, ?28, ?29)`)
+        ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?22, ?23, ?24, ?25, (SELECT id FROM customers WHERE phone = ?6), ?26, ?27, ?28, ?29, ?30)`)
       .bind(catalog.orderPrefix, year, o.key, o.requestHash, o.customer.name, o.customer.phone, o.customer.city, o.customer.district,
         o.customer.address, o.location ? o.location.lat : null, o.location ? o.location.lng : null, o.customer.notes,
         q.boxes, q.subtotal, discount, q.shipping, total, q.currency, o.payment, status, o.lang, now,
-        opts.source, opts.actor, opts.userId ?? null, manual, opts.manualReason || "", o.customer.nationalAddress, opts.repeatConfirmed ? now : null),
+        opts.source, opts.actor, opts.userId ?? null, manual, opts.manualReason || "", o.customer.nationalAddress, opts.repeatConfirmed ? now : null, opts.channel || null),
     ...q.lines.map(l => db.prepare(`INSERT INTO order_items (order_id, product_id, product_name_snapshot, product_name_en_snapshot,
         boxes_per_unit, unit_price, quantity, line_total, created_at, updated_at) VALUES (${orderId}, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)`)
       .bind(o.key, l.productId, l.name, l.nameEn, l.boxesPerUnit, l.unitPrice, l.quantity, l.lineTotal, now)),
     db.prepare(`INSERT INTO order_status_history (order_id, previous_status, new_status, changed_by, user_id, note, visibility, created_at)
-      VALUES (${orderId}, NULL, ?2, ?3, ?4, ?5, 'internal', ?6)`).bind(o.key, status, opts.actor, opts.userId ?? null, opts.source === "ADMIN" ? "أُنشئ من لوحة التحكم" : opts.repeatConfirmed ? "أكّد العميل في الموقع أنه طلب جديد (لديه طلب سابق لم يُسلَّم)" : "", now),
+      VALUES (${orderId}, NULL, ?2, ?3, ?4, ?5, 'internal', ?6)`).bind(o.key, status, opts.actor, opts.userId ?? null, opts.source === "ADMIN" ? "أُنشئ من لوحة التحكم" : [opts.channel === "AD_PAGE" ? "طلب من صفحة الإعلانات" : "", opts.repeatConfirmed ? "أكّد العميل في الموقع أنه طلب جديد (لديه طلب سابق لم يُسلَّم)" : ""].filter(Boolean).join(" · "), now),
     ...(opts.internalNote ? [db.prepare(`INSERT INTO order_notes (order_id, note, created_by, user_id, created_at) VALUES (${orderId}, ?2, ?3, ?4, ?5)`)
       .bind(o.key, opts.internalNote, opts.actor, opts.userId ?? null, now)] : []),
     ...inv.stmts,

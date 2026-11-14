@@ -260,8 +260,9 @@ repeated in the confirmation) and in the admin new-order preview. `POST /orders/
 stops it on the order and the ones flagged with it, a later order on that mobile is flagged again; cancelling the extra order stops it too.
 
 **National address** (migration `0006`): the Saudi short code (4 letters + 4 digits, e.g. RRRD2929) on `orders` and
-`customers` (CHECK on the shape). Checkout requires it **or** the customer's map location («تحديد موقعي تلقائياً»; `requireNationalAddress` on website
-orders only, 422 `nationalAddress: required`); Arabic digits, lower case and spaces accepted, stored upper case; when the
+`customers` (CHECK on the shape). **Optional on the website since 2026-11-14** (the team fills it from the admin panel; until then
+checkout required it or the customer's map location — `requireNationalAddress` is still in `validateOrderInput` but no caller sets it).
+A code that is typed must have the right shape (422 `nationalAddress: invalid`); Arabic digits, lower case and spaces accepted, stored upper case; when the
 field is empty, a short code written in the address or delivery notes is used. Turning a location into a code needs the
 Saudi Post (SPL) API key — not wired yet. Admins set it on the order
 page, the new-order form (filled from the saved customer), or directly in the SENA review / batch rows (missing ones are
@@ -341,6 +342,28 @@ call, «ليس مكرراً») that replaces the 3-day duplicate card, a card in
 there is not repeated in the duplicates card), and a line in the export / add-to-shipment confirmations. The new-order preview
 (form and customer page) lists the customer's open orders (`openOrders`). Nothing is blocked; «ليس مكرراً» (duplicate_cleared_at)
 stops it. Tests: `e2e/repeat_order.mjs` (36).
+
+## Ads order page `/offer/` (migration `0013`)
+
+A separate page for ad traffic: `offer/index.html` + `assets/offer.js` (+ `assets/offer-guard.js`, frame protection). Nothing on the
+main page links to it (`e2e/offer_page.mjs` checks index.html, app.js and shop.js); its logo is its only link back to `/`. `noindex`
+so it does not compete with the main page in search. Arabic only (lang.js is not loaded, so a visitor's earlier English choice
+does not apply).
+
+- Packages: «باقة التجربة / الاستمرارية / الأكثر طلباً» by boxes 1 / 2 / 3; prices, ids and `was` read at load time from the main
+  page's `product-data` (`fetch("/")`), so prices have one source. One choice (radio). The server recomputes the total as always;
+  `expectedTotal` → 409 `price_changed` shows the new total.
+- Fields: name, mobile, city (same list as checkout + «مدينة أخرى»), district, address. No national address, no location.
+- «اطلب» turns orange with the total once everything is valid; pressing earlier marks what is missing.
+- Same order path as the checkout: `POST /api/orders` (+ fallback address, one idempotency key per attempt, honeypot `hp`,
+  `open_order_exists` question, error box with code + WhatsApp), Purchase event to Meta / TikTok / Snap with the order number
+  (pixel.js runs on vitamik.com only), order number + token kept in `cg-orders` like the main page.
+- The body carries `channel: "ad_page"` → `orders.channel = 'AD_PAGE'` (migration `0013`, nullable, no CHECK so later pages or
+  campaigns can get their own value). `source` stays `WEBSITE`, so stock, reports and every filter treat it as a website order.
+  First history line «طلب من صفحة الإعلانات». Admin: tag «صفحة الإعلانات» in the orders list, «الموقع · صفحة الإعلانات» on the
+  order page, filter «المصدر: صفحة الإعلانات» (`?source=AD_PAGE`).
+- Deploy order: migration → Worker → site (the page sends no national address, which the old Worker refused).
+- Tests: `e2e/offer_page.mjs` (43); `e2e/rehearse_0013.mjs` on a production export.
 
 ## Backup and recovery
 
