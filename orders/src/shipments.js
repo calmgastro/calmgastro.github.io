@@ -111,6 +111,8 @@ async function examine(env, ctx, numbers) {
     else if (o.status === "DELIVERED") reason = "delivered";
     else if (["CANCELLED", "FAILED"].includes(o.status)) reason = "closed";
     else if (o.status === "ON_HOLD") reason = "on_hold";
+    // ads-page orders arrive with name + mobile only: the carrier needs the city and the address first
+    else if ((o.city || "").trim().length < 2 || (o.address || "").trim().length < 3) reason = "no_address";
     else if (!steps.every((s, i) => allowedTransition(ctx.perms, i ? steps[i - 1] : o.status, s) === "normal")) reason = "transition_not_allowed";
     rows.push({ orderNumber: o.order_number, customer: o.customer_name, phone: localPhone(o.customer_phone), city: o.city, district: o.district,
       boxes: o.boxes, amount: o.total_amount, status: o.status, steps, eligible: !reason, reason, duplicateOf: dupList(dup.d), priorOpen: priorList(dup.p), repeatConfirmed: !!o.repeat_confirmed_at,

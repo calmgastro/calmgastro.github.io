@@ -1,8 +1,8 @@
 /* ============================================================
-   صفحة الإعلانات (offer/): باقة واحدة + بيانات التوصيل ← «اطلب» ← يُسجَّل الطلب في نفس خادم الطلبات ولوحة التحكم
+   صفحة الإعلانات (offer/): باقة واحدة + الاسم والجوال ← «اطلب» ← يُسجَّل الطلب في نفس خادم الطلبات ولوحة التحكم
    - الأسعار تُقرأ من الصفحة الرئيسية (product-data) فلا يوجد مصدر ثانٍ للأسعار؛ الخادم يعيد حسابها ولا يثق بالمتصفح
-   - الطلب يُرسل بـ channel: "ad_page" فيظهر في لوحة التحكم بوسم «صفحة الإعلانات»
-   - العنوان الوطني لا يُطلب هنا: الفريق يكمله من لوحة التحكم
+   - الطلب يُرسل بـ channel: "ad_page": الخادم يقبله بلا مدينة/حي/عنوان، ويظهر في لوحة التحكم بوسم «صفحة الإعلانات»؛
+     الفريق يتصل بالعميل ويكمل العنوان من صفحة الطلب (لا يدخل شحنة سينا قبل ذلك)
    - نفس سلوك الصفحة الرئيسية: مفتاح طلب واحد لكل محاولة (لا يتكرر الطلب)، العنوان الاحتياطي، سؤال الطلب السابق، أحداث البكسل
    ============================================================ */
 (function(){
@@ -11,22 +11,16 @@
   const APIS = CONFIG.ordersApi.endpoints.map(u => u.replace(/\/$/, ""));
   // أسماء الباقات في هذه الصفحة (حسب عدد العلب)؛ السعر والمعرّف من product-data
   const NAMES = { 1: ["باقة التجربة", "عبوة واحدة"], 2: ["باقة الاستمرارية", "عبوتان"], 3: ["باقة الأكثر طلباً", "3 عبوات"] };
-  // نفس قائمة المدن في shop.js (الأسماء العربية)
-  const CITIES = ["الرياض", "جدة", "مكة المكرمة", "المدينة المنورة", "الدمام", "الخبر", "الظهران", "الأحساء", "القطيف", "الجبيل", "الطائف",
-    "تبوك", "أبها", "خميس مشيط", "بريدة", "عنيزة", "الرس", "حائل", "جازان", "نجران", "ينبع", "الباحة", "عرعر", "سكاكا",
-    "القريات", "حفر الباطن", "الخرج", "المجمعة", "الزلفي", "الدوادمي", "وادي الدواسر", "بيشة", "القنفذة", "رابغ",
-    "العلا", "الخفجي", "صبيا", "محايل عسير"];
-  const OTHER = "__other", ORDERS_KEY = "cg-orders";
-  const CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+  const ORDERS_KEY = "cg-orders";
   const JSON_AS_TEXT = { "Content-Type": "text/plain;charset=UTF-8" };   // طلب «بسيط» بلا CORS preflight، كما في shop.js
 
   const $ = s => document.querySelector(s);
-  const form = $("#adForm"), pkgBox = $("#pkgs"), btn = $("#orderBtn"), errBox = $("#errBox"), repeatBox = $("#repeatBox");
-  const citySel = form.elements.city, cityOther = $("#f-city-other");
+  const form = $("#adForm"), pkgBox = $("#pkgs"), pkgList = $("#pkgList"), btn = $("#orderBtn"), errBox = $("#errBox"), repeatBox = $("#repeatBox");
   let store = null, apiAt = 0, attempt = null, placing = false;
 
   const fmt = n => Number(n).toLocaleString("en-US");
   const money = n => `${fmt(n)} ر.س`;
+  const el = (tag, props, ...kids) => { const e = Object.assign(document.createElement(tag), props || {}); e.append(...kids); return e; };
   const toLatin = v => String(v).replace(/[٠-٩]/g, d => d.charCodeAt(0) - 0x0660).replace(/[۰-۹]/g, d => d.charCodeAt(0) - 0x06F0);
   function normPhone(v){
     let d = toLatin(v).replace(/[\s\-().]/g, "");
@@ -68,21 +62,15 @@
   const pkgName = b => (NAMES[b.boxes] || [b.title])[0];
 
   function renderPackages(){
-    const legend = pkgBox.querySelector("legend");
-    pkgBox.textContent = ""; pkgBox.append(legend);
+    pkgList.textContent = "";
     store.bundles.forEach(b => {
       const [title, sub] = NAMES[b.boxes] || [b.title, b.program || ""];
-      const label = document.createElement("label"); label.className = "pkg";
-      const input = Object.assign(document.createElement("input"), { type: "radio", name: "pkg", value: b.id });
-      const box = document.createElement("span"); box.className = "box"; box.innerHTML = CHECK;
-      const txt = document.createElement("span"); txt.className = "txt";
-      txt.append(Object.assign(document.createElement("b"), { textContent: title }), Object.assign(document.createElement("small"), { textContent: sub }));
-      const price = document.createElement("span"); price.className = "price";
-      price.append(Object.assign(document.createElement("b"), { textContent: money(b.price) }));
-      if (b.was && b.was > b.price){ const s = document.createElement("s"); s.textContent = money(b.was); s.setAttribute("aria-label", "بدلاً من " + money(b.was)); price.append(s); }
-      label.append(input, box, txt, price);
+      const input = el("input", { type: "radio", name: "pkg", value: b.id });
+      const price = el("span", { className: "price" }, el("b", { textContent: money(b.price) }));
+      if (b.was && b.was > b.price){ const s = el("s", { textContent: money(b.was) }); s.setAttribute("aria-label", "بدلاً من " + money(b.was)); price.append(s); }
+      const label = el("label", { className: "pkg" }, input, el("span", { className: "dot" }), el("span", { className: "txt" }, el("b", { textContent: title }), el("small", { textContent: sub })), price);
       input.addEventListener("change", () => { check("pkg"); refresh(); });
-      pkgBox.append(label);
+      pkgList.append(label);
     });
   }
   async function loadStore(){
@@ -96,54 +84,38 @@
       $("#e-pkg").textContent = "تعذّر تحميل الباقات. حدّث الصفحة، أو اطلب عبر واتساب.";
       return;
     }
+    if (store.deliveryShort) $("#eta").textContent = store.deliveryShort;
     renderPackages(); refresh();
   }
 
-  /* ---------- المدينة ---------- */
-  citySel.append(Object.assign(document.createElement("option"), { value: "", textContent: "اختر المدينة", disabled: true, selected: true }),
-    ...CITIES.map(c => Object.assign(document.createElement("option"), { value: c, textContent: c })),
-    Object.assign(document.createElement("option"), { value: OTHER, textContent: "مدينة أخرى" }));
-  const cityValue = () => citySel.value === OTHER ? cityOther.value.trim() : citySel.value;
-  citySel.addEventListener("change", () => {
-    cityOther.hidden = citySel.value !== OTHER;
-    if (!cityOther.hidden) cityOther.focus();
-    check("city"); refresh();
-  });
-
   /* ---------- التحقق: نفس قواعد الخادم ---------- */
   const rules = {
-    pkg:      () => !!chosen() || "اختر الباقة",
-    name:     v => (v.trim().length >= 2 && /\p{L}/u.test(v)) || "يرجى كتابة الاسم",
-    phone:    v => !!normPhone(v) || "يرجى إدخال رقم جوال سعودي صحيح، مثل 05XXXXXXXX",
-    city:     v => v === OTHER ? cityOther.value.trim().length >= 2 || "يرجى كتابة المدينة" : !!v || "يرجى اختيار المدينة",
-    district: v => v.trim().length >= 2 || "يرجى كتابة الحي",
-    address:  v => v.trim().length >= 3 || "يرجى كتابة العنوان"
+    pkg:   () => !!chosen() || "اختر الباقة",
+    name:  v => (v.trim().length >= 2 && /\p{L}/u.test(v)) || "يرجى كتابة الاسم",
+    phone: v => !!normPhone(v) || "يرجى إدخال رقم جوال سعودي صحيح، مثل 05XXXXXXXX"
   };
   const valueOf = n => n === "pkg" ? "" : form.elements[n].value;
   const passes = n => rules[n](valueOf(n)) === true;
   function check(n){
     const res = rules[n](valueOf(n)), ok = res === true;
-    const el = n === "pkg" ? pkgBox : form.elements[n];
-    el.setAttribute("aria-invalid", ok ? "false" : "true");
-    if (n === "city") cityOther.setAttribute("aria-invalid", ok ? "false" : "true");
+    (n === "pkg" ? pkgBox : form.elements[n]).setAttribute("aria-invalid", ok ? "false" : "true");
     $("#e-" + n).textContent = ok ? "" : res;
     return ok;
   }
-  function setError(n, msg){ const el = form.elements[n]; if (!el) return; el.setAttribute("aria-invalid", "true"); $("#e-" + n).textContent = msg; }
+  function setError(n, msg){ const e = form.elements[n]; if (!e) return; e.setAttribute("aria-invalid", "true"); $("#e-" + n).textContent = msg; }
   // «اطلب» يتلوّن ويُكتب عليه الإجمالي عندما تكتمل البيانات؛ الضغط قبلها يوضح الناقص
   function refresh(){
-    const b = chosen(), ready = Object.keys(rules).every(passes);
-    $("#totalVal").textContent = b ? money(b.price + shippingFor(b.price)) : "—";
+    const b = chosen(), ready = Object.keys(rules).every(passes), total = b ? b.price + shippingFor(b.price) : null;
+    $("#totalVal").textContent = b ? money(total) : "—";
     btn.classList.toggle("ready", ready);
-    if (!placing) btn.textContent = ready && b ? `اطلب — ${money(b.price + shippingFor(b.price))}` : "اطلب";
+    if (!placing) btn.textContent = ready && b ? `اطلب — ${money(total)}` : "اطلب";
     $("#readyNote").hidden = ready;
   }
-  ["name", "phone", "district", "address"].forEach(n => {
-    const el = form.elements[n];
-    el.addEventListener("input", () => { if (el.getAttribute("aria-invalid") === "true") check(n); refresh(); });
-    el.addEventListener("blur", () => el.value && check(n));
+  ["name", "phone"].forEach(n => {
+    const e = form.elements[n];
+    e.addEventListener("input", () => { if (e.getAttribute("aria-invalid") === "true") check(n); refresh(); });
+    e.addEventListener("blur", () => e.value && check(n));
   });
-  cityOther.addEventListener("input", () => { if (citySel.getAttribute("aria-invalid") === "true") check("city"); refresh(); });
   form.elements.phone.addEventListener("blur", () => { const p = normPhone(form.elements.phone.value); if (p) form.elements.phone.value = p; });
 
   /* ---------- إرسال الطلب ---------- */
@@ -154,10 +126,10 @@
     if (placing) return;
     if (!store){ showError("تعذّر تحميل الباقات. حدّث الصفحة ثم حاول مرة أخرى."); return; }
     const bad = Object.keys(rules).filter(n => !check(n));
-    if (bad.length){ const first = bad[0] === "pkg" ? pkgBox.querySelector("input") : form.elements[bad[0]]; if (first) first.focus(); return; }
+    if (bad.length){ const first = bad[0] === "pkg" ? pkgList.querySelector("input") : form.elements[bad[0]]; if (first) first.focus(); return; }
     const b = chosen();
-    const customer = { name: form.elements.name.value.trim(), phone: normPhone(form.elements.phone.value), city: cityValue(),
-      district: form.elements.district.value.trim(), address: form.elements.address.value.trim(), notes: "" };
+    // المدينة والحي والعنوان يكملها الفريق بعد الاتصال بالعميل
+    const customer = { name: form.elements.name.value.trim(), phone: normPhone(form.elements.phone.value), city: "", district: "", address: "", notes: "" };
     const payload = { items: [{ id: b.id, qty: 1 }], customer, location: null, paymentMethod: "cod", lang: "ar", channel: "ad_page" };
     const sig = JSON.stringify(payload);
     // نفس المحاولة (إعادة أو ضغطتين) = نفس المفتاح، فلا يتكرر الطلب
@@ -182,7 +154,7 @@
       $("#orderView").hidden = true; $("#doneView").hidden = false;
       attempt = null;
       $("#doneView").focus();
-      window.scrollTo({ top: 0 });
+      $("#doneView").scrollIntoView({ block: "center" });
       return;
     }
     if (res && res.status === 409 && data && data.error === "open_order_exists"){
@@ -197,7 +169,7 @@
       return;
     }
     if (res && res.status === 422 && data && data.fields){
-      const f = data.fields, msgs = { name: "يرجى كتابة الاسم", phone: "يرجى إدخال رقم جوال سعودي صحيح، مثل 05XXXXXXXX", city: "يرجى كتابة المدينة", district: "يرجى كتابة الحي", address: "يرجى كتابة العنوان" };
+      const f = data.fields, msgs = { name: "يرجى كتابة الاسم", phone: "يرجى إدخال رقم جوال سعودي صحيح، مثل 05XXXXXXXX" };
       const hit = Object.keys(msgs).filter(k => f[k]);
       if (hit.length){ hit.forEach(k => setError(k, msgs[k])); form.elements[hit[0]].focus(); return; }
     }

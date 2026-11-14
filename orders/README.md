@@ -353,7 +353,10 @@ does not apply).
 - Packages: «باقة التجربة / الاستمرارية / الأكثر طلباً» by boxes 1 / 2 / 3; prices, ids and `was` read at load time from the main
   page's `product-data` (`fetch("/")`), so prices have one source. One choice (radio). The server recomputes the total as always;
   `expectedTotal` → 409 `price_changed` shows the new total.
-- Fields: name, mobile, city (same list as checkout + «مدينة أخرى»), district, address. No national address, no location.
+- Fields: name and mobile only (since 2026-11-14, user request). The server accepts an ads-page order without city / district /
+  address (`validateOrderInput` `addressOptional` when `channel` is `ad_page`; a value that is typed must still be valid); the
+  team calls the customer and fills them on the order page. Until then the SENA review excludes the order (reason `no_address`,
+  «ينقصه المدينة أو العنوان — أكملهما من صفحة الطلب»). The main checkout still requires them.
 - «اطلب» turns orange with the total once everything is valid; pressing earlier marks what is missing.
 - Same order path as the checkout: `POST /api/orders` (+ fallback address, one idempotency key per attempt, honeypot `hp`,
   `open_order_exists` question, error box with code + WhatsApp), Purchase event to Meta / TikTok / Snap with the order number
@@ -362,8 +365,8 @@ does not apply).
   campaigns can get their own value). `source` stays `WEBSITE`, so stock, reports and every filter treat it as a website order.
   First history line «طلب من صفحة الإعلانات». Admin: tag «صفحة الإعلانات» in the orders list, «الموقع · صفحة الإعلانات» on the
   order page, filter «المصدر: صفحة الإعلانات» (`?source=AD_PAGE`).
-- Deploy order: migration → Worker → site (the page sends no national address, which the old Worker refused).
-- Tests: `e2e/offer_page.mjs` (43); `e2e/rehearse_0013.mjs` on a production export.
+- Deploy order: migration → Worker → site (the page sends fields the previous Worker refused).
+- Tests: `e2e/offer_page.mjs` (49); `e2e/rehearse_0013.mjs` on a production export; `e2e/live_adpage.mjs` (live, read only).
 
 ## Backup and recovery
 

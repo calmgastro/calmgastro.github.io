@@ -57,9 +57,11 @@ export function validateOrderInput(body, catalog, opts = {}) {
   const phone = normalizePhone(c.phone);
   if (name.length < 2 || !/\p{L}/u.test(name)) errors.name = "required";
   if (!phone) errors.phone = "invalid_phone";
-  if (city.length < 2) errors.city = "required";
-  if (district.length < 2) errors.district = "required";
-  if (address.length < 3) errors.address = "required";
+  // opts.addressOptional (ads page /offer/): only name + mobile; the team completes city / district / address from the admin
+  // panel (an order without them cannot go into a SENA shipment until then: shipments.js reason no_address)
+  if (!opts.addressOptional || city) { if (city.length < 2) errors.city = "required"; }
+  if (!opts.addressOptional || district) { if (district.length < 2) errors.district = "required"; }
+  if (!opts.addressOptional || address) { if (address.length < 3) errors.address = "required"; }
   // when left empty, a short code the customer wrote in the address or notes is used
   const naRaw = clean(c.nationalAddress, 20), nationalAddress = naRaw ? normalizeNationalAddress(naRaw) : findNationalAddress(address, notes);
   if (naRaw && !nationalAddress) errors.nationalAddress = "invalid";
@@ -134,7 +136,9 @@ export async function createOrder(env, body) {
   if (!catalog.inStock) throw new HttpError(409, { error: "out_of_stock" });
 
   // national address optional (2026-11-14): the team fills it from the admin panel
-  const v = validateOrderInput(body, catalog);
+  // channel: which website page took the order (AD_PAGE = the ads order page /offer/: name + mobile only); null = the main page
+  const channel = body.channel === "ad_page" ? "AD_PAGE" : null;
+  const v = validateOrderInput(body, catalog, { addressOptional: channel === "AD_PAGE" });
   if (v.errors) throw new HttpError(422, { error: "validation", fields: v.errors });
   const o = v.value;
   const q = quote(o.items, catalog);
@@ -147,8 +151,6 @@ export async function createOrder(env, body) {
   const open = (await env.DB.prepare(`SELECT COUNT(*) n FROM orders WHERE customer_phone = ?1 AND status IN (${OPEN_STATUSES}) AND archived_at IS NULL AND anonymized_at IS NULL AND created_at >= ?2`)
     .bind(o.customer.phone, new Date(Date.now() - REPEAT_DAYS * 86400000).toISOString()).first()).n;
   if (open && body.confirmNewOrder !== true) throw new HttpError(409, { error: "open_order_exists", count: open });
-  // channel: which website page took the order (AD_PAGE = the ads order page /offer/); null = the main page
-  const channel = body.channel === "ad_page" ? "AD_PAGE" : null;
   return insertOrder(env, catalog, o, q, { source: "WEBSITE", actor: "customer", repeatConfirmed: open > 0, channel });
 }
 

@@ -2107,7 +2107,7 @@ async function pageImportOrders() {
 
 /* ============================================================ الشحن (سينا) */
 const SHIP_REASON = { not_found: "غير موجود", anonymized: "بيانات محذوفة", already_shipped: "مشحون مسبقاً", delivered: "تم توصيله", closed: "ملغي / متعذّر",
-  on_hold: "معلّق — راجعه أولاً", transition_not_allowed: "لا تملك صلاحية نقله", status_changed: "تغيّر من جهاز آخر", not_in_batch: "ليس في هذه الشحنة",
+  on_hold: "معلّق — راجعه أولاً", no_address: "ينقصه المدينة أو العنوان — أكملهما من صفحة الطلب", transition_not_allowed: "لا تملك صلاحية نقله", status_changed: "تغيّر من جهاز آخر", not_in_batch: "ليس في هذه الشحنة",
   already: "في هذه الحالة مسبقاً", not_eligible: "لا يمكن شحنه الآن", inventory_shortage: "المسجّل في المستودع لا يكفي — سجّل استلام المخزون ثم أكّد التوصيل", invalid_action: "إجراء غير معروف" };
 const SHIP_SEL_KEY = "cg-ship-selection";
 /* العنوان الوطني في صفحات الشحن: يظهر، أو يُكتب ويُحفظ في الطلب مباشرة (يدخل ملف سينا عند تنزيله) */
