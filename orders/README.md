@@ -368,6 +368,28 @@ does not apply).
 - Deploy order: migration → Worker → site (the page sends fields the previous Worker refused).
 - Tests: `e2e/offer_page.mjs` (49); `e2e/rehearse_0013.mjs` on a production export; `e2e/live_adpage.mjs` (live, read only).
 
+## Collections: SENA cash on delivery and hand deliveries (migration `0014`, `src/collections.js`)
+
+Admin page «التحصيلات» (`/admin/collections`, permission `settlements.view`; recording needs `settlements.manage`).
+
+- **Owed by SENA** = orders Delivered while in an active SENA shipment row (the latest one for the order) and not covered by a
+  standing settlement. The amount is the one in the SENA file (`shipment_orders.amount`: what SENA collected); if the order total
+  changed after export it is shown beside it, never used silently.
+- **With SENA** = active shipment rows whose order is still Shipped / Out for delivery (owed once delivered).
+- **Hand delivered** = Delivered with no active shipment row (never exported, or taken out of the batch), with who confirmed the
+  delivery; date range filter (default this month).
+- **Claim statement**: every owed delivery up to a chosen day (Riyadh day of the last «تم التوصيل»); CSV for SENA
+  (`GET /collections/claim.csv?to=`).
+- **Settlement** (`POST /collections/settlements`): one payment from SENA covering the whole statement up to that day — expected
+  (sum), received (SAR, 2 decimals; fees may be deducted, the difference is shown), received day, **received by**, reference,
+  notes. The admin sends the count and total they saw (409 `selection_changed` if a delivery was confirmed meanwhile; 409
+  `nothing_owed`); `requestId` makes a retry return the same settlement. Numbers `SET-YYYY-NNNN`. A shipment row can be in one
+  standing settlement only (unique index on `carrier_settlement_orders (shipment_order_id, active)`).
+- **Void** (`POST /collections/settlements/:id/void { reason }`): the record stays (marked «ملغاة»); its orders are owed again.
+- Audit: `settlement_created`, `settlement_voided`, `collections_claim_exported`.
+- Roles: super_admin view + manage, order_manager view, support_agent none.
+- Tests: `e2e/collections.mjs` (37), `e2e/rehearse_0014.mjs` on a production export.
+
 ## Backup and recovery
 
 - D1 **Time Travel**: restore the database to any minute of the last 7 days (free plan):

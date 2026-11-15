@@ -18,7 +18,7 @@ const DAY = 86400000;
 
 /* ---------- navigation for the signed-in admin (sidebar shows only what the role may open) ---------- */
 const NAV = [
-  ["dashboard", "dashboard.view"], ["orders", "orders.view"], ["shipments", "shipments.manage"], ["inventory", "inventory.view"], ["expenses", ["finance.view", "expenses.create", "expenses.edit", "expenses.void"]],
+  ["dashboard", "dashboard.view"], ["orders", "orders.view"], ["shipments", "shipments.manage"], ["collections", "settlements.view"], ["inventory", "inventory.view"], ["expenses", ["finance.view", "expenses.create", "expenses.edit", "expenses.void"]],
   ["customers", "customers.view"], ["products", "products.view"], ["reports", "reports.view"], ["audit", "audit.view"], ["users", "users.manage"], ["settings", null]
 ];
 export function me(ctx) {

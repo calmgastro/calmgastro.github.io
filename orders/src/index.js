@@ -10,6 +10,7 @@ import * as A from "./admin.js";
 import * as S from "./stock_admin.js";
 import * as F from "./finance.js";
 import * as SH from "./shipments.js";
+import * as CO from "./collections.js";
 
 const MAX_BODY = 16 * 1024;
 // browser family only, for diagnosing "works on X, fails on Y" reports
@@ -166,6 +167,12 @@ async function adminApi(request, env, url) {
     case "POST /inventory/settings": return json(await S.saveSettings(env, ctx, body));
     case "GET /inventory/purchases": return json(await S.listPurchases(env, ctx, p));
     case "GET /shipments": return json(await SH.listShipments(env, ctx, p));
+    case "GET /collections": return json(await CO.collectionsPage(env, ctx, p));
+    case "POST /collections/settlements": return json(await CO.createSettlement(env, ctx, body));
+    case "GET /collections/claim.csv": {
+      const c = await CO.claimCsv(env, ctx, p);
+      return new Response(c.body, { headers: { ...BASE_HEADERS, "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="sena-claim-${c.to}.csv"` } });
+    }
     case "POST /shipments": return json(await SH.createShipment(env, ctx, body));
     case "POST /shipments/preview": return json(await SH.previewShipment(env, ctx, body));
     case "GET /shipments/settings": return json(await SH.shippingSettings(env, ctx));
@@ -210,6 +217,9 @@ async function adminApi(request, env, url) {
     const h = { status: A.changeStatus, customer: A.editCustomer, items: A.editItems, notes: A.addNote, archive: A.setArchived, "revoke-link": A.revokeLink, anonymize: A.anonymize, duplicate: A.markDuplicate, allocate: (e, c, n) => S.allocateOrder(e, c, n) }[m[2]];
     if (h) return json(await h(env, ctx, m[1], body));
   }
+  m = path.match(/^\/collections\/settlements\/(\d{1,9})(\/void)?$/);
+  if (m && method === "GET" && !m[2]) return json(await CO.settlementDetail(env, ctx, m[1]));
+  if (m && method === "POST" && m[2]) return json(await CO.voidSettlement(env, ctx, m[1], body));
   m = path.match(/^\/customers\/(\+?\d{9,14})$/);            // one customer by mobile number (05XXXXXXXX)
   if (m && method === "GET") return json(await A.customerDetail(env, ctx, m[1]));
   if (m && method === "POST") return json(await A.editCustomerProfile(env, ctx, m[1], body));

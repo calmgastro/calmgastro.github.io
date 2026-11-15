@@ -55,7 +55,7 @@ const ERR = {
   delivered_inventory_locked: "لا يمكن تغيير كمية طلب تم تسليمه. أعده أولاً بتغيير استثنائي للحالة.", not_initialized: "سجّل الرصيد الافتتاحي للمخزون أولاً.",
   already_initialized: "الرصيد الافتتاحي مسجّل مسبقاً.", opening_stock_too_small: "الرصيد الافتتاحي أقل من الطلبات المُسلَّمة.",
   adjustment_exceeds_available: "لا يمكن إنقاص أكثر من المتوفر غير المحجوز.", cost_already_set: "تكلفة هذه الدفعة مسجّلة مسبقاً.",
-  no_shortage: "لا يوجد نقص في هذا الطلب.", order_not_open: "الطلب ليس مفتوحاً.", already_voided: "السجل ملغي مسبقاً.", record_changed: "عدّل شخص آخر هذا السجل للتو. حدّث الصفحة وراجع القيم قبل الحفظ.",
+  nothing_owed: "لا توجد مبالغ مستحقة من سينا حتى هذا التاريخ.", no_shortage: "لا يوجد نقص في هذا الطلب.", order_not_open: "الطلب ليس مفتوحاً.", already_voided: "السجل ملغي مسبقاً.", record_changed: "عدّل شخص آخر هذا السجل للتو. حدّث الصفحة وراجع القيم قبل الحفظ.",
   expense_voided: "لا يمكن تعديل مصروف ملغي.", purchase_voided: "لا يمكن تعديل شراء ملغي.", not_a_purchase: "هذه الدفعة تسوية وليست شراء؛ صحّحها بتسوية معاكسة.",
   opening_cannot_void: "لا يُلغى الرصيد الافتتاحي؛ عدّل كميته أو سعره.", purchase_used: "لا يمكن إلغاء شراء استُخدم منه؛ عدّل كميته.",
   quantity_below_used: "لا يمكن أن تقل الكمية عن المستخدم منها.", edit_exceeds_available: "لا يمكن إنقاص المخزون بهذا القدر: الباقي محجوز لطلبات مفتوحة.", catalog_unavailable: "تعذّر قراءة أسعار الموقع الآن. حاول بعد قليل."
@@ -125,6 +125,7 @@ document.addEventListener("click", e => {
 });
 
 const ICONS = {
+  collections: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="13" rx="2"/><circle cx="12" cy="12.5" r="2.6"/><path d="M6 10v5M18 10v5"/></svg>',
   dashboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="2"/><rect x="14" y="3" width="7" height="5" rx="2"/><rect x="14" y="12" width="7" height="9" rx="2"/><rect x="3" y="16" width="7" height="5" rx="2"/></svg>',
   orders: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h12l1 4H5l1-4ZM5 7h14v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7Z"/><path d="M9 11h6"/></svg>',
   customers: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0M17 11a3 3 0 1 0 0-6M22 21a6 6 0 0 0-4-5.7"/></svg>',
@@ -138,7 +139,7 @@ const ICONS = {
   shipments: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4h13v12H1zM14 8h4l3 4v4h-7"/><circle cx="5.5" cy="18" r="2"/><circle cx="17.5" cy="18" r="2"/></svg>',
   logout: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>'
 };
-const NAV_LABEL = { dashboard: "لوحة المعلومات", orders: "الطلبات", shipments: "الشحن", inventory: "المخزون", expenses: "المصاريف والأرباح", customers: "العملاء", products: "المنتجات", reports: "التقارير", audit: "سجل التدقيق", users: "المشرفون", settings: "حسابي والإعدادات" };
+const NAV_LABEL = { dashboard: "لوحة المعلومات", orders: "الطلبات", shipments: "الشحن", collections: "التحصيلات", inventory: "المخزون", expenses: "المصاريف والأرباح", customers: "العملاء", products: "المنتجات", reports: "التقارير", audit: "سجل التدقيق", users: "المشرفون", settings: "حسابي والإعدادات" };
 
 function shell(active, ...content) {
   const main = h("main", { class: "main", id: "main" }, content);
@@ -191,7 +192,7 @@ async function route() {
   const m = path.match(/^\/admin\/orders\/([A-Za-z0-9-]+)$/);
   if (m) return pageOrder(m[1]);
   const page = path.split("/")[2] || "";
-  const pages = { dashboard: pageDashboard, orders: pageOrders, inventory: pageInventory, shipments: pageShipments, expenses: pageExpenses, customers: pageCustomers, products: pageProducts, reports: pageReports, audit: pageAudit, users: pageUsers, settings: pageSettings };
+  const pages = { dashboard: pageDashboard, orders: pageOrders, inventory: pageInventory, shipments: pageShipments, collections: pageCollections, expenses: pageExpenses, customers: pageCustomers, products: pageProducts, reports: pageReports, audit: pageAudit, users: pageUsers, settings: pageSettings };
   if (pages[page] && session.nav.includes(page)) return pages[page]();
   return go("/admin/" + (session.nav[0] || "settings"), true);
 }
@@ -2503,6 +2504,131 @@ async function pageShipment(id) {
       tbl(["الطلب", "مرجع الشحنة", "العميل", "العلب", "القيمة", "السبب", "الحالة الآن", "متى", "بواسطة"], d.removed.map(o => [h("a", { href: "/admin/orders/" + o.orderNumber, "data-link": true, class: "num", text: o.orderNumber }),
         h("span", { class: "num small", text: o.shipmentRef }), o.customer, fmtN(o.boxes), money(o.amount), o.removedReason === "CANCELLED" ? "أُلغي" : "أُعيد للتجهيز", badge(o.status), when(o.removedAt), o.removedBy === "system" ? "النظام" : o.removedBy]))) : null);
   drawRows(); drawBar();
+}
+
+
+/* ============================================================ التحصيلات: ما حصّلته سينا ويستحق لك، والتسليم اليدوي، والتسويات */
+async function pageCollections() {
+  const P = new URLSearchParams(location.search), state = { to: P.get("to") || "", mfrom: P.get("mfrom") || "", mto: P.get("mto") || "" };
+  const main = shell("collections", h("p", { class: "muted", text: "جارٍ التحميل…" }));
+  let d; try { d = await api("/collections?" + new URLSearchParams(Object.entries(state).filter(([, v]) => v))); } catch (e) { if (e.message !== "unauthorized") main.lastChild.textContent = errText(e); return; }
+  main.textContent = "";
+  const nav = v => go("/admin/collections?" + new URLSearchParams(Object.entries({ ...state, ...v }).filter(([, x]) => x)));
+  const S = d.summary, dayTxt = s => s ? s.split("-").reverse().join("/") : "—";
+  const diffTxt = x => !x ? "—" : x < 0 ? `أقل بـ ${money(-x)}` : `أكثر بـ ${money(x)}`;
+  const orderLink = n => h("a", { href: "/admin/orders/" + n, "data-link": true, class: "num", text: n });
+  const batchLink = (id, no) => h("a", { href: "/admin/shipments/" + id, "data-link": true, class: "num", text: no });
+
+  put(main, h("div", { class: "page-head" }, h("h1", { text: "التحصيلات" })),
+    h("p", { class: "muted small", text: "طلب سُلّم وهو في شحنة سينا = سينا حصّلت مبلغه وهو مستحق لك حتى تسجّل استلامه منها. طلب سُلّم بدون شحنة سينا = تسليم يدوي حصّله فريقك مباشرة." }),
+    h("div", { class: "tiles" },
+      tile2("مستحق لك من سينا", money(S.owed.amount), `${fmtN(S.owed.count)} طلب سُلّم عن طريق سينا ولم يُستلم مبلغه`),
+      tile2("لدى سينا لم يُسلَّم بعد", money(S.withCarrier.amount), `${fmtN(S.withCarrier.count)} طلب — يصبح مستحقاً عند التوصيل`),
+      tile2("استلمته من سينا", money(S.settled.received), `${fmtN(S.settled.count)} تسوية · ${fmtN(S.settled.orders)} طلب` + (S.settled.difference ? ` · ${diffTxt(S.settled.difference)}` : "")),
+      tile2("تسليم يدوي (بدون سينا)", money(S.manual.amount), `${fmtN(S.manual.count)} طلب حصّله فريقك`)));
+
+  /* ---------- كشف المطالبة حتى تاريخ ---------- */
+  const toIn = h("input", { type: "date", value: d.to, max: d.today, "aria-label": "الطلبات المسلّمة حتى تاريخ" });
+  const claim = h("section", { class: "card" }, h("h2", { text: "كشف المطالبة من سينا" }),
+    h("form", { class: "filters", onsubmit: e => { e.preventDefault(); nav({ to: toIn.value }); } },
+      h("label", { class: "row" }, h("span", { text: "الطلبات المسلّمة عن طريق سينا حتى تاريخ" }), toIn), h("button", { type: "submit", class: "btn primary", text: "عرض" })));
+  put(main, claim);
+  if (!d.owed.length) put(claim, h("div", { class: "empty", text: `لا توجد مبالغ مستحقة من سينا عن طلبات سُلّمت حتى ${dayTxt(d.to)}.` }));
+  else {
+    const T = S.owedTo, mism = d.owed.filter(r => r.mismatch).length;
+    put(claim,
+      h("p", { class: "note-box" }, h("b", { text: `المستحق حتى ${dayTxt(d.to)}: ${money(T.amount)}` }), ` عن ${fmtN(T.count)} طلب.` + (S.owed.count > T.count ? ` (وبعد هذا التاريخ ${fmtN(S.owed.count - T.count)} طلب آخر.)` : "")),
+      mism ? h("p", { class: "warn-box", text: `${fmtN(mism)} طلب تغيّر إجماليه بعد التصدير: المستحق هو المبلغ المصدَّر في ملف سينا (ما حصّلته سينا)، وإجمالي الطلب الحالي ظاهر بجانبه.` }) : null,
+      tbl(["الطلب", "الشحنة", "مرجع الشحنة", "تاريخ التوصيل", "العميل", "المدينة", "المبلغ"], d.owed.map(r => [orderLink(r.orderNumber), batchLink(r.batchId, r.batchNo),
+        h("span", { class: "num", text: r.shipmentRef }), dayTxt(r.deliveredDay), r.customer, r.city || "—",
+        r.mismatch ? h("span", null, money(r.amount), h("small", { class: "muted", text: ` (الطلب الآن ${money(r.orderTotal)})` })) : money(r.amount)])),
+      h("div", { class: "row" },
+        h("a", { class: "btn ghost", href: "/admin/api/collections/claim.csv?to=" + d.to, text: "تنزيل الكشف (CSV / Excel)" }),
+        d.canManage ? h("button", { type: "button", class: "btn primary", text: "تسجيل استلام المبلغ من سينا", onclick: () => { form.hidden = false; form.querySelector("input").focus(); } }) : null));
+
+    /* تسجيل الاستلام: كل الطلبات أعلاه في تسوية واحدة */
+    const id = reqId();
+    const amt = h("input", { type: "number", step: "0.01", min: "0", inputmode: "decimal", value: String(T.amount), required: true });
+    const rday = h("input", { type: "date", value: d.today, max: d.today, required: true });
+    const who = h("input", { type: "text", maxlength: "60", required: true, placeholder: "مثال: فيصل" });
+    const ref = h("input", { type: "text", maxlength: "80", placeholder: "رقم التحويل أو الإيصال (اختياري)" });
+    const notes = h("input", { type: "text", maxlength: "300", placeholder: "اختياري" });
+    const diff = h("p", { class: "small", "aria-live": "polite" }), err = h("p", { class: "err", role: "alert" });
+    const showDiff = () => { const v = Number(amt.value), x = Math.round((v - T.amount) * 100) / 100;
+      diff.textContent = amt.value === "" || !Number.isFinite(v) ? "" : x === 0 ? "المبلغ المستلم يساوي المستحق." : x < 0 ? `أقل من المستحق بـ ${money(-x)} (مثلاً رسوم أو خصومات سينا).` : `أكثر من المستحق بـ ${money(x)}.`;
+      diff.className = "small" + (x ? " warn-box" : ""); };
+    amt.addEventListener("input", showDiff); showDiff();
+    const save = h("button", { type: "submit", class: "btn primary", text: "حفظ الاستلام" });
+    const form = h("form", { class: "card edit-card", hidden: true, novalidate: true },
+      h("h3", { text: `استلام مبلغ من سينا عن ${fmtN(T.count)} طلب (حتى ${dayTxt(d.to)})` }),
+      h("div", { class: "grid2" },
+        h("label", { class: "f" }, "المبلغ المستلم (ر.س)", amt), h("label", { class: "f" }, "تاريخ الاستلام", rday),
+        h("label", { class: "f" }, "المستلم (من استلم المبلغ)", who), h("label", { class: "f" }, "مرجع التحويل", ref),
+        h("label", { class: "f wide" }, "ملاحظات", notes)),
+      diff, err, h("div", { class: "row" }, save, h("button", { type: "button", class: "btn ghost", text: "إلغاء", onclick: () => { form.hidden = true; } })));
+    form.addEventListener("submit", async e => {
+      e.preventDefault(); err.textContent = "";
+      if (amt.value === "" || Number(amt.value) < 0) { err.textContent = "اكتب المبلغ المستلم."; amt.focus(); return; }
+      if (who.value.trim().length < 2) { err.textContent = "اكتب اسم المستلم."; who.focus(); return; }
+      if (!rday.value) { err.textContent = "اختر تاريخ الاستلام."; rday.focus(); return; }
+      const ok = await confirmBox("تأكيد استلام المبلغ من سينا", [`${fmtN(T.count)} طلب سُلّم حتى ${dayTxt(d.to)} — المستحق ${money(T.amount)}.`,
+        `المستلم: ${who.value.trim()} · المبلغ ${money(Number(amt.value))} · بتاريخ ${dayTxt(rday.value)}.`, "تخرج هذه الطلبات من «المستحق من سينا» وتظهر في التسويات."], { okText: "حفظ الاستلام" });
+      if (!ok) return;
+      await busy(save, "جارٍ الحفظ…", async () => {
+        try {
+          const r = await api("/collections/settlements", { body: { to: d.to, expectedCount: T.count, expectedAmount: T.amount, receivedAmount: Number(amt.value), receivedDay: rday.value,
+            receivedBy: who.value.trim(), reference: ref.value.trim(), notes: notes.value.trim(), requestId: id } });
+          toast(`تم تسجيل التسوية ${r.settlement.settlementNo}.`); financeChanged(); nav({});
+        } catch (x) {
+          if (x.message === "unauthorized") return;
+          if (x.message === "selection_changed") { toast("تغيّرت الطلبات المستحقة (تأكيد توصيل جديد). تم تحديث الكشف؛ راجعه ثم سجّل الاستلام.", true); nav({}); return; }
+          err.textContent = x.data && x.data.fields ? "تحقق من الحقول: " + Object.keys(x.data.fields).map(k => ({ receivedAmount: "المبلغ", receivedDay: "التاريخ", receivedBy: "المستلم", to: "تاريخ الكشف" }[k] || k)).join("، ") : errText(x);
+        }
+      });
+    });
+    put(claim, form);
+  }
+
+  /* ---------- التسويات السابقة ---------- */
+  const setCard = h("section", { class: "card" }, h("h2", { text: "المبالغ المستلمة من سينا (التسويات)" }));
+  put(main, setCard);
+  if (!d.settlements.length) put(setCard, h("div", { class: "empty", text: "لم تُسجَّل أي تسوية بعد." }));
+  else {
+    const body = h("tbody");
+    d.settlements.forEach(s => {
+      const detail = h("tr", { hidden: true }, h("td", { colspan: "11" }));
+      const toggle = h("button", { type: "button", class: "btn ghost sm", text: "الطلبات", "aria-expanded": "false", onclick: async () => {
+        if (!detail.hidden) { detail.hidden = true; toggle.setAttribute("aria-expanded", "false"); return; }
+        const cell = detail.firstChild; cell.textContent = "جارٍ التحميل…"; detail.hidden = false; toggle.setAttribute("aria-expanded", "true");
+        try { const x = await api("/collections/settlements/" + s.id); cell.textContent = "";
+          put(cell, tbl(["الطلب", "الشحنة", "مرجع الشحنة", "تاريخ التوصيل", "العميل", "المبلغ"], x.orders.map(o => [orderLink(o.orderNumber), batchLink(o.batchId, o.batchNo), h("span", { class: "num", text: o.shipmentRef }), dayTxt(o.deliveredDay), o.customer, money(o.amount)])));
+        } catch (e) { cell.textContent = errText(e); } } });
+      const voidBtn = d.canManage && !s.voided ? h("button", { type: "button", class: "btn danger sm", text: "إلغاء", onclick: async () => {
+        const reason = h("textarea", { rows: "2", maxlength: "200", placeholder: "سبب الإلغاء (مثلاً: سُجّلت بالخطأ)" });
+        const box = h("div", null, reason);
+        const ok = await confirmBox(`إلغاء التسوية ${s.settlementNo}`, [`تعود ${fmtN(s.ordersCount)} طلب إلى «المستحق من سينا». يبقى السجل ظاهراً كتسوية ملغاة.`, box], { okText: "إلغاء التسوية", danger: true, fields: box });
+        if (!ok) return;
+        try { await api(`/collections/settlements/${s.id}/void`, { body: { reason: reason.value.trim() } }); toast("تم إلغاء التسوية."); financeChanged(); nav({}); }
+        catch (e) { if (e.message !== "unauthorized") toast(e.data && e.data.fields ? "اكتب سبب الإلغاء." : errText(e), true); } } }) : null;
+      put(body, h("tr", { class: s.voided ? "muted" : null },
+        h("td", { class: "num", text: s.settlementNo }), h("td", { text: dayTxt(s.cutoffDay) }), h("td", { class: "num", text: fmtN(s.ordersCount) }),
+        h("td", { text: money(s.expected) }), h("td", null, h("b", { text: money(s.received) })), h("td", { text: diffTxt(s.difference) }),
+        h("td", { text: s.receivedBy }), h("td", { text: dayTxt(s.receivedDay) }), h("td", { class: "num", text: s.reference || "—" }),
+        h("td", null, s.voided ? h("span", { class: "tag", text: "ملغاة", title: `${s.voidReason} — ${s.voidedBy}` }) : h("span", { class: "small muted", text: s.createdBy })),
+        h("td", null, h("div", { class: "row nowrap" }, toggle, voidBtn))), detail);
+    });
+    put(setCard, h("div", { class: "table-wrap" }, h("table", null,
+      h("thead", null, h("tr", null, ["رقم التسوية", "حتى تاريخ", "الطلبات", "المستحق", "المستلم فعلاً", "الفرق", "المستلم", "تاريخ الاستلام", "المرجع", "سجّلها", ""].map(t => h("th", { text: t })))), body)));
+  }
+
+  /* ---------- التسليم اليدوي ---------- */
+  const mf = h("input", { type: "date", value: d.mfrom, max: d.today, "aria-label": "من تاريخ" }), mt = h("input", { type: "date", value: d.mto, max: d.today, "aria-label": "إلى تاريخ" });
+  const MR = S.manualRange;
+  put(main, h("section", { class: "card" }, h("h2", { text: "التسليم اليدوي (بدون سينا)" }),
+    h("form", { class: "filters", onsubmit: e => { e.preventDefault(); nav({ mfrom: mf.value, mto: mt.value }); } },
+      h("label", { class: "row" }, h("span", { text: "سُلّمت من" }), mf), h("label", { class: "row" }, h("span", { text: "إلى" }), mt), h("button", { type: "submit", class: "btn primary", text: "عرض" })),
+    h("p", { class: "note-box" }, h("b", { text: `${money(MR.amount)}` }), ` عن ${fmtN(MR.count)} طلب سُلّم يدوياً من ${dayTxt(d.mfrom)} إلى ${dayTxt(d.mto)}.`),
+    tbl(["الطلب", "العميل", "المدينة", "تاريخ التوصيل", "أكّد التوصيل", "المبلغ"], d.manual.map(r => [orderLink(r.orderNumber), r.customer, r.city || "—", dayTxt(r.deliveredDay), r.deliveredBy || "—", money(r.amount)]))));
 }
 
 route();
