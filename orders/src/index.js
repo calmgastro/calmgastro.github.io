@@ -1,5 +1,6 @@
 /* CalmGastro orders API + admin (Cloudflare Worker + D1). Full reference: ../README.md
-   Public (vitamik.com only, CORS):
+   Public (ALLOWED_ORIGINS only, CORS: vitamik.com + the ad page on its own Cloudflare host):
+     GET  /api/store           packages + prices for the ad page (same catalog the server charges)
      POST /api/orders          create an order (idempotent)             → { order, token }
      POST /api/orders/view     { orderNumber, token }  secure link        → { order }
      POST /api/orders/track    { orderNumber, phone }  number + mobile    → { order }
@@ -11,6 +12,7 @@ import * as S from "./stock_admin.js";
 import * as F from "./finance.js";
 import * as SH from "./shipments.js";
 import * as CO from "./collections.js";
+import { getCatalog, publicStore } from "./catalog.js";
 
 const MAX_BODY = 16 * 1024;
 // browser family only, for diagnosing "works on X, fails on Y" reports
@@ -237,6 +239,12 @@ export default {
       // every admin page (/admin, /admin/login, /admin/orders/CG-…) is the same app shell; the data behind it needs a session
       if ((url.pathname === "/admin" || url.pathname.startsWith("/admin/")) && request.method === "GET") return await asset(env, url, "/admin/index.html");
 
+      if (url.pathname === "/api/store") {
+        if (request.method === "OPTIONS") return new Response(null, { status: cors ? 204 : 403, headers: { ...BASE_HEADERS, ...(cors || {}) } });
+        if (!cors) return json({ error: "forbidden_origin" }, 403);
+        if (request.method !== "GET") return json({ error: "method_not_allowed" }, 405, cors);
+        return json({ store: publicStore(await getCatalog(env)) }, 200, cors);
+      }
       if (url.pathname.startsWith("/api/orders")) {
         if (request.method === "OPTIONS") return new Response(null, { status: cors ? 204 : 403, headers: { ...BASE_HEADERS, ...(cors || {}) } });
         if (!cors) return json({ error: "forbidden_origin" }, 403);

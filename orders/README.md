@@ -85,13 +85,14 @@ Orders keep the city exactly as typed: `?city=<key>` is resolved to the spelling
 
 ## API
 
-Public (CORS: vitamik.com only; 10 orders/min/IP, 30 lookups/min/IP):
+Public (CORS: `ALLOWED_ORIGINS` = vitamik.com + the ad page https://calmgastro-offer.calmgastro.workers.dev; 10 orders/min/IP, 30 lookups/min/IP):
 
 | Method | Path | Body | Result |
 |---|---|---|---|
 | POST | `/api/orders` | `{ idempotencyKey, items:[{id,qty}], customer:{…}, location?, paymentMethod:"cod", lang, expectedTotal }` | `201 { order, token }` / `200` replay |
 | POST | `/api/orders/view` | `{ orderNumber, token }` | `{ order }` (secure link) |
 | POST | `/api/orders/track` | `{ orderNumber, phone }` | `{ order }` |
+| GET | `/api/store` | — | `{ store: { bundles:[{id,boxes,price,was,title,program}], shipping, currency, inStock, deliveryShort, whatsapp } }` (the ad page's prices: the same catalog the server charges) |
 
 Admin (`/admin/api/*`, session cookie; POST needs `X-CG-Admin: 1`):
 `GET /setup` · `POST /setup` · `POST /login` · `POST /login/2fa` · `POST /logout` · `GET /me` · `POST /me/password` ·
@@ -343,7 +344,17 @@ there is not repeated in the duplicates card), and a line in the export / add-to
 (form and customer page) lists the customer's open orders (`openOrders`). Nothing is blocked; «ليس مكرراً» (duplicate_cleared_at)
 stops it. Tests: `e2e/repeat_order.mjs` (36).
 
-## Ads order page `/offer/` (migration `0013`)
+## Ads order page (migration `0013`; own host since 2026-11-15)
+
+**Since 2026-11-15 the page lives on its own host**: Cloudflare project `calmgastro-offer` (Workers static assets), https://calmgastro-offer.calmgastro.workers.dev/,
+code in the separate repo folder `calmgastro_offer/` (see its README). It has no link to vitamik.com (the logo is not a link)
+and reads prices from `GET /api/store` instead of `fetch("/")`; it no longer writes `cg-orders` (another origin). The orders
+still go to this Worker with `channel: "ad_page"` and show in the admin as below; the origin is allowed in `ALLOWED_ORIGINS`
+(`wrangler.toml`). `offer/index.html` on vitamik.com is now only a redirect to the new host that keeps the query string
+(`fbclid`, `ttclid`, `utm_*`), loads no pixels and is `noindex`; `assets/offer*.js` and the offer images were removed from
+vitamik.com. Tests: `e2e/offer_site.mjs` (45, two origins locally), `e2e/live_offer_site.mjs` (live, read only). The notes below
+describe the behaviour, which did not change; where they say vitamik.com/offer/, read the new host.
+
 
 A separate page for ad traffic: `offer/index.html` + `assets/offer.js` (+ `assets/offer-guard.js`, frame protection). Nothing on the
 main page links to it (`e2e/offer_page.mjs` checks index.html, app.js and shop.js); its logo is its only link back to `/`. `noindex`

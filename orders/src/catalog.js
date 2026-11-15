@@ -25,7 +25,8 @@ export function validateCatalog(data) {
     if (!int(b.boxes, 1, 50) || !int(b.price, 1, 100000)) throw new CatalogError("bad bundle " + b.id);
     ids.add(b.id);
     return { id: b.id, boxes: b.boxes, price: b.price, title: String(b.title || b.id), title_en: String(b.title_en || b.title || b.id),
-             program: String(b.program || ""), program_en: String(b.program_en || b.program || "") };
+             program: String(b.program || ""), program_en: String(b.program_en || b.program || ""),
+             was: int(b.was, b.price + 1, 1000000) ? b.was : null };   // struck-through price, display only
   });
   const p = st.pricing || {}, s = st.shipping || {}, o = st.orders || {};
   const catalog = {
@@ -38,7 +39,10 @@ export function validateCatalog(data) {
     freeShippingFrom: s.freeFrom ?? 0,
     paymentMethods: Array.isArray(st.paymentMethods) ? st.paymentMethods.map(m => m && m.id).filter(Boolean) : ["cod"],
     inStock: st.inStock !== false,
-    orderPrefix: o.prefix || "CG"
+    orderPrefix: o.prefix || "CG",
+    // display only (the ad page on its own host reads them through GET /api/store)
+    deliveryShort: String(st.deliveryShort || "").replace(/[\u0000-\u001f<>]/g, "").trim().slice(0, 60),
+    whatsapp: /^\d{8,15}$/.test(String(st.whatsapp || "")) ? String(st.whatsapp) : null
   };
   if (catalog.boxPriceAfterBundles != null && !int(catalog.boxPriceAfterBundles, 1, 100000)) throw new CatalogError("bad boxPriceAfterBundles");
   if (!int(catalog.maxBoxesPerOrder, 1, 500) || !int(catalog.maxQtyPerLine, 1, 99)) throw new CatalogError("bad order limits");
@@ -77,7 +81,15 @@ export function resetCatalogMemory() { memory = null; }
 function storeFromCached(c) {
   return { bundles: c.bundles, currencyCode: c.currency, pricing: { boxPriceAfterBundles: c.boxPriceAfterBundles },
            orders: { maxBoxesPerOrder: c.maxBoxesPerOrder, maxQtyPerLine: c.maxQtyPerLine, prefix: c.orderPrefix },
-           shipping: { cost: c.shippingCost, freeFrom: c.freeShippingFrom }, paymentMethods: c.paymentMethods.map(id => ({ id })), inStock: c.inStock };
+           shipping: { cost: c.shippingCost, freeFrom: c.freeShippingFrom }, paymentMethods: c.paymentMethods.map(id => ({ id })), inStock: c.inStock,
+           deliveryShort: c.deliveryShort, whatsapp: c.whatsapp };
+}
+
+/* What the ad page (separate host) needs to show the packages: the same prices the server charges. No costs, no limits. */
+export function publicStore(c) {
+  return { bundles: c.bundles.map(b => ({ id: b.id, boxes: b.boxes, price: b.price, was: b.was ?? null, title: b.title, program: b.program })),
+           shipping: { cost: c.shippingCost, freeFrom: c.freeShippingFrom }, currency: c.currency, inStock: c.inStock,
+           deliveryShort: c.deliveryShort || "", whatsapp: c.whatsapp || null };
 }
 
 /* ---------- pricing ----------

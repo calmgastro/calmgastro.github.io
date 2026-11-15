@@ -29,7 +29,7 @@ enabled = true
 
 [vars]
 SITE_URL = "https://vitamik.com/"
-ALLOWED_ORIGINS = "https://vitamik.com,https://www.vitamik.com"
+ALLOWED_ORIGINS = "https://vitamik.com,https://www.vitamik.com,https://calmgastro-offer.calmgastro.workers.dev"
 
 [[d1_databases]]
 binding = "DB"
