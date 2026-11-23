@@ -3,6 +3,7 @@ import { getCatalog, quote } from "./catalog.js";
 
 import { notifyMessage } from "./statuses.js";
 import { creationStmts, checkAlert } from "./inventory.js";
+import { isWarehouse, warehouseMode, warehouseFor } from "./warehouses.js";
 export { notifyMessage };
 
 /* ---------- input cleaning ---------- */
@@ -182,7 +183,9 @@ export async function insertOrder(env, catalog, o, q, opts) {
     // website orders never overwrite the record; they only fill a national address it does not have yet
     : `INSERT INTO customers (phone, name, city, district, address, created_by, created_at, updated_at, national_address, notes) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8, ?9)
        ON CONFLICT (phone) DO UPDATE SET national_address = COALESCE(customers.national_address, excluded.national_address)`;
-  const inv = await creationStmts(db, { items: q.lines.map(l => ({ productId: l.productId, boxesPerUnit: l.boxesPerUnit, quantity: l.quantity })),
+  // the warehouse the order is taken from: by its city, or the one the admin chose
+  const manualWh = isWarehouse(opts.warehouse), warehouse = manualWh ? opts.warehouse : warehouseFor(await warehouseMode(db), o.customer.city);
+  const inv = await creationStmts(db, { warehouse, items: q.lines.map(l => ({ productId: l.productId, boxesPerUnit: l.boxesPerUnit, quantity: l.quantity })),
     oid: { sql: "(SELECT id FROM orders WHERE idempotency_key = ?)", binds: [o.key] }, actor: opts.actor, userId: opts.userId, t: now, key: o.key,
     label: opts.source === "ADMIN" ? "admin_order" : "website_order" });
   const stmts = [
@@ -190,13 +193,13 @@ export async function insertOrder(env, catalog, o, q, opts) {
     db.prepare(customerSql).bind(o.customer.phone, o.customer.name, o.customer.city, o.customer.district, o.customer.address, opts.actor, now, o.customer.nationalAddress, o.customer.notes || ""),
     db.prepare(`INSERT INTO orders (order_number, idempotency_key, request_hash, customer_name, customer_phone, city, district, address,
         location_latitude, location_longitude, customer_notes, boxes, subtotal, discount_amount, shipping_amount, total_amount,
-        currency, payment_method, status, lang, created_at, updated_at, source, created_by, created_by_user_id, customer_id, manual_discount, manual_discount_reason, national_address, repeat_confirmed_at, channel)
+        currency, payment_method, status, lang, created_at, updated_at, source, created_by, created_by_user_id, customer_id, manual_discount, manual_discount_reason, national_address, repeat_confirmed_at, channel, warehouse_id, warehouse_manual)
       VALUES (?1 || '-' || ?2 || '-' || printf('%06d', (SELECT last_value FROM order_counters WHERE year = ?2)),
-        ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?22, ?23, ?24, ?25, (SELECT id FROM customers WHERE phone = ?6), ?26, ?27, ?28, ?29, ?30)`)
+        ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?22, ?23, ?24, ?25, (SELECT id FROM customers WHERE phone = ?6), ?26, ?27, ?28, ?29, ?30, ?31, ?32)`)
       .bind(catalog.orderPrefix, year, o.key, o.requestHash, o.customer.name, o.customer.phone, o.customer.city, o.customer.district,
         o.customer.address, o.location ? o.location.lat : null, o.location ? o.location.lng : null, o.customer.notes,
         q.boxes, q.subtotal, discount, q.shipping, total, q.currency, o.payment, status, o.lang, now,
-        opts.source, opts.actor, opts.userId ?? null, manual, opts.manualReason || "", o.customer.nationalAddress, opts.repeatConfirmed ? now : null, opts.channel || null),
+        opts.source, opts.actor, opts.userId ?? null, manual, opts.manualReason || "", o.customer.nationalAddress, opts.repeatConfirmed ? now : null, opts.channel || null, warehouse, manualWh ? 1 : 0),
     ...q.lines.map(l => db.prepare(`INSERT INTO order_items (order_id, product_id, product_name_snapshot, product_name_en_snapshot,
         boxes_per_unit, unit_price, quantity, line_total, created_at, updated_at) VALUES (${orderId}, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)`)
       .bind(o.key, l.productId, l.name, l.nameEn, l.boxesPerUnit, l.unitPrice, l.quantity, l.lineTotal, now)),

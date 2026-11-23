@@ -1,9 +1,11 @@
 /* Inventory: the ONE place that moves stock. Website orders, admin orders, status changes, bulk changes and item edits
    all call these functions, and every movement is written in the same D1 transaction as the order change that caused it.
 
-   Model (per product):  on_hand = physical units not yet sold · reserved = held for open orders · available = on_hand − reserved
+   Model (per product AND warehouse):  on_hand = physical units not yet sold · reserved = held for open orders · available = on_hand − reserved
    Every movement adds a row to inventory_transactions (append-only) with the balances before and after.
-   Cost: FIFO over inventory_batches (one batch per receipt). COGS is stored on the reservation when the order is delivered
+   A warehouse's stock never serves an order of the other one; boxes move only by a transfer (warehouse_admin.js), and an
+   order only by moveStmts. inventory_batch_stock says where each batch's remaining units are (their sum = quantity_remaining).
+   Cost: FIFO over inventory_batches in the order's warehouse (one batch per receipt). COGS is stored on the reservation when the order is delivered
    and is never recalculated on page loads.
 
    Idempotency: status-change statements are guarded by the order's new (status, updated_at) pair written by the same
@@ -12,6 +14,7 @@
    instead of ever storing a negative balance. */
 import { HttpError } from "./orders.js";
 import { auditStmt } from "./auth.js";
+import { SENA_MAKKAH, WAREHOUSE_IDS, WAREHOUSE_MODES, isWarehouse, whOf } from "./warehouses.js";
 
 export const DEFAULT_PRODUCT = "calmgastro";
 
@@ -31,7 +34,8 @@ export const SETTINGS = {
   costing_method:           { type: "enum", values: ["FIFO"] },
   reservation_behavior:     { type: "enum", values: ["ON_ORDER_CREATED"] },
   shortage_policy:          { type: "enum", values: ["RESERVE_AVAILABLE", "RESERVE_NONE"] },
-  return_policy:            { type: "enum", values: ["RESTOCK", "WRITE_OFF"] }
+  return_policy:            { type: "enum", values: ["RESTOCK", "WRITE_OFF"] },
+  warehouse_mode:           { type: "enum", values: WAREHOUSE_MODES }
 };
 
 const nowIso = () => new Date().toISOString();
@@ -43,11 +47,14 @@ export async function getSettings(db) {
   return {
     lowStockThreshold: Number(s.low_stock_threshold ?? 10), criticalStockThreshold: Number(s.critical_stock_threshold ?? 3),
     costingMethod: s.costing_method || "FIFO", reservationBehavior: s.reservation_behavior || "ON_ORDER_CREATED",
-    shortagePolicy: s.shortage_policy || "RESERVE_AVAILABLE", returnPolicy: s.return_policy || "RESTOCK"
+    shortagePolicy: s.shortage_policy || "RESERVE_AVAILABLE", returnPolicy: s.return_policy || "RESTOCK",
+    warehouseMode: WAREHOUSE_MODES.includes(s.warehouse_mode) ? s.warehouse_mode : "CITY"
   };
 }
-export async function getBalance(db, product = DEFAULT_PRODUCT) {
-  return db.prepare("SELECT * FROM inventory_balances WHERE product_id = ?").bind(product).first();
+// one warehouse's balance; without a warehouse, the two together
+export async function getBalance(db, product = DEFAULT_PRODUCT, warehouse = null) {
+  if (warehouse) return db.prepare("SELECT * FROM inventory_balances WHERE product_id = ? AND warehouse_id = ?").bind(product, warehouse).first();
+  return db.prepare("SELECT product_id, SUM(on_hand) on_hand, SUM(reserved) reserved, SUM(sold) sold, MIN(initialized_at) initialized_at FROM inventory_balances WHERE product_id = ? GROUP BY product_id").bind(product).first();
 }
 export const isInitialized = async (db, product = DEFAULT_PRODUCT) => !!(await getBalance(db, product));
 
@@ -77,19 +84,24 @@ export function fifoPieceCost(batch, q) {
   const R = batch.quantity_received, before = R - batch.quantity_remaining, T = batch.total_cost_halalas;
   return Math.round(T * (before + q) / R) - Math.round(T * before / R);
 }
-export async function fifoPlan(db, product, qty) {
-  const batches = (await db.prepare("SELECT * FROM inventory_batches WHERE product_id = ? AND quantity_remaining > 0 ORDER BY received_at, id").bind(product).all()).results;
+export async function fifoPlan(db, product, qty, warehouse) {
+  const batches = (await db.prepare(`SELECT b.*, s.quantity here FROM inventory_batches b JOIN inventory_batch_stock s ON s.batch_id = b.id AND s.warehouse_id = ?
+    WHERE b.product_id = ? AND s.quantity > 0 ORDER BY b.received_at, b.id`).bind(warehouse, product).all()).results;
   const plan = [];
   let left = qty;
   for (const b of batches) {
     if (!left) break;
-    const q = Math.min(left, b.quantity_remaining);
+    const q = Math.min(left, b.here);
     plan.push({ batchId: b.id, q, cost: fifoPieceCost(b, q) });
     left -= q;
   }
-  if (left) throw new HttpError(409, { error: "insufficient_stock", product, requested: qty, missing: left });
+  if (left) throw new HttpError(409, { error: "insufficient_stock", product, warehouse, requested: qty, missing: left });
   return plan;
 }
+/* Units of a batch leaving / entering a warehouse (inventory_batches.quantity_remaining is updated by the caller). */
+export const batchOut = (db, batchId, warehouse, q, g = NO_GUARD) => db.prepare(`UPDATE inventory_batch_stock SET quantity = quantity - ? WHERE batch_id = ? AND warehouse_id = ? AND ${g.sql}`).bind(q, batchId, warehouse, ...g.binds);
+export const batchIn = (db, batchId, warehouse, q, g = NO_GUARD) => db.prepare(`INSERT INTO inventory_batch_stock (batch_id, warehouse_id, quantity) SELECT ?, ?, ? WHERE ${g.sql}
+  ON CONFLICT (batch_id, warehouse_id) DO UPDATE SET quantity = quantity + excluded.quantity`).bind(batchId, warehouse, q, ...g.binds);
 const planCost = plan => plan.some(p => p.cost == null) ? { cost: plan.reduce((s, p) => s + (p.cost || 0), 0), complete: false } : { cost: plan.reduce((s, p) => s + p.cost, 0), complete: true };
 
 /* ---------- statement builders ----------
@@ -99,33 +111,33 @@ export const NO_GUARD = { sql: "1", binds: [] };
 export const orderGuard = (orderId, status, updatedAt) => ({ sql: "EXISTS (SELECT 1 FROM orders WHERE id = ? AND status = ? AND updated_at = ?)", binds: [orderId, status, updatedAt] });
 export const orderIdLiteral = id => ({ sql: "?", binds: [id] });
 
-function txInsert(db, { product, type, qtySql, qtyBinds = [], oid, beforeAfter, cost = null, costSql = null, note = "", actor, userId, key, t, g, extraWhere = "", extraBinds = [], batchId = null, adjustmentId = null, reference = "" }) {
+function txInsert(db, { product, warehouse, type, qtySql, qtyBinds = [], oid, beforeAfter, cost = null, costSql = null, note = "", actor, userId, key, t, g, extraWhere = "", extraBinds = [], batchId = null, adjustmentId = null, reference = "" }) {
   // beforeAfter: SQL giving on_hand_before, on_hand_after, reserved_before, reserved_after from the balance row b AFTER the movement
   return db.prepare(`INSERT INTO inventory_transactions (product_id, type, quantity, order_id, batch_id, adjustment_id, on_hand_before, on_hand_after,
-      reserved_before, reserved_after, available_before, available_after, cost_halalas, reference, notes, actor, user_id, idempotency_key, created_at)
+      reserved_before, reserved_after, available_before, available_after, cost_halalas, reference, notes, actor, user_id, idempotency_key, created_at, warehouse_id)
     SELECT ?, ?, ${qtySql}, ${oid ? oid.sql : "NULL"}, ?, ?, ${beforeAfter.ohB}, b.on_hand, ${beforeAfter.rB}, b.reserved,
-      (${beforeAfter.ohB}) - (${beforeAfter.rB}), b.on_hand - b.reserved, ${costSql || "?"}, ?, ?, ?, ?, ?, ?
-    FROM inventory_balances b WHERE b.product_id = ? AND ${g.sql}${extraWhere}`)
-    .bind(product, type, ...qtyBinds, ...(oid ? oid.binds : []), batchId, adjustmentId, ...(costSql ? [] : [cost]), reference, note, actor, userId ?? null, key, t, product, ...g.binds, ...extraBinds);
+      (${beforeAfter.ohB}) - (${beforeAfter.rB}), b.on_hand - b.reserved, ${costSql || "?"}, ?, ?, ?, ?, ?, ?, b.warehouse_id
+    FROM inventory_balances b WHERE b.product_id = ? AND b.warehouse_id = ? AND ${g.sql}${extraWhere}`)
+    .bind(product, type, ...qtyBinds, ...(oid ? oid.binds : []), batchId, adjustmentId, ...(costSql ? [] : [cost]), reference, note, actor, userId ?? null, key, t, product, warehouse, ...g.binds, ...extraBinds);
 }
 
 /* Reserve `qty` units of `product` for an order. With RESERVE_AVAILABLE a partial reservation is made and the rest is a
    shortage; with RESERVE_NONE nothing is held unless everything can be. Never makes available negative. */
-export function reserveStmts(db, { product, qty, oid, policy, actor, userId, t, g = NO_GUARD, key, note = "" }) {
+export function reserveStmts(db, { product, warehouse, qty, oid, policy, actor, userId, t, g = NO_GUARD, key, note = "" }) {
   const amt = policy === "RESERVE_NONE" ? "CASE WHEN on_hand - reserved >= ? THEN ? ELSE 0 END" : "MIN(?, on_hand - reserved)";
   const amtBinds = policy === "RESERVE_NONE" ? [qty, qty] : [qty];
   return [
-    db.prepare(`UPDATE inventory_balances SET last_delta = ${amt}, reserved = reserved + ${amt}, updated_at = ? WHERE product_id = ? AND ${g.sql}`)
-      .bind(...amtBinds, ...amtBinds, t, product, ...g.binds),
+    db.prepare(`UPDATE inventory_balances SET last_delta = ${amt}, reserved = reserved + ${amt}, updated_at = ? WHERE product_id = ? AND warehouse_id = ? AND ${g.sql}`)
+      .bind(...amtBinds, ...amtBinds, t, product, warehouse, ...g.binds),
     db.prepare(`INSERT INTO inventory_reservations (order_id, product_id, requested_qty, reserved_qty, shortage_qty, status, available_at_order, available_after, reserved_at, updated_at)
       SELECT ${oid.sql}, ?, ?, b.last_delta, ? - b.last_delta, CASE WHEN b.last_delta = ? THEN 'RESERVED' ELSE 'SHORTAGE' END,
         b.on_hand - b.reserved + b.last_delta, b.on_hand - b.reserved, ?, ?
-      FROM inventory_balances b WHERE b.product_id = ? AND ${g.sql}
+      FROM inventory_balances b WHERE b.product_id = ? AND b.warehouse_id = ? AND ${g.sql}
       ON CONFLICT (order_id, product_id) DO UPDATE SET requested_qty = excluded.requested_qty, reserved_qty = excluded.reserved_qty, shortage_qty = excluded.shortage_qty,
         status = excluded.status, available_at_order = excluded.available_at_order, available_after = excluded.available_after, reserved_at = excluded.reserved_at,
         released_at = NULL, committed_at = NULL, cogs_halalas = NULL, cogs_complete = 0, updated_at = excluded.updated_at`)
-      .bind(...oid.binds, product, qty, qty, qty, t, t, product, ...g.binds),
-    txInsert(db, { product, type: "RESERVATION", qtySql: "b.last_delta", oid, beforeAfter: { ohB: "b.on_hand", rB: "b.reserved - b.last_delta" },
+      .bind(...oid.binds, product, qty, qty, qty, t, t, product, warehouse, ...g.binds),
+    txInsert(db, { product, warehouse, type: "RESERVATION", qtySql: "b.last_delta", oid, beforeAfter: { ohB: "b.on_hand", rB: "b.reserved - b.last_delta" },
       note: note || "", actor, userId, key, t, g })
   ];
 }
@@ -133,12 +145,12 @@ export function reserveStmts(db, { product, qty, oid, policy, actor, userId, t, 
 const activeRes = oid => `(SELECT reserved_qty FROM inventory_reservations WHERE order_id = ${oid.sql} AND product_id = ? AND status IN ('RESERVED','SHORTAGE'))`;
 
 /* Release whatever the order holds (cancelled, failed, quantity edit). */
-export function releaseStmts(db, { product, oid, actor, userId, t, g = NO_GUARD, key, note = "" }) {
+export function releaseStmts(db, { product, warehouse, oid, actor, userId, t, g = NO_GUARD, key, note = "" }) {
   const sub = activeRes(oid);
   return [
-    db.prepare(`UPDATE inventory_balances SET last_delta = COALESCE(${sub}, 0), reserved = reserved - COALESCE(${sub}, 0), updated_at = ? WHERE product_id = ? AND ${g.sql}`)
-      .bind(...oid.binds, product, ...oid.binds, product, t, product, ...g.binds),
-    txInsert(db, { product, type: "RELEASE", qtySql: "b.last_delta", oid, beforeAfter: { ohB: "b.on_hand", rB: "b.reserved + b.last_delta" }, note, actor, userId, key, t, g,
+    db.prepare(`UPDATE inventory_balances SET last_delta = COALESCE(${sub}, 0), reserved = reserved - COALESCE(${sub}, 0), updated_at = ? WHERE product_id = ? AND warehouse_id = ? AND ${g.sql}`)
+      .bind(...oid.binds, product, ...oid.binds, product, t, product, warehouse, ...g.binds),
+    txInsert(db, { product, warehouse, type: "RELEASE", qtySql: "b.last_delta", oid, beforeAfter: { ohB: "b.on_hand", rB: "b.reserved + b.last_delta" }, note, actor, userId, key, t, g,
       extraWhere: ` AND EXISTS (SELECT 1 FROM inventory_reservations WHERE order_id = ${oid.sql} AND product_id = ? AND status IN ('RESERVED','SHORTAGE'))`, extraBinds: [...oid.binds, product] }),
     db.prepare(`UPDATE inventory_reservations SET status = 'RELEASED', released_at = ?, updated_at = ? WHERE order_id = ${oid.sql} AND product_id = ? AND status IN ('RESERVED','SHORTAGE') AND ${g.sql}`)
       .bind(t, t, ...oid.binds, product, ...g.binds)
@@ -147,15 +159,16 @@ export function releaseStmts(db, { product, oid, actor, userId, t, g = NO_GUARD,
 
 /* Delivered: the reserved units leave stock for good, batches are consumed FIFO and COGS is stored on the reservation.
    fromReserved=false is used when the order held nothing (e.g. an override from Cancelled straight to Delivered). */
-export function commitStmts(db, { product, qty, plan, oid, fromReserved, actor, userId, t, g = NO_GUARD, key, note = "" }) {
+export function commitStmts(db, { product, warehouse, qty, plan, oid, fromReserved, actor, userId, t, g = NO_GUARD, key, note = "" }) {
   const { cost, complete } = planCost(plan);
   const stmts = [
-    db.prepare(`UPDATE inventory_balances SET last_delta = ?, on_hand = on_hand - ?, reserved = reserved - ?, sold = sold + ?, updated_at = ? WHERE product_id = ? AND ${g.sql}`)
-      .bind(qty, qty, fromReserved ? qty : 0, qty, t, product, ...g.binds),
+    db.prepare(`UPDATE inventory_balances SET last_delta = ?, on_hand = on_hand - ?, reserved = reserved - ?, sold = sold + ?, updated_at = ? WHERE product_id = ? AND warehouse_id = ? AND ${g.sql}`)
+      .bind(qty, qty, fromReserved ? qty : 0, qty, t, product, warehouse, ...g.binds),
     ...plan.map(p => db.prepare(`UPDATE inventory_batches SET quantity_remaining = quantity_remaining - ? WHERE id = ? AND ${g.sql}`).bind(p.q, p.batchId, ...g.binds)),
+    ...plan.map(p => batchOut(db, p.batchId, warehouse, p.q, g)),
     ...plan.map(p => db.prepare(`INSERT INTO inventory_consumptions (order_id, batch_id, quantity, cost_halalas, created_at) SELECT ${oid.sql}, ?, ?, ?, ? WHERE ${g.sql}`)
       .bind(...oid.binds, p.batchId, p.q, p.cost, t, ...g.binds)),
-    txInsert(db, { product, type: "SALE", qtySql: "?", qtyBinds: [qty], oid, cost: complete ? cost : null,
+    txInsert(db, { product, warehouse, type: "SALE", qtySql: "?", qtyBinds: [qty], oid, cost: complete ? cost : null,
       beforeAfter: { ohB: "b.on_hand + b.last_delta", rB: fromReserved ? "b.reserved + b.last_delta" : "b.reserved" }, note, actor, userId, key, t, g })
   ];
   stmts.push(fromReserved
@@ -171,15 +184,16 @@ export function commitStmts(db, { product, qty, plan, oid, fromReserved, actor, 
 
 /* A delivered order goes back (status override out of Delivered). RESTOCK puts the units back into the same batches at the
    same cost; WRITE_OFF takes them out of the sale but not back into stock (damaged / not resellable). */
-export function returnStmts(db, { product, qty, consumptions, policy, oid, actor, userId, t, g = NO_GUARD, key, note = "" }) {
+export function returnStmts(db, { product, warehouse, qty, consumptions, policy, oid, actor, userId, t, g = NO_GUARD, key, note = "" }) {
   const cost = consumptions.some(c => c.cost_halalas == null) ? null : consumptions.reduce((s, c) => s + c.cost_halalas, 0);
   const restock = policy !== "WRITE_OFF";
   return [
-    db.prepare(`UPDATE inventory_balances SET last_delta = ?, on_hand = on_hand + ?, sold = sold - ?, updated_at = ? WHERE product_id = ? AND ${g.sql}`)
-      .bind(qty, restock ? qty : 0, qty, t, product, ...g.binds),
+    db.prepare(`UPDATE inventory_balances SET last_delta = ?, on_hand = on_hand + ?, sold = sold - ?, updated_at = ? WHERE product_id = ? AND warehouse_id = ? AND ${g.sql}`)
+      .bind(qty, restock ? qty : 0, qty, t, product, warehouse, ...g.binds),
     ...(restock ? consumptions.map(c => db.prepare(`UPDATE inventory_batches SET quantity_remaining = quantity_remaining + ? WHERE id = ? AND ${g.sql}`).bind(c.quantity, c.batch_id, ...g.binds)) : []),
+    ...(restock ? consumptions.map(c => batchIn(db, c.batch_id, warehouse, c.quantity, g)) : []),
     db.prepare(`UPDATE inventory_consumptions SET reversed_at = ? WHERE order_id = ${oid.sql} AND reversed_at IS NULL AND ${g.sql}`).bind(t, ...oid.binds, ...g.binds),
-    txInsert(db, { product, type: restock ? "RETURN" : "WRITE_OFF", qtySql: "?", qtyBinds: [qty], oid, cost,
+    txInsert(db, { product, warehouse, type: restock ? "RETURN" : "WRITE_OFF", qtySql: "?", qtyBinds: [qty], oid, cost,
       beforeAfter: { ohB: restock ? "b.on_hand - b.last_delta" : "b.on_hand", rB: "b.reserved" }, note, actor, userId, key, t, g }),
     db.prepare(`UPDATE inventory_reservations SET status = 'RELEASED', released_at = ?, updated_at = ? WHERE order_id = ${oid.sql} AND product_id = ? AND status = 'COMMITTED' AND ${g.sql}`)
       .bind(t, t, ...oid.binds, product, ...g.binds)
@@ -187,21 +201,22 @@ export function returnStmts(db, { product, qty, consumptions, policy, oid, actor
 }
 
 /* ---------- order creation (website and admin use the same call) ---------- */
-export async function creationStmts(db, { items, oid, actor, userId, t, key, label }) {
+export async function creationStmts(db, { items, oid, warehouse, actor, userId, t, key, label }) {
   if (!(await isInitialized(db))) return { stmts: [], preview: null };
   const s = await getSettings(db), stmts = [];
   for (const [product, qty] of unitsByProduct(items))
-    stmts.push(...reserveStmts(db, { product, qty, oid, policy: s.shortagePolicy, actor, userId, t, key: `reserve:${key}:${product}`, note: label || "" }));
+    stmts.push(...reserveStmts(db, { product, warehouse, qty, oid, policy: s.shortagePolicy, actor, userId, t, key: `reserve:${key}:${product}`, note: label || "" }));
   return { stmts };
 }
 
 /* What creating an order for `units` would do right now (admin preview / confirmation). */
-export async function reservationPreview(db, units) {
-  const b = await getBalance(db);
+export async function reservationPreview(db, units, warehouse) {
+  const b = await getBalance(db, DEFAULT_PRODUCT, warehouse);
   if (!b) return { initialized: false };
+  const all = await getBalance(db);
   const s = await getSettings(db), available = b.on_hand - b.reserved;
   const reserve = s.shortagePolicy === "RESERVE_NONE" ? (available >= units ? units : 0) : Math.min(units, Math.max(0, available));
-  return { initialized: true, onHand: b.on_hand, reserved: b.reserved, available, requested: units, toReserve: reserve, shortage: units - reserve,
+  return { initialized: true, warehouse, otherAvailable: all.on_hand - all.reserved - available, onHand: b.on_hand, reserved: b.reserved, available, requested: units, toReserve: reserve, shortage: units - reserve,
     availableAfter: available - reserve, reservedAfter: b.reserved + reserve, shortagePolicy: s.shortagePolicy };
 }
 
@@ -214,27 +229,27 @@ export async function transitionStmts(db, { order, items, from, to, actor, userI
   if (a === b) return [];
   const s = await getSettings(db), oid = orderIdLiteral(order.id), stmts = [];
   const res = new Map(((await db.prepare("SELECT * FROM inventory_reservations WHERE order_id = ?").bind(order.id).all()).results).map(r => [r.product_id, r]));
-  const base = `${order.id}:${to}:${t}`;
+  const base = `${order.id}:${to}:${t}`, warehouse = whOf(order);
   for (const [product, qty] of unitsByProduct(items)) {
     const r = res.get(product), k = (type) => `${type}:${base}:${product}`;
     const active = r && ["RESERVED", "SHORTAGE"].includes(r.status), committed = r && r.status === "COMMITTED";
     if (b === "RELEASE") {
-      if (active) stmts.push(...releaseStmts(db, { product, oid, actor, userId, t, g, key: k("release"), note: to }));
+      if (active) stmts.push(...releaseStmts(db, { product, warehouse, oid, actor, userId, t, g, key: k("release"), note: to }));
       else if (committed) stmts.push(...await returnFor(db, s, order, product, r, { oid, actor, userId, t, g, key: k("return"), note: to }));
     } else if (b === "RESERVE") {
       if (committed) stmts.push(...await returnFor(db, s, order, product, r, { oid, actor, userId, t, g, key: k("return"), note: to }));
-      if (!active) stmts.push(...reserveStmts(db, { product, qty, oid, policy: s.shortagePolicy, actor, userId, t, g, key: k("reserve"), note: to }));
+      if (!active) stmts.push(...reserveStmts(db, { product, warehouse, qty, oid, policy: s.shortagePolicy, actor, userId, t, g, key: k("reserve"), note: to }));
     } else if (b === "COMMIT") {
       if (active && r.status === "SHORTAGE")
-        throw new HttpError(409, { error: "inventory_shortage", requested: r.requested_qty, reserved: r.reserved_qty, shortage: r.shortage_qty });
+        throw new HttpError(409, { error: "inventory_shortage", warehouse, requested: r.requested_qty, reserved: r.reserved_qty, shortage: r.shortage_qty });
       if (active && r.reserved_qty !== qty)
         throw new HttpError(409, { error: "reservation_mismatch", reserved: r.reserved_qty, units: qty });
       if (!active) {
-        const bal = await getBalance(db, product);
-        if (bal.on_hand - bal.reserved < qty) throw new HttpError(409, { error: "insufficient_stock", requested: qty, available: bal.on_hand - bal.reserved });
+        const bal = await getBalance(db, product, warehouse);
+        if (bal.on_hand - bal.reserved < qty) throw new HttpError(409, { error: "insufficient_stock", warehouse, requested: qty, available: bal.on_hand - bal.reserved });
       }
-      const plan = await fifoPlan(db, product, qty);
-      stmts.push(...commitStmts(db, { product, qty, plan, oid, fromReserved: !!active, actor, userId, t, g, key: k("sale"), note: to }));
+      const plan = await fifoPlan(db, product, qty, warehouse);
+      stmts.push(...commitStmts(db, { product, warehouse, qty, plan, oid, fromReserved: !!active, actor, userId, t, g, key: k("sale"), note: to }));
     }
   }
   return stmts;
@@ -242,7 +257,7 @@ export async function transitionStmts(db, { order, items, from, to, actor, userI
 async function returnFor(db, s, order, product, r, opts) {
   const consumptions = (await db.prepare("SELECT * FROM inventory_consumptions WHERE order_id = ? AND reversed_at IS NULL").bind(order.id).all()).results;
   const qty = consumptions.reduce((n, c) => n + c.quantity, 0) || r.reserved_qty;
-  return returnStmts(db, { product, qty, consumptions, policy: s.returnPolicy, ...opts });
+  return returnStmts(db, { product, warehouse: whOf(order), qty, consumptions, policy: s.returnPolicy, ...opts });
 }
 
 /* Quantity edit on an open order: release what it held and reserve the new quantity (same transaction). */
@@ -257,8 +272,25 @@ export async function requantityStmts(db, { order, oldItems, newItems, actor, us
   const s = await getSettings(db), oid = orderIdLiteral(order.id), stmts = [];
   for (const product of products) {
     const qty = newU.get(product) || 0, k = type => `${type}:${order.id}:edit:${t}:${product}`;
-    stmts.push(...releaseStmts(db, { product, oid, actor, userId, t, g, key: k("release"), note: "quantity_edit" }));
-    if (qty) stmts.push(...reserveStmts(db, { product, qty, oid, policy: s.shortagePolicy, actor, userId, t, g, key: k("reserve"), note: "quantity_edit" }));
+    stmts.push(...releaseStmts(db, { product, warehouse: whOf(order), oid, actor, userId, t, g, key: k("release"), note: "quantity_edit" }));
+    if (qty) stmts.push(...reserveStmts(db, { product, warehouse: whOf(order), qty, oid, policy: s.shortagePolicy, actor, userId, t, g, key: k("reserve"), note: "quantity_edit" }));
+  }
+  return stmts;
+}
+
+/* An open order moves to the other warehouse: release what it held there and reserve here (same transaction, guarded by g).
+   A cancelled / failed order holds nothing: only its warehouse changes. A delivered order cannot move. */
+export async function moveStmts(db, { order, items, to, actor, userId, t, g }) {
+  const rule = ruleOf(order.status);
+  if (rule === "COMMIT") throw new HttpError(409, { error: "delivered_inventory_locked" });
+  if (rule === "RELEASE" || !(await isInitialized(db))) return [];
+  const s = await getSettings(db), oid = orderIdLiteral(order.id), stmts = [];
+  const held = new Set((await db.prepare("SELECT product_id FROM inventory_reservations WHERE order_id = ? AND status IN ('RESERVED','SHORTAGE')").bind(order.id).all()).results.map(r => r.product_id));
+  for (const [product, qty] of unitsByProduct(items)) {
+    if (!held.has(product)) continue;                  // created before the opening balance: nothing held
+    const k = type => `${type}:${order.id}:move:${t}:${product}`;
+    stmts.push(...releaseStmts(db, { product, warehouse: whOf(order), oid, actor, userId, t, g, key: k("release"), note: "warehouse_move" }));
+    stmts.push(...reserveStmts(db, { product, warehouse: to, qty, oid, policy: s.shortagePolicy, actor, userId, t, g, key: k("reserve"), note: "warehouse_move" }));
   }
   return stmts;
 }
@@ -269,7 +301,7 @@ export async function runWithRetry(build, db, tries = 3) {
     const stmts = await build();
     try { return await db.batch(stmts); }
     catch (e) {
-      if (i < tries && /CHECK constraint failed: (inventory_batches|quantity_remaining)/i.test(e.message)) continue;
+      if (i < tries && /CHECK constraint failed: (inventory_batches|quantity_remaining|batch_stock_quantity)/i.test(e.message)) continue;
       if (/CHECK constraint failed/i.test(e.message) && /inventory_balances|reserved <= on_hand|on_hand >= 0/i.test(e.message))
         throw new HttpError(409, { error: "insufficient_stock" });
       throw e;
@@ -279,16 +311,19 @@ export async function runWithRetry(build, db, tries = 3) {
 
 /* ---------- alerts: one row when the level changes, never on page loads ---------- */
 export async function checkAlert(db, product = DEFAULT_PRODUCT) {
-  const b = await getBalance(db, product);
-  if (!b) return;
-  const s = await getSettings(db), available = b.on_hand - b.reserved, level = levelFor(available, s);
-  if (level === b.alert_level) return;
-  const t = nowIso();
-  await db.batch([
-    db.prepare("UPDATE inventory_balances SET alert_level = ? WHERE product_id = ? AND alert_level = ?").bind(level, product, b.alert_level),
-    db.prepare(`INSERT INTO inventory_alerts (product_id, level, available, threshold, created_at, acknowledged_by, acknowledged_at)
-      SELECT ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1`).bind(product, level, available, s.lowStockThreshold, t, level === "NONE" ? "system" : null, level === "NONE" ? t : null)
-  ]);
+  const rows = (await db.prepare("SELECT * FROM inventory_balances WHERE product_id = ?").bind(product).all()).results;
+  if (!rows.length) return;
+  const s = await getSettings(db);
+  for (const b of rows) {
+    const available = b.on_hand - b.reserved, level = levelFor(available, s);
+    if (level === b.alert_level) continue;
+    const t = nowIso();
+    await db.batch([
+      db.prepare("UPDATE inventory_balances SET alert_level = ? WHERE product_id = ? AND warehouse_id = ? AND alert_level = ?").bind(level, product, b.warehouse_id, b.alert_level),
+      db.prepare(`INSERT INTO inventory_alerts (product_id, warehouse_id, level, available, threshold, created_at, acknowledged_by, acknowledged_at)
+        SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1`).bind(product, b.warehouse_id, level, available, s.lowStockThreshold, t, level === "NONE" ? "system" : null, level === "NONE" ? t : null)
+    ]);
+  }
 }
 
 /* ---------- opening balance + reconciliation of existing orders ----------
@@ -308,7 +343,8 @@ export async function initializeInventory(env, ctx, body) {
   const date = body.date ? String(body.date) : suggested;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new HttpError(422, { error: "validation", fields: { date: "invalid" } });
   if (firstDay && date >= firstDay) throw new HttpError(422, { error: "validation", fields: { date: "must_be_before_first_order" }, firstOrderDay: firstDay });
-  const s = await getSettings(db), notes = String(body.notes || "").slice(0, 500), actor = ctx.user.username, userId = ctx.user.id, t = nowIso();
+  const s = await getSettings(db), warehouse = isWarehouse(body.warehouse) ? body.warehouse : s.warehouseMode !== "CITY" ? s.warehouseMode : SENA_MAKKAH;
+  const notes = String(body.notes || "").slice(0, 500), actor = ctx.user.username, userId = ctx.user.id, t = nowIso();
   const openingAt = new Date(Date.parse(date + "T00:00:00+03:00")).toISOString();
 
   // replay
@@ -352,20 +388,25 @@ export async function initializeInventory(env, ctx, body) {
   if (unreconciled.length) throw new HttpError(409, { error: "opening_stock_too_small", unreconciled: unreconciled.map(r => r.orderNumber) });
 
   const stmts = [
-    db.prepare("INSERT INTO inventory_balances (product_id, on_hand, reserved, sold, last_delta, alert_level, initialized_at, updated_at) VALUES (?, ?, ?, ?, 0, 'NONE', ?, ?)")
-      .bind(product, onHand, reserved, sold, t, t),
-    db.prepare(`INSERT INTO inventory_batches (product_id, batch_no, source, received_at, quantity_received, quantity_remaining, total_cost_halalas, unit_cost_halalas, notes, created_by, user_id, created_at)
-      VALUES (?, 1, 'OPENING', ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(product, date, qty, batch.quantity_remaining, totalCost,
-        totalCost > 0 && totalCost % qty === 0 ? totalCost / qty : null, notes, actor, userId, t)
+    // every order reviewed here is counted against the opening stock's warehouse; the other warehouse starts empty
+    db.prepare("UPDATE orders SET warehouse_id = ?").bind(warehouse),
+    ...WAREHOUSE_IDS.flatMap(w => { const on = w === warehouse ? [onHand, reserved, sold] : [0, 0, 0]; return [
+      db.prepare("INSERT INTO inventory_balances (product_id, warehouse_id, on_hand, reserved, sold, last_delta, alert_level, initialized_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)")
+        .bind(product, w, ...on, w === warehouse ? "NONE" : "OUT", t, t),
+      db.prepare("INSERT INTO inventory_baselines (product_id, warehouse_id, on_hand, sold, last_tx_id, created_at) VALUES (?, ?, 0, 0, 0, ?)").bind(product, w, t)]; }),
+    db.prepare(`INSERT INTO inventory_batches (product_id, batch_no, source, received_at, quantity_received, quantity_remaining, total_cost_halalas, unit_cost_halalas, notes, created_by, user_id, created_at, warehouse_id)
+      VALUES (?, 1, 'OPENING', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(product, date, qty, batch.quantity_remaining, totalCost,
+        totalCost > 0 && totalCost % qty === 0 ? totalCost / qty : null, notes, actor, userId, t, warehouse),
+    db.prepare("INSERT INTO inventory_batch_stock (batch_id, warehouse_id, quantity) SELECT id, ?, quantity_remaining FROM inventory_batches WHERE product_id = ? AND batch_no = 1").bind(warehouse, product)
   ];
   const batchId = "(SELECT id FROM inventory_batches WHERE product_id = ? AND batch_no = 1)";
   for (const x of tx) {
     const recorded = x.type === "OPENING_BALANCE" ? notes : [x.note, `تسوية افتتاحية سُجّلت ${t}`].filter(Boolean).join(" · ");
     stmts.push(db.prepare(`INSERT INTO inventory_transactions (product_id, type, quantity, order_id, batch_id, on_hand_before, on_hand_after, reserved_before, reserved_after,
-        available_before, available_after, cost_halalas, reference, notes, actor, user_id, idempotency_key, created_at)
-      VALUES (?, ?, ?, ?, ${x.type === "RESERVATION" ? "NULL" : batchId}, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        available_before, available_after, cost_halalas, reference, notes, actor, user_id, idempotency_key, created_at, warehouse_id)
+      VALUES (?, ?, ?, ?, ${x.type === "RESERVATION" ? "NULL" : batchId}, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .bind(product, x.type, x.quantity, x.order, ...(x.type === "RESERVATION" ? [] : [product]), x.ohB, x.oh, x.rB, x.r, x.ohB - x.rB, x.oh - x.r,
-        x.cost ?? null, x.type === "OPENING_BALANCE" ? "opening" : "reconciliation", recorded, actor, userId, `init:${product}:${x.type}:${x.order ?? 0}`, x.at));
+        x.cost ?? null, x.type === "OPENING_BALANCE" ? "opening" : "reconciliation", recorded, actor, userId, `init:${product}:${x.type}:${x.order ?? 0}`, x.at, warehouse));
   }
   for (const r of rows.filter(r => r.effect === "RESERVED" || r.effect === "SHORTAGE"))
     stmts.push(db.prepare(`INSERT INTO inventory_reservations (order_id, product_id, requested_qty, reserved_qty, shortage_qty, status, available_at_order, available_after, reserved_at, updated_at)
@@ -377,7 +418,7 @@ export async function initializeInventory(env, ctx, body) {
       .bind(r.orderId, product, r.units, r.cogs ?? null, t));
   }
   stmts.push(auditStmt(env, ctx, "inventory_initialized", "inventory", product, null,
-    { quantity: qty, date, totalCostHalalas: totalCost, onHand, reserved, sold, shortageOrders: summary.shortageOrders.map(r => r.orderNumber) }));
+    { quantity: qty, warehouse, date, totalCostHalalas: totalCost, onHand, reserved, sold, shortageOrders: summary.shortageOrders.map(r => r.orderNumber) }));
   await db.batch(stmts);
   await checkAlert(db, product);
   return { preview: false, ...summary };

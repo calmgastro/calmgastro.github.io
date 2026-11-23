@@ -23,6 +23,8 @@ import { audit } from "./auth.js";
 import { riyadhDay } from "./inventory.js";
 import { stockFlow } from "./stock_admin.js";
 import { senaWorkbook } from "./xlsx.js";
+import { SENA_MAKKAH, RIYADH, whOf, warehouseMode, listWarehouses } from "./warehouses.js";
+import { moveOrder } from "./warehouse_admin.js";
 import { SENA_ZONES, SENA_PREP, SENA_MAX_ROWS } from "./sena_template.js";
 
 const now = () => new Date().toISOString();
@@ -32,6 +34,8 @@ const MAX = Math.min(BULK_MAX, SENA_MAX_ROWS);
 const PATH = { RECEIVED: ["CONFIRMED", "PREPARING", "SHIPPED"], CONFIRMED: ["PREPARING", "SHIPPED"], PREPARING: ["SHIPPED"] };
 const IN_TRANSIT = ["SHIPPED", "OUT_FOR_DELIVERY"];
 const FROM_SENA_STOCK = SENA_PREP[1];       // «من مخزون SENA»: SENA packs from its warehouse (their rules 8 and 11: packaging counts, SKU or barcode required)
+// the warehouse an export leaves from: SENA's own for «من مخزون SENA», ours for «الشحنة مجهزة من التاجر» (null = a single warehouse is used)
+const whOfPrep = (mode, prep) => mode !== "CITY" ? null : prep === FROM_SENA_STOCK ? SENA_MAKKAH : RIYADH;
 const canView = ctx => { if (!ctx.perms.has("shipments.manage") && !ctx.perms.has("orders.view")) throw new HttpError(403, { error: "forbidden" }); };
 
 /* ---------- settings (zone, preparation source, weight of one box) ---------- */
@@ -115,33 +119,46 @@ async function examine(env, ctx, numbers) {
     else if ((o.city || "").trim().length < 2 || (o.address || "").trim().length < 3) reason = "no_address";
     else if (!steps.every((s, i) => allowedTransition(ctx.perms, i ? steps[i - 1] : o.status, s) === "normal")) reason = "transition_not_allowed";
     rows.push({ orderNumber: o.order_number, customer: o.customer_name, phone: localPhone(o.customer_phone), city: o.city, district: o.district,
-      boxes: o.boxes, amount: o.total_amount, status: o.status, steps, eligible: !reason, reason, duplicateOf: dupList(dup.d), priorOpen: priorList(dup.p), repeatConfirmed: !!o.repeat_confirmed_at,
+      boxes: o.boxes, amount: o.total_amount, status: o.status, warehouse: whOf(o), steps, eligible: !reason, reason, duplicateOf: dupList(dup.d), priorOpen: priorList(dup.p), repeatConfirmed: !!o.repeat_confirmed_at,
       nationalAddress: o.national_address || null, naApprox: o.national_address ? null : fallbackFor(o.city, fb), createdAt: o.created_at });
   }
   return rows;
 }
 // what is physically in the warehouse (on hand − boxes with the carrier) before and after this export; any order can take it
-async function stockPicture(db, selectedBoxes) {
-  const f = await stockFlow(db);
+async function stockPicture(db, selectedBoxes, wh = null) {
+  const f = await stockFlow(db, wh);
   if (!f) return null;
   return { onHand: f.onHand, inWarehouse: f.inWarehouse, withCarrier: f.withCarrier.boxes, selected: selectedBoxes, inWarehouseAfter: f.inWarehouse - selectedBoxes };
 }
-const totals = async (db, rows) => {
-  const ok = rows.filter(r => r.eligible), boxes = ok.reduce((a, r) => a + r.boxes, 0), f = await stockFlow(db);
+const totals = async (db, rows, wh = null) => {
+  const ok = rows.filter(r => r.eligible), boxes = ok.reduce((a, r) => a + r.boxes, 0), f = await stockFlow(db, wh);
   // boxes leaving beyond what the warehouse holds in the system (receipt not recorded yet): allowed, but only knowingly
   return { orders: ok.length, boxes, amount: ok.reduce((a, r) => a + r.amount, 0), shortageBoxes: f ? Math.max(0, boxes - Math.max(0, f.inWarehouse)) : 0 };
 };
+// orders counted on the other warehouse: they move to the one the export leaves from, only when the admin has confirmed it
+const toMove = (rows, wh) => wh ? rows.filter(r => r.eligible && r.warehouse !== wh) : [];
+function confirmMoves(rows, wh, body) {
+  const m = toMove(rows, wh);
+  if (m.length && body.allowMove !== true) throw new HttpError(409, { error: "warehouse_move_required", warehouse: wh, orders: m.map(r => ({ orderNumber: r.orderNumber, warehouse: r.warehouse, boxes: r.boxes })) });
+}
 
 export async function previewShipment(env, ctx, body) {
   need(ctx, "shipments.manage");
-  const rows = await examine(env, ctx, readNumbers(body)), tot = await totals(env.DB, rows);
+  const rows = await examine(env, ctx, readNumbers(body)), set = await getShippingSettings(env.DB), mode = await warehouseMode(env.DB);
+  const tot = await totals(env.DB, rows, whOfPrep(mode, set.prepSource));
+  // per preparation source: the warehouse it leaves from, its stock, what is short and which orders would move to it
+  const bySource = {};
+  for (const prep of SENA_PREP) {
+    const wh = whOfPrep(mode, prep), x = await totals(env.DB, rows, wh);
+    bySource[prep] = { warehouse: wh, stock: await stockPicture(env.DB, x.boxes, wh), shortageBoxes: x.shortageBoxes, move: toMove(rows, wh).map(r => r.orderNumber) };
+  }
   const d = riyadhDay(now());
   // everything the admin picked, before exclusions («حدّدت 14 طلب بـ 23 علبة»)
   const selected = { orders: rows.length, boxes: rows.reduce((a, r) => a + (r.boxes || 0), 0) };
   // SENA asks for the national address of every shipment inside Saudi Arabia: missing ones are shown (and can be filled) before export
   const missingNationalAddress = rows.filter(r => r.eligible && !r.nationalAddress && !r.naApprox).length;
   const approxNationalAddress = rows.filter(r => r.eligible && !r.nationalAddress && r.naApprox).length;
-  return { rows, selected, totals: tot, missingNationalAddress, approxNationalAddress, excluded: rows.filter(r => !r.eligible).length, stock: await stockPicture(env.DB, tot.boxes), settings: await getShippingSettings(env.DB), prepSources: SENA_PREP,
+  return { rows, selected, totals: tot, missingNationalAddress, approxNationalAddress, excluded: rows.filter(r => !r.eligible).length, stock: bySource[set.prepSource].stock, bySource, warehouses: await listWarehouses(env.DB), settings: set, prepSources: SENA_PREP,
     suggestedName: `شحنة سينا ${d}`, max: MAX };
 }
 
@@ -156,21 +173,23 @@ export async function createShipment(env, ctx, body) {
   if (Object.keys(errors).length) throw new HttpError(422, { error: "validation", fields: errors });
   const prior = await db.prepare("SELECT id FROM shipment_batches WHERE request_id = ?").bind(requestId).first();
   if (prior) return { replay: true, batch: await batchSummary(db, prior.id), shipped: [], failed: [] };
-  const rows = await examine(env, ctx, numbers), tot = await totals(db, rows);
+  const prep = body.prepSource || (await getShippingSettings(db)).prepSource, wh = whOfPrep(await warehouseMode(db), prep);
+  const rows = await examine(env, ctx, numbers), tot = await totals(db, rows, wh);
   const bad = rows.filter(r => !r.eligible);
   if (bad.length) throw new HttpError(409, { error: "not_eligible", orders: bad.map(r => ({ orderNumber: r.orderNumber, reason: r.reason, status: r.status })) });
   // what the admin confirmed must still be what is exported
   if (Number(body.expectedCount) !== tot.orders || Number(body.expectedBoxes) !== tot.boxes) throw new HttpError(409, { error: "selection_changed", totals: tot });
+  confirmMoves(rows, wh, body);
   // shipping more boxes than the system holds is allowed, but only knowingly
   if (tot.shortageBoxes && body.allowShortage !== true) throw new HttpError(409, { error: "shortage_confirmation_required", totals: tot });
 
-  const year = riyadhDay(now()).slice(0, 4), t = now(), prep = body.prepSource || (await getShippingSettings(db)).prepSource;
+  const year = riyadhDay(now()).slice(0, 4), t = now(), moved = toMove(rows, wh).map(r => r.orderNumber);
   let batchId = null;
   for (let i = 0; i < 3 && !batchId; i++) {
     try {
-      const r = await db.prepare(`INSERT INTO shipment_batches (batch_no, carrier, name, notes, request_id, created_by, user_id, created_at, prep_source)
-        SELECT 'SENA-' || ?1 || '-' || printf('%04d', COALESCE(MAX(CAST(substr(batch_no, 11) AS INTEGER)), 0) + 1), 'SENA', ?2, ?3, ?4, ?5, ?6, ?7, ?8
-        FROM shipment_batches WHERE batch_no LIKE 'SENA-' || ?1 || '-%'`).bind(year, name, notes, requestId, ctx.user.username, ctx.user.id, t, prep).run();
+      const r = await db.prepare(`INSERT INTO shipment_batches (batch_no, carrier, name, notes, request_id, created_by, user_id, created_at, prep_source, warehouse_id)
+        SELECT 'SENA-' || ?1 || '-' || printf('%04d', COALESCE(MAX(CAST(substr(batch_no, 11) AS INTEGER)), 0) + 1), 'SENA', ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9
+        FROM shipment_batches WHERE batch_no LIKE 'SENA-' || ?1 || '-%'`).bind(year, name, notes, requestId, ctx.user.username, ctx.user.id, t, prep, wh).run();
       batchId = r.meta.last_row_id || (await db.prepare("SELECT id FROM shipment_batches WHERE request_id = ?").bind(requestId).first()).id;
     } catch (e) {
       if (/UNIQUE constraint failed: shipment_batches\.request_id/i.test(e.message)) {     // the same click arrived twice
@@ -185,7 +204,7 @@ export async function createShipment(env, ctx, body) {
   const { shipped, failed } = await shipOrders(env, ctx, batch, rows);
   if (!shipped.length) await db.prepare("DELETE FROM shipment_batches WHERE id = ? AND NOT EXISTS (SELECT 1 FROM shipment_orders WHERE batch_id = ?)").bind(batchId, batchId).run();
   await audit(env, ctx, "shipment_exported", "shipment", batch.batch_no, null, { name, prepSource: prep, orders: shipped.length, boxes: tot.boxes, amount: tot.amount,
-    shipped, failed: failed.map(f => f.orderNumber), ...(tot.shortageBoxes ? { shortageBoxes: tot.shortageBoxes } : {}) });
+    shipped, failed: failed.map(f => f.orderNumber), ...(wh ? { warehouse: wh } : {}), ...(moved.length ? { movedFromOtherWarehouse: moved } : {}), ...(tot.shortageBoxes ? { shortageBoxes: tot.shortageBoxes } : {}) });
   return { replay: false, batch: shipped.length ? await batchSummary(db, batchId) : null, shipped, failed };
 }
 
@@ -202,6 +221,7 @@ async function shipOrders(env, ctx, batch, rows) {
   for (const r of rows) {
     let full = await loadOrder(db, r.orderNumber), reached = full.order.status;
     try {
+      if (batch.warehouse_id && whOf(full.order) !== batch.warehouse_id && PATH[full.order.status]) full = await moveOrder(env, ctx, full, batch.warehouse_id, { why: batch.batch_no });
       for (const step of PATH[full.order.status] || []) {
         await applyTransition(env, ctx, full, step, { note, visibility: "internal", kind: "normal", bulkId: batch.batch_no, notify: step === "SHIPPED" });
         reached = step;
@@ -231,16 +251,17 @@ export async function shipmentCandidates(env, ctx, id) {
   if (!batch) throw new HttpError(404, { error: "not_found" });
   batch.prepSource = batch.prepSource || set.prepSource;
   const rows = (await db.prepare(`SELECT ${DUP_OF} dup_of, ${PRIOR_OPEN} prior_open, o.* FROM orders o WHERE o.status IN ('RECEIVED','CONFIRMED','PREPARING') AND o.anonymized_at IS NULL AND o.archived_at IS NULL ORDER BY o.id LIMIT ${MAX}`).all()).results;
-  return { batch, stock: await stockPicture(db, 0), max: MAX, orders: rows.map(o => ({ orderNumber: o.order_number, customer: o.customer_name, phone: localPhone(o.customer_phone), city: o.city, boxes: o.boxes, amount: o.total_amount,
-    status: o.status, createdAt: o.created_at, nationalAddress: o.national_address || null, naApprox: o.national_address ? null : fallbackFor(o.city, set.naFallback), duplicateOf: dupList(o.dup_of), priorOpen: priorList(o.prior_open), repeatConfirmed: !!o.repeat_confirmed_at })) };
+  return { batch, stock: await stockPicture(db, 0, batch.warehouse), warehouses: await listWarehouses(db), max: MAX, orders: rows.map(o => ({ orderNumber: o.order_number, customer: o.customer_name, phone: localPhone(o.customer_phone), city: o.city, boxes: o.boxes, amount: o.total_amount,
+    status: o.status, warehouse: whOf(o), createdAt: o.created_at, nationalAddress: o.national_address || null, naApprox: o.national_address ? null : fallbackFor(o.city, set.naFallback), duplicateOf: dupList(o.dup_of), priorOpen: priorList(o.prior_open), repeatConfirmed: !!o.repeat_confirmed_at })) };
 }
 export async function addToShipment(env, ctx, id, body) {
   need(ctx, "shipments.manage");
   const db = env.DB, batch = await db.prepare("SELECT * FROM shipment_batches WHERE id = ?").bind(Number(id)).first();
   if (!batch) throw new HttpError(404, { error: "not_found" });
-  const rows = await examine(env, ctx, readNumbers(body)), tot = await totals(db, rows), bad = rows.filter(r => !r.eligible);
+  const wh = (await warehouseMode(db)) === "CITY" ? whOf(batch) : null, rows = await examine(env, ctx, readNumbers(body)), tot = await totals(db, rows, wh), bad = rows.filter(r => !r.eligible);
   if (bad.length) throw new HttpError(409, { error: "not_eligible", orders: bad.map(r => ({ orderNumber: r.orderNumber, reason: r.reason, status: r.status })) });
   if (Number(body.expectedCount) !== tot.orders || Number(body.expectedBoxes) !== tot.boxes) throw new HttpError(409, { error: "selection_changed", totals: tot });
+  confirmMoves(rows, wh, body);
   if (tot.shortageBoxes && body.allowShortage !== true) throw new HttpError(409, { error: "shortage_confirmation_required", totals: tot });
   const { shipped, failed } = await shipOrders(env, ctx, batch, rows);
   await audit(env, ctx, "shipment_orders_added", "shipment", batch.batch_no, null, { orders: shipped, boxes: tot.boxes, amount: tot.amount, failed: failed.map(f => f.orderNumber), ...(tot.shortageBoxes ? { shortageBoxes: tot.shortageBoxes } : {}) });
@@ -257,7 +278,7 @@ const AGG = `COUNT(s.id) n, COALESCE(SUM(s.boxes), 0) boxes, COALESCE(SUM(s.amou
 const batchView = b => ({ id: b.id, batchNo: b.batch_no, carrier: b.carrier, name: b.name, notes: b.notes, createdBy: b.created_by, createdAt: b.created_at,
   downloads: b.downloads, lastDownloadAt: b.last_download_at, orders: b.n, boxes: b.boxes, amount: b.amount,
   delivered: b.delivered, inTransit: b.in_transit, failed: b.failed, other: b.other, deliveredAmount: b.delivered_amount, transitAmount: b.transit_amount,
-  prepSource: b.prep_source, removed: b.removed || 0, notDownloaded: b.not_downloaded || 0, state: b.in_transit ? "IN_TRANSIT" : "DONE" });
+  prepSource: b.prep_source, warehouse: b.warehouse_id || null, removed: b.removed || 0, notDownloaded: b.not_downloaded || 0, state: b.in_transit ? "IN_TRANSIT" : "DONE" });
 async function batchSummary(db, id) {
   const b = await db.prepare(`SELECT b.*, ${AGG}, (SELECT COUNT(*) FROM shipment_orders x WHERE x.batch_id = b.id AND x.removed_at IS NOT NULL) removed,
     (SELECT COUNT(*) FROM shipment_orders x WHERE x.batch_id = b.id AND x.removed_at IS NULL AND x.downloaded_at IS NULL) not_downloaded FROM shipment_batches b LEFT JOIN shipment_orders s ON s.batch_id = b.id AND s.removed_at IS NULL LEFT JOIN orders o ON o.id = s.order_id WHERE b.id = ? GROUP BY b.id`).bind(id).first();

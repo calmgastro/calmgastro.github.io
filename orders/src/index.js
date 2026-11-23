@@ -9,6 +9,7 @@ import { createOrder, loadOrder, customerView, orderToken, normalizeOrderNumber,
 import { login, completeMfa, loadSession, revokeCurrent, clearCookie, setup, setupNeeded, audit } from "./auth.js";
 import * as A from "./admin.js";
 import * as S from "./stock_admin.js";
+import * as W from "./warehouse_admin.js";
 import * as F from "./finance.js";
 import * as SH from "./shipments.js";
 import * as CO from "./collections.js";
@@ -166,6 +167,7 @@ async function adminApi(request, env, url) {
     case "POST /inventory/init": return json(await S.initStock(env, ctx, body));
     case "POST /inventory/receipts": return json(await S.receiveStock(env, ctx, body));
     case "POST /inventory/adjustments": return json(await S.adjustStock(env, ctx, body));
+    case "POST /inventory/transfers": return json(await W.transferStock(env, ctx, body));
     case "POST /inventory/settings": return json(await S.saveSettings(env, ctx, body));
     case "GET /inventory/purchases": return json(await S.listPurchases(env, ctx, p));
     case "GET /shipments": return json(await SH.listShipments(env, ctx, p));
@@ -213,10 +215,11 @@ async function adminApi(request, env, url) {
   if (m && method === "POST") return json(await S.ackAlert(env, ctx, m[1]));
   m = path.match(/^\/inventory\/batches\/(\d{1,9})\/cost$/);
   if (m && method === "POST") return json(await S.setBatchCost(env, ctx, m[1], body));
-  m = path.match(/^\/orders\/([A-Za-z0-9-]{6,24})(?:\/(status|customer|items|notes|archive|revoke-link|anonymize|allocate|duplicate))?$/);
+  m = path.match(/^\/orders\/([A-Za-z0-9-]{6,24})(?:\/(status|customer|items|notes|archive|revoke-link|anonymize|allocate|duplicate|warehouse))?$/);
   if (m && method === "GET" && !m[2]) return json(await A.orderDetail(env, ctx, m[1]));
   if (m && method === "POST") {
-    const h = { status: A.changeStatus, customer: A.editCustomer, items: A.editItems, notes: A.addNote, archive: A.setArchived, "revoke-link": A.revokeLink, anonymize: A.anonymize, duplicate: A.markDuplicate, allocate: (e, c, n) => S.allocateOrder(e, c, n) }[m[2]];
+    const h = { status: A.changeStatus, customer: A.editCustomer, items: A.editItems, notes: A.addNote, archive: A.setArchived, "revoke-link": A.revokeLink, anonymize: A.anonymize, duplicate: A.markDuplicate, allocate: (e, c, n) => S.allocateOrder(e, c, n),
+      warehouse: async (e, c, n, b) => { await W.setOrderWarehouse(e, c, n, b); return A.orderDetail(e, c, n); } }[m[2]];
     if (h) return json(await h(env, ctx, m[1], body));
   }
   m = path.match(/^\/collections\/settlements\/(\d{1,9})(\/void)?$/);

@@ -4,7 +4,9 @@
 import { HttpError, normalizeOrderNumber } from "./orders.js";
 import { auditStmt } from "./auth.js";
 import { DEFAULT_PRODUCT, SETTINGS, getSettings, getBalance, levelFor, fifoPlan, fifoPieceCost, checkAlert, runWithRetry,
-         initializeInventory, ruleOf, toHalalas, riyadhDay, addDays, periodOf, validDay, NO_GUARD } from "./inventory.js";
+         initializeInventory, ruleOf, toHalalas, riyadhDay, addDays, periodOf, validDay, batchOut, batchIn, NO_GUARD } from "./inventory.js";
+import { isWarehouse, whOf, listWarehouses, warehouseMode } from "./warehouses.js";
+import { listTransfers } from "./warehouse_admin.js";
 
 const need = (ctx, perm) => { if (!ctx.perms.has(perm)) throw new HttpError(403, { error: "forbidden", permission: perm }); };
 const now = () => new Date().toISOString();
@@ -15,6 +17,17 @@ const unitCost = b => b.unit_cost_halalas != null ? sar(b.unit_cost_halalas) : b
 // value of the units still in a batch, consistent with how FIFO charges consumed units
 export const remainingValue = b => b.total_cost_halalas == null ? null : b.total_cost_halalas - Math.round(b.total_cost_halalas * (b.quantity_received - b.quantity_remaining) / b.quantity_received);
 
+// the warehouse of a receipt / adjustment: named by the admin; implied only when there is a single one
+async function chosenWarehouse(db, body, errors) {
+  const v = body && body.warehouse;
+  if (isWarehouse(v)) return v;
+  const mode = await warehouseMode(db);
+  if ((v == null || v === "") && mode !== "CITY") return mode;
+  errors.warehouse = v ? "invalid" : "required";
+  return null;
+}
+
+/* Every number is also given per warehouse (warehouses: [...]); the totals are the two together. */
 export async function stockSummary(env, ctx) {
   const db = env.DB, fin = ctx.perms.has("finance.view");
   const b = await getBalance(db), s = await getSettings(db);
@@ -30,8 +43,26 @@ export async function stockSummary(env, ctx) {
     db.prepare("SELECT * FROM inventory_alerts WHERE acknowledged_at IS NULL AND level <> 'NONE' ORDER BY id DESC LIMIT 1").first()
   ]);
   const values = batches.results.map(remainingValue);
+  const [whs, balances, shBy, stockBy, openAlerts] = await Promise.all([
+    listWarehouses(db),
+    db.prepare("SELECT * FROM inventory_balances WHERE product_id = ?").bind(DEFAULT_PRODUCT).all(),
+    db.prepare("SELECT o.warehouse_id w, COUNT(*) n, COALESCE(SUM(r.shortage_qty), 0) units FROM inventory_reservations r JOIN orders o ON o.id = r.order_id WHERE r.status = 'SHORTAGE' GROUP BY o.warehouse_id").all(),
+    fin ? db.prepare("SELECT s.warehouse_id w, s.batch_id, s.quantity FROM inventory_batch_stock s JOIN inventory_batches b ON b.id = s.batch_id WHERE b.product_id = ? AND s.quantity > 0").bind(DEFAULT_PRODUCT).all() : Promise.resolve({ results: [] }),
+    db.prepare("SELECT id, level, available, created_at, warehouse_id FROM inventory_alerts WHERE acknowledged_at IS NULL AND level <> 'NONE' ORDER BY id DESC LIMIT 20").all()
+  ]);
+  const byBatch = new Map(batches.results.map(x => [x.id, x]));
+  const warehouses = [];
+  for (const w of whs) {
+    const wb = balances.results.find(x => x.warehouse_id === w.id) || { on_hand: 0, reserved: 0, sold: 0 }, wAvail = wb.on_hand - wb.reserved;
+    const short = shBy.results.filter(x => whOf({ warehouse_id: x.w }) === w.id);
+    const al = openAlerts.results.find(x => whOf(x) === w.id && x.level === levelFor(wAvail, s));
+    warehouses.push({ ...w, onHand: wb.on_hand, reserved: wb.reserved, available: wAvail, sold: wb.sold, flow: await stockFlow(db, w.id), level: levelFor(wAvail, s),
+      shortageOrders: short.reduce((a, x) => a + x.n, 0), shortageUnits: short.reduce((a, x) => a + x.units, 0),
+      stockValue: fin ? sar(stockBy.results.filter(x => x.w === w.id).reduce((a, x) => { const t = byBatch.get(x.batch_id), v = t && remainingValue(t); return a + (v ? Math.round(v * x.quantity / t.quantity_remaining) : 0); }, 0)) : undefined,
+      alert: al ? { id: al.id, level: al.level, available: al.available, at: al.created_at } : null });
+  }
   return {
-    initialized: true, product: DEFAULT_PRODUCT, onHand: b.on_hand, reserved: b.reserved, available, sold: b.sold, flow: await stockFlow(db),
+    initialized: true, product: DEFAULT_PRODUCT, onHand: b.on_hand, reserved: b.reserved, available, sold: b.sold, flow: await stockFlow(db), warehouses, separate: s.warehouseMode === "CITY",
     level: levelFor(available, s), lowStockThreshold: s.lowStockThreshold, criticalStockThreshold: s.criticalStockThreshold,
     shortageOrders: sh.n, shortageUnits: sh.units, costingMethod: s.costingMethod, settings: s,
     stockValue: fin ? sar(values.reduce((a, v) => a + (v || 0), 0)) : undefined, stockValueComplete: fin ? values.every(v => v != null) : undefined,
@@ -48,38 +79,44 @@ export async function inventoryPage(env, ctx, params) {
   if (/^[A-Z_]{3,20}$/.test(type || "")) { where.push("t.type = ?"); binds.push(type); }
   const num = normalizeOrderNumber(params.get("order") || "");
   if (num) { where.push("o.order_number = ?"); binds.push(num); }
+  const wh = params.get("warehouse");                // rows written before the split (NULL) belong to both
+  if (isWarehouse(wh)) { where.push("(t.warehouse_id = ? OR t.warehouse_id IS NULL)"); binds.push(wh); }
   const w = where.length ? "WHERE " + where.join(" AND ") : "";
-  const [batches, tx, txCount, shortages, adjustments] = await Promise.all([
+  const [batches, tx, txCount, shortages, adjustments, batchStock, transfers] = await Promise.all([
     db.prepare("SELECT * FROM inventory_batches WHERE product_id = ? ORDER BY received_at, id").bind(DEFAULT_PRODUCT).all(),
     db.prepare(`SELECT t.*, o.order_number FROM inventory_transactions t LEFT JOIN orders o ON o.id = t.order_id ${w} ORDER BY t.id DESC LIMIT ${per} OFFSET ${(page - 1) * per}`).bind(...binds).all(),
     db.prepare(`SELECT COUNT(*) n FROM inventory_transactions t LEFT JOIN orders o ON o.id = t.order_id ${w}`).bind(...binds).first(),
     shortageRows(env),
-    db.prepare("SELECT * FROM inventory_adjustments ORDER BY id DESC LIMIT 100").all()
+    db.prepare("SELECT * FROM inventory_adjustments ORDER BY id DESC LIMIT 100").all(),
+    db.prepare("SELECT * FROM inventory_batch_stock WHERE quantity > 0").all(),
+    listTransfers(db)
   ]);
   return {
     summary,
     batches: batches.results.map(b => ({ id: b.id, batchNo: b.batch_no, source: b.source, receivedAt: b.received_at, quantityReceived: b.quantity_received,
       quantityRemaining: b.quantity_remaining, supplier: b.supplier, reference: b.reference, location: b.location, notes: b.notes, createdBy: b.created_by, createdAt: b.created_at,
+      warehouse: whOf(b), where: Object.fromEntries(batchStock.results.filter(x => x.batch_id === b.id).map(x => [x.warehouse_id, x.quantity])),
       status: b.voided_at ? "VOIDED" : b.quantity_remaining === 0 ? "DEPLETED" : b.quantity_remaining === b.quantity_received ? "FULL" : "PARTIAL",
       ...(fin ? { unitCost: unitCost(b), totalCost: sar(b.total_cost_halalas), stockValue: sar(remainingValue(b)), costKnown: b.total_cost_halalas != null } : {}) })),
-    transactions: tx.results.map(t => ({ id: t.id, at: t.created_at, type: t.type, quantity: t.quantity, orderNumber: t.order_number, batchId: t.batch_id,
+    transactions: tx.results.map(t => ({ id: t.id, at: t.created_at, type: t.type, warehouse: t.warehouse_id || null, quantity: t.quantity, orderNumber: t.order_number, batchId: t.batch_id,
       onHandBefore: t.on_hand_before, onHandAfter: t.on_hand_after, reservedBefore: t.reserved_before, reservedAfter: t.reserved_after,
       availableBefore: t.available_before, availableAfter: t.available_after, reference: t.reference, notes: t.notes, actor: t.actor,
       ...(fin ? { cost: sar(t.cost_halalas) } : {}) })),
     transactionsTotal: txCount.n, page, per,
     shortages,
     receipts: batches.results.filter(b => b.source !== "ADJUSTMENT").slice().reverse().slice(0, 30).map(b => ({ ...purchaseRow(b, fin), quantity: b.quantity_received, by: b.created_by, at: b.created_at })),
-    adjustments: adjustments.results.map(a => ({ id: a.id, quantity: a.quantity, oldOnHand: a.old_on_hand, newOnHand: a.new_on_hand, reason: a.reason, notes: a.notes, by: a.created_by, at: a.created_at })),
+    adjustments: adjustments.results.map(a => ({ id: a.id, quantity: a.quantity, oldOnHand: a.old_on_hand, newOnHand: a.new_on_hand, reason: a.reason, notes: a.notes, by: a.created_by, at: a.created_at, warehouse: a.warehouse_id || null })),
+    transfers,
     settingOptions: Object.fromEntries(Object.entries(SETTINGS).filter(([, v]) => v.type === "enum").map(([k, v]) => [k, v.values])),
     canManage: ctx.perms.has("inventory.manage"), canSeeCosts: fin, ...purchasePerms(ctx)
   };
 }
 
 export async function shortageRows(env) {
-  const b = await getBalance(env.DB), available = b ? b.on_hand - b.reserved : 0;
-  const rows = (await env.DB.prepare(`SELECT r.*, o.order_number, o.created_at order_created, o.customer_name, o.status order_status, o.source
+  const avail = Object.fromEntries((await env.DB.prepare("SELECT warehouse_id, on_hand - reserved a FROM inventory_balances WHERE product_id = ?").bind(DEFAULT_PRODUCT).all()).results.map(x => [x.warehouse_id, x.a]));
+  const rows = (await env.DB.prepare(`SELECT r.*, o.order_number, o.created_at order_created, o.customer_name, o.status order_status, o.source, o.warehouse_id
     FROM inventory_reservations r JOIN orders o ON o.id = r.order_id WHERE r.status = 'SHORTAGE' ORDER BY o.created_at`).all()).results;
-  return rows.map(r => ({ orderNumber: r.order_number, orderDate: r.order_created, customer: r.customer_name, source: r.source, requested: r.requested_qty,
+  return rows.map(r => ({ r, available: avail[whOf(r)] || 0 })).map(({ r, available }) => ({ orderNumber: r.order_number, warehouse: whOf(r), orderDate: r.order_created, customer: r.customer_name, source: r.source, requested: r.requested_qty,
     reserved: r.reserved_qty, shortage: r.shortage_qty, availableAtOrder: r.available_at_order, currentAvailable: available, orderStatus: r.order_status,
     inventoryStatus: r.status, canAllocate: available > 0 }));
 }
@@ -100,7 +137,7 @@ export async function receiveStock(env, ctx, body) {
   if (!(await getBalance(db, product))) throw new HttpError(409, { error: "not_initialized" });
   // the cost may be entered later (daily receipts): no unit cost / total stores the batch without cost, added later by editing it
   const qty = Number(body.quantity), date = String(body.receivedDate || "");
-  const errors = {};
+  const errors = {}, warehouse = await chosenWarehouse(db, body, errors);
   if (!Number.isInteger(qty) || qty < 1 || qty > MAX_QTY) errors.quantity = "invalid";
   const c = receiptCost(body, Number.isInteger(qty) && qty > 0 ? qty : 1);
   if (c.error) errors[c.error] = "invalid";
@@ -117,16 +154,17 @@ export async function receiveStock(env, ctx, body) {
   try {
     await db.batch([
       db.prepare(`INSERT INTO inventory_batches (product_id, batch_no, source, received_at, quantity_ordered, quantity_received, quantity_remaining, total_cost_halalas, unit_cost_halalas,
-          supplier, reference, location, notes, created_by, user_id, created_at)
-        SELECT ?, COALESCE(MAX(batch_no), 0) + 1, 'PURCHASE', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM inventory_batches WHERE product_id = ?`)
-        .bind(product, date, ordered, qty, qty, total, unit, f.supplier, f.reference, f.location, f.notes, actor, uid, t, product),
-      db.prepare("UPDATE inventory_balances SET last_delta = ?, on_hand = on_hand + ?, updated_at = ? WHERE product_id = ?").bind(qty, qty, t, product),
+          supplier, reference, location, notes, created_by, user_id, created_at, warehouse_id)
+        SELECT ?, COALESCE(MAX(batch_no), 0) + 1, 'PURCHASE', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM inventory_batches WHERE product_id = ?`)
+        .bind(product, date, ordered, qty, qty, total, unit, f.supplier, f.reference, f.location, f.notes, actor, uid, t, warehouse, product),
+      db.prepare(`INSERT INTO inventory_batch_stock (batch_id, warehouse_id, quantity) SELECT ${batchId}, ?, ?`).bind(product, warehouse, qty),
+      db.prepare("UPDATE inventory_balances SET last_delta = ?, on_hand = on_hand + ?, updated_at = ? WHERE product_id = ? AND warehouse_id = ?").bind(qty, qty, t, product, warehouse),
       db.prepare(`INSERT INTO inventory_transactions (product_id, type, quantity, batch_id, on_hand_before, on_hand_after, reserved_before, reserved_after, available_before, available_after,
-          cost_halalas, reference, notes, actor, user_id, idempotency_key, created_at)
-        SELECT ?, 'PURCHASE_RECEIPT', ?, ${batchId}, b.on_hand - ?, b.on_hand, b.reserved, b.reserved, b.on_hand - ? - b.reserved, b.on_hand - b.reserved, ?, ?, ?, ?, ?, ?, ?
-        FROM inventory_balances b WHERE b.product_id = ?`)
-        .bind(product, qty, product, qty, qty, total, f.reference, f.notes, actor, uid, "receipt:" + key, t, product),
-      auditStmt(env, ctx, "stock_received", "inventory", product, null, { quantity: qty, unitCost: sar(unit), totalCost: sar(total), receivedDate: date, supplier: f.supplier || undefined, reference: f.reference || undefined })
+          cost_halalas, reference, notes, actor, user_id, idempotency_key, created_at, warehouse_id)
+        SELECT ?, 'PURCHASE_RECEIPT', ?, ${batchId}, b.on_hand - ?, b.on_hand, b.reserved, b.reserved, b.on_hand - ? - b.reserved, b.on_hand - b.reserved, ?, ?, ?, ?, ?, ?, ?, b.warehouse_id
+        FROM inventory_balances b WHERE b.product_id = ? AND b.warehouse_id = ?`)
+        .bind(product, qty, product, qty, qty, total, f.reference, f.notes, actor, uid, "receipt:" + key, t, product, warehouse),
+      auditStmt(env, ctx, "stock_received", "inventory", product, null, { quantity: qty, warehouse, unitCost: sar(unit), totalCost: sar(total), receivedDate: date, supplier: f.supplier || undefined, reference: f.reference || undefined })
     ]);
   } catch (e) {
     if (/UNIQUE constraint failed: inventory_transactions\.idempotency_key/i.test(e.message)) return { replay: true };
@@ -134,7 +172,7 @@ export async function receiveStock(env, ctx, body) {
   }
   await checkAlert(db, product);
   const b = await db.prepare("SELECT id FROM inventory_batches WHERE product_id = ? AND created_at = ? AND created_by = ? ORDER BY id DESC").bind(product, t, actor).first();
-  return { replay: false, id: b && b.id, quantity: qty, unitCost: total == null ? null : sar(unit != null ? unit : total / qty), totalCost: sar(total) };
+  return { replay: false, id: b && b.id, warehouse, quantity: qty, unitCost: total == null ? null : sar(unit != null ? unit : total / qty), totalCost: sar(total) };
 }
 
 /* ---------- manual adjustment (never edits a number directly: always a ledger row) ---------- */
@@ -142,10 +180,9 @@ export const ADJUST_REASONS = ["DAMAGED", "EXPIRED", "COUNT_CORRECTION", "LOST",
 export async function adjustStock(env, ctx, body) {
   need(ctx, "inventory.manage");
   const db = env.DB, product = DEFAULT_PRODUCT;
-  const bal = await getBalance(db, product);
-  if (!bal) throw new HttpError(409, { error: "not_initialized" });
+  if (!(await getBalance(db, product))) throw new HttpError(409, { error: "not_initialized" });
   const qty = Number(body.quantity), reason = String(body.reason || ""), notes = clean(body.notes, 500), key = String(body.requestId || "");
-  const errors = {};
+  const errors = {}, warehouse = await chosenWarehouse(db, body, errors);
   if (!Number.isInteger(qty) || qty === 0 || Math.abs(qty) > 1000000) errors.quantity = "invalid";
   if (!ADJUST_REASONS.includes(reason)) errors.reason = "required";
   if (reason === "OTHER" && notes.length < 3) errors.notes = "required";
@@ -153,37 +190,39 @@ export async function adjustStock(env, ctx, body) {
   const unitTotal = body.totalCost == null || body.totalCost === "" ? null : toHalalas(body.totalCost);
   if (unitTotal === undefined) errors.totalCost = "invalid";
   if (Object.keys(errors).length) throw new HttpError(422, { error: "validation", fields: errors });
+  const bal = await getBalance(db, product, warehouse);
   if (qty < 0 && bal.on_hand - bal.reserved < -qty)
     throw new HttpError(409, { error: "adjustment_exceeds_available", available: bal.on_hand - bal.reserved, reserved: bal.reserved, onHand: bal.on_hand });
   const actor = ctx.user.username, uid = ctx.user.id, label = reason + (notes ? " · " + notes : "");
   const build = async () => {
     const t = now(), stmts = [
-      db.prepare(`INSERT INTO inventory_adjustments (product_id, quantity, old_on_hand, new_on_hand, reason, notes, created_by, user_id, created_at)
-        SELECT ?, ?, on_hand, on_hand + ?, ?, ?, ?, ?, ? FROM inventory_balances WHERE product_id = ?`).bind(product, qty, qty, reason, notes, actor, uid, t, product),
-      db.prepare("UPDATE inventory_balances SET last_delta = ?, on_hand = on_hand + ?, updated_at = ? WHERE product_id = ?").bind(qty, qty, t, product)
+      db.prepare(`INSERT INTO inventory_adjustments (product_id, warehouse_id, quantity, old_on_hand, new_on_hand, reason, notes, created_by, user_id, created_at)
+        SELECT ?, warehouse_id, ?, on_hand, on_hand + ?, ?, ?, ?, ?, ? FROM inventory_balances WHERE product_id = ? AND warehouse_id = ?`).bind(product, qty, qty, reason, notes, actor, uid, t, product, warehouse),
+      db.prepare("UPDATE inventory_balances SET last_delta = ?, on_hand = on_hand + ?, updated_at = ? WHERE product_id = ? AND warehouse_id = ?").bind(qty, qty, t, product, warehouse)
     ];
     const adj = "(SELECT MAX(id) FROM inventory_adjustments)";
     let cost = null, batchSql = "NULL", batchBinds = [];
     if (qty < 0) {
-      const plan = await fifoPlan(db, product, -qty);
+      const plan = await fifoPlan(db, product, -qty, warehouse);
       cost = plan.some(p => p.cost == null) ? null : plan.reduce((a, p) => a + p.cost, 0);
       for (const p of plan) {
-        stmts.push(db.prepare("UPDATE inventory_batches SET quantity_remaining = quantity_remaining - ? WHERE id = ?").bind(p.q, p.batchId));
+        stmts.push(db.prepare("UPDATE inventory_batches SET quantity_remaining = quantity_remaining - ? WHERE id = ?").bind(p.q, p.batchId), batchOut(db, p.batchId, warehouse, p.q));
         stmts.push(db.prepare(`INSERT INTO inventory_consumptions (adjustment_id, batch_id, quantity, cost_halalas, created_at) VALUES (${adj}, ?, ?, ?, ?)`).bind(p.batchId, p.q, p.cost, t));
       }
     } else {
-      stmts.push(db.prepare(`INSERT INTO inventory_batches (product_id, batch_no, source, received_at, quantity_received, quantity_remaining, total_cost_halalas, notes, created_by, user_id, created_at)
-        SELECT ?, COALESCE(MAX(batch_no), 0) + 1, 'ADJUSTMENT', ?, ?, ?, ?, ?, ?, ?, ? FROM inventory_batches WHERE product_id = ?`)
-        .bind(product, riyadhDay(t), qty, qty, unitTotal, label, actor, uid, t, product));
+      stmts.push(db.prepare(`INSERT INTO inventory_batches (product_id, batch_no, source, received_at, quantity_received, quantity_remaining, total_cost_halalas, notes, created_by, user_id, created_at, warehouse_id)
+        SELECT ?, COALESCE(MAX(batch_no), 0) + 1, 'ADJUSTMENT', ?, ?, ?, ?, ?, ?, ?, ?, ? FROM inventory_batches WHERE product_id = ?`)
+        .bind(product, riyadhDay(t), qty, qty, unitTotal, label, actor, uid, t, warehouse, product));
+      stmts.push(db.prepare("INSERT INTO inventory_batch_stock (batch_id, warehouse_id, quantity) SELECT (SELECT MAX(id) FROM inventory_batches WHERE product_id = ?), ?, ?").bind(product, warehouse, qty));
       batchSql = "(SELECT MAX(id) FROM inventory_batches WHERE product_id = ?)"; batchBinds = [product];
       cost = unitTotal;
     }
     stmts.push(db.prepare(`INSERT INTO inventory_transactions (product_id, type, quantity, batch_id, adjustment_id, on_hand_before, on_hand_after, reserved_before, reserved_after,
-        available_before, available_after, cost_halalas, reference, notes, actor, user_id, idempotency_key, created_at)
-      SELECT ?, 'ADJUSTMENT', ?, ${batchSql}, ${adj}, b.on_hand - ?, b.on_hand, b.reserved, b.reserved, b.on_hand - ? - b.reserved, b.on_hand - b.reserved, ?, ?, ?, ?, ?, ?, ?
-      FROM inventory_balances b WHERE b.product_id = ?`)
-      .bind(product, Math.abs(qty), ...batchBinds, qty, qty, cost, reason, label, actor, uid, "adjust:" + key, t, product));
-    stmts.push(auditStmt(env, ctx, "stock_adjusted", "inventory", product, { onHand: bal.on_hand }, { quantity: qty, reason, notes, newOnHand: bal.on_hand + qty }));
+        available_before, available_after, cost_halalas, reference, notes, actor, user_id, idempotency_key, created_at, warehouse_id)
+      SELECT ?, 'ADJUSTMENT', ?, ${batchSql}, ${adj}, b.on_hand - ?, b.on_hand, b.reserved, b.reserved, b.on_hand - ? - b.reserved, b.on_hand - b.reserved, ?, ?, ?, ?, ?, ?, ?, b.warehouse_id
+      FROM inventory_balances b WHERE b.product_id = ? AND b.warehouse_id = ?`)
+      .bind(product, Math.abs(qty), ...batchBinds, qty, qty, cost, reason, label, actor, uid, "adjust:" + key, t, product, warehouse));
+    stmts.push(auditStmt(env, ctx, "stock_adjusted", "inventory", product, { warehouse, onHand: bal.on_hand }, { warehouse, quantity: qty, reason, notes, newOnHand: bal.on_hand + qty }));
     return stmts;
   };
   try { await runWithRetry(build, db); }
@@ -220,9 +259,9 @@ export async function setBatchCost(env, ctx, id, body) {
       cogs_complete = (SELECT COUNT(*) = COUNT(cost_halalas) FROM inventory_consumptions WHERE order_id = ?1 AND reversed_at IS NULL), updated_at = ?2
     WHERE order_id = ?1 AND status = 'COMMITTED'`).bind(o, t));
   stmts.push(db.prepare(`INSERT INTO inventory_transactions (product_id, type, quantity, batch_id, on_hand_before, on_hand_after, reserved_before, reserved_after, available_before, available_after,
-      cost_halalas, reference, notes, actor, user_id, idempotency_key, created_at)
-    SELECT product_id, 'COST_UPDATE', 0, ?, on_hand, on_hand, reserved, reserved, on_hand - reserved, on_hand - reserved, ?, 'batch ' || ?, ?, ?, ?, ?, ? FROM inventory_balances WHERE product_id = ?`)
-    .bind(b.id, total, b.batch_no, `cost set; ${orders.length} order(s) COGS recalculated`, ctx.user.username, ctx.user.id, `cost:${b.id}`, t, b.product_id));
+      cost_halalas, reference, notes, actor, user_id, idempotency_key, created_at, warehouse_id)
+    SELECT product_id, 'COST_UPDATE', 0, ?, on_hand, on_hand, reserved, reserved, on_hand - reserved, on_hand - reserved, ?, 'batch ' || ?, ?, ?, ?, ?, ?, warehouse_id FROM inventory_balances WHERE product_id = ? AND warehouse_id = ?`)
+    .bind(b.id, total, b.batch_no, `cost set; ${orders.length} order(s) COGS recalculated`, ctx.user.username, ctx.user.id, `cost:${b.id}`, t, b.product_id, whOf(b)));
   stmts.push(auditStmt(env, ctx, "batch_cost_set", "inventory_batch", b.id, { totalCostHalalas: null }, { totalCostHalalas: total, ordersRecalculated: orders.length }));
   await db.batch(stmts);
   return { ok: true, unitCost: sar(total / b.quantity_received), ordersRecalculated: orders.length };
@@ -232,12 +271,13 @@ export async function setBatchCost(env, ctx, id, body) {
    Boxes are not promised to orders by date: whichever order is shipped first takes them. The only shortage shown is the
    total — what is in the warehouse against what the orders not shipped yet need (dashboard and stock page). */
 const WITH_CARRIER = `(o.status IN ('SHIPPED','OUT_FOR_DELIVERY') OR (o.status = 'ON_HOLD' AND EXISTS (SELECT 1 FROM shipment_orders s WHERE s.order_id = o.id AND s.removed_at IS NULL)))`;
-export async function stockFlow(db) {
-  const b = await getBalance(db);
+export async function stockFlow(db, warehouse = null) {
+  const b = await getBalance(db, DEFAULT_PRODUCT, warehouse);
   if (!b) return null;
   const r = await db.prepare(`SELECT COALESCE(SUM(CASE WHEN ${WITH_CARRIER} THEN o.boxes END), 0) cb, COALESCE(SUM(CASE WHEN ${WITH_CARRIER} THEN 1 END), 0) co,
       COALESCE(SUM(CASE WHEN NOT ${WITH_CARRIER} THEN o.boxes END), 0) pb, COALESCE(SUM(CASE WHEN NOT ${WITH_CARRIER} THEN 1 END), 0) po
-    FROM orders o WHERE o.status IN ('RECEIVED','CONFIRMED','PREPARING','SHIPPED','OUT_FOR_DELIVERY','ON_HOLD')`).first();
+    FROM orders o WHERE o.status IN ('RECEIVED','CONFIRMED','PREPARING','SHIPPED','OUT_FOR_DELIVERY','ON_HOLD')${warehouse ? " AND COALESCE(o.warehouse_id, 'SENA_MAKKAH') = ?" : ""}`)
+    .bind(...(warehouse ? [warehouse] : [])).first();
   const inWarehouse = b.on_hand - r.cb, left = inWarehouse - r.pb;
   return { onHand: b.on_hand, inWarehouse, withCarrier: { orders: r.co, boxes: r.cb }, pending: { orders: r.po, boxes: r.pb },
     remaining: Math.max(0, left), short: Math.max(0, -left) };
@@ -250,34 +290,34 @@ export async function claimStock(env, ctx, o) {
   const db = env.DB;
   const r = await db.prepare("SELECT * FROM inventory_reservations WHERE order_id = ? AND status = 'SHORTAGE'").bind(o.id).first();
   if (!r) return { taken: 0, missing: 0 };
-  const p = r.product_id, bal = await getBalance(db, p);
+  const p = r.product_id, w = whOf(o), bal = await getBalance(db, p, w);
   const free = Math.max(0, Math.min(r.shortage_qty, bal.on_hand - bal.reserved));
   let need = r.shortage_qty - free;
   const donors = [];
   if (need > 0) {
     const rows = (await db.prepare(`SELECT r.id, r.order_id, r.reserved_qty, o.order_number FROM inventory_reservations r JOIN orders o ON o.id = r.order_id
-      WHERE r.product_id = ? AND r.status IN ('RESERVED','SHORTAGE') AND r.reserved_qty > 0 AND r.order_id <> ? AND o.status IN ('RECEIVED','CONFIRMED','PREPARING','ON_HOLD')
+      WHERE r.product_id = ? AND COALESCE(o.warehouse_id, 'SENA_MAKKAH') = ? AND r.status IN ('RESERVED','SHORTAGE') AND r.reserved_qty > 0 AND r.order_id <> ? AND o.status IN ('RECEIVED','CONFIRMED','PREPARING','ON_HOLD')
         AND NOT EXISTS (SELECT 1 FROM shipment_orders s WHERE s.order_id = o.id AND s.removed_at IS NULL)
-      ORDER BY o.created_at DESC, o.id DESC`).bind(p, o.id).all()).results;
+      ORDER BY o.created_at DESC, o.id DESC`).bind(p, w, o.id).all()).results;
     for (const d of rows) { if (!need) break; const q = Math.min(need, d.reserved_qty); donors.push({ ...d, q }); need -= q; }
   }
   const total = free + donors.reduce((a, d) => a + d.q, 0);
   if (!total) return { taken: 0, missing: r.shortage_qty };
   const t = now(), actor = ctx.user.username, uid = ctx.user.id;
   // aborts the whole batch (CHECK on_hand >= 0) when the statement before it changed nothing: someone else moved first
-  const abort = () => db.prepare("UPDATE inventory_balances SET on_hand = -1 WHERE product_id = ? AND changes() = 0").bind(p);
+  const abort = () => db.prepare("UPDATE inventory_balances SET on_hand = -1 WHERE product_id = ? AND warehouse_id = ? AND changes() = 0").bind(p, w);
   const tx = (type, qty, orderId, rBefore, note, key) => db.prepare(`INSERT INTO inventory_transactions (product_id, type, quantity, order_id, on_hand_before, on_hand_after,
-      reserved_before, reserved_after, available_before, available_after, reference, notes, actor, user_id, idempotency_key, created_at)
-    SELECT ?, ?, ?, ?, b.on_hand, b.on_hand, b.reserved + ?, b.reserved, b.on_hand - b.reserved - ?, b.on_hand - b.reserved, 'reallocation', ?, ?, ?, ?, ?
-    FROM inventory_balances b WHERE b.product_id = ?`).bind(p, type, qty, orderId, rBefore, rBefore, note, actor, uid, key, t, p);
+      reserved_before, reserved_after, available_before, available_after, reference, notes, actor, user_id, idempotency_key, created_at, warehouse_id)
+    SELECT ?, ?, ?, ?, b.on_hand, b.on_hand, b.reserved + ?, b.reserved, b.on_hand - b.reserved - ?, b.on_hand - b.reserved, 'reallocation', ?, ?, ?, ?, ?, b.warehouse_id
+    FROM inventory_balances b WHERE b.product_id = ? AND b.warehouse_id = ?`).bind(p, type, qty, orderId, rBefore, rBefore, note, actor, uid, key, t, p, w);
   const stmts = [
     db.prepare("UPDATE orders SET updated_at = ? WHERE id = ? AND updated_at = ?").bind(t, o.id, o.updated_at), abort(),
     ...donors.flatMap(d => [
       db.prepare(`UPDATE inventory_reservations SET reserved_qty = reserved_qty - ?, shortage_qty = shortage_qty + ?, status = 'SHORTAGE', updated_at = ?
         WHERE id = ? AND reserved_qty >= ? AND status IN ('RESERVED','SHORTAGE')`).bind(d.q, d.q, t, d.id, d.q), abort(),
-      db.prepare("UPDATE inventory_balances SET reserved = reserved - ?, updated_at = ? WHERE product_id = ?").bind(d.q, t, p),
+      db.prepare("UPDATE inventory_balances SET reserved = reserved - ?, updated_at = ? WHERE product_id = ? AND warehouse_id = ?").bind(d.q, t, p, w),
       tx("RELEASE", d.q, d.order_id, d.q, `نُقل إلى ${o.order_number} (شُحن قبله)`, `realloc:${d.order_id}:${o.id}:${t}`)]),
-    db.prepare("UPDATE inventory_balances SET reserved = reserved + ?, updated_at = ? WHERE product_id = ?").bind(total, t, p),
+    db.prepare("UPDATE inventory_balances SET reserved = reserved + ?, updated_at = ? WHERE product_id = ? AND warehouse_id = ?").bind(total, t, p, w),
     db.prepare(`UPDATE inventory_reservations SET reserved_qty = reserved_qty + ?, shortage_qty = shortage_qty - ?,
         status = CASE WHEN shortage_qty - ? = 0 THEN 'RESERVED' ELSE 'SHORTAGE' END, updated_at = ? WHERE id = ? AND status = 'SHORTAGE' AND shortage_qty >= ?`)
       .bind(total, total, total, t, r.id, total), abort(),
@@ -305,22 +345,22 @@ export async function allocateShortage(env, ctx, o) {
   if (ruleOf(o.status) !== "RESERVE") throw new HttpError(409, { error: "order_not_open" });
   const r = await db.prepare("SELECT * FROM inventory_reservations WHERE order_id = ? AND status = 'SHORTAGE'").bind(o.id).first();
   if (!r) throw new HttpError(409, { error: "no_shortage" });
-  const bal = await getBalance(db, r.product_id);
+  const w = whOf(o), bal = await getBalance(db, r.product_id, w);
   if (bal.on_hand - bal.reserved <= 0) throw new HttpError(409, { error: "insufficient_stock", available: 0, shortage: r.shortage_qty });
   const t = now(), g = { sql: "EXISTS (SELECT 1 FROM orders WHERE id = ? AND updated_at = ?)", binds: [o.id, t] }, p = r.product_id;
   const res = await db.batch([
     db.prepare("UPDATE orders SET updated_at = ? WHERE id = ? AND updated_at = ?").bind(t, o.id, o.updated_at),
-    db.prepare(`UPDATE inventory_balances SET last_delta = MIN(?, on_hand - reserved), reserved = reserved + MIN(?, on_hand - reserved), updated_at = ? WHERE product_id = ? AND ${g.sql}`)
-      .bind(r.shortage_qty, r.shortage_qty, t, p, ...g.binds),
-    db.prepare(`UPDATE inventory_reservations SET reserved_qty = reserved_qty + (SELECT last_delta FROM inventory_balances WHERE product_id = ?),
-        shortage_qty = shortage_qty - (SELECT last_delta FROM inventory_balances WHERE product_id = ?),
-        status = CASE WHEN shortage_qty - (SELECT last_delta FROM inventory_balances WHERE product_id = ?) = 0 THEN 'RESERVED' ELSE 'SHORTAGE' END, updated_at = ?
-      WHERE id = ? AND status = 'SHORTAGE' AND ${g.sql}`).bind(p, p, p, t, r.id, ...g.binds),
+    db.prepare(`UPDATE inventory_balances SET last_delta = MIN(?, on_hand - reserved), reserved = reserved + MIN(?, on_hand - reserved), updated_at = ? WHERE product_id = ? AND warehouse_id = ? AND ${g.sql}`)
+      .bind(r.shortage_qty, r.shortage_qty, t, p, w, ...g.binds),
+    db.prepare(`UPDATE inventory_reservations SET reserved_qty = reserved_qty + (SELECT last_delta FROM inventory_balances WHERE product_id = ? AND warehouse_id = ?),
+        shortage_qty = shortage_qty - (SELECT last_delta FROM inventory_balances WHERE product_id = ? AND warehouse_id = ?),
+        status = CASE WHEN shortage_qty - (SELECT last_delta FROM inventory_balances WHERE product_id = ? AND warehouse_id = ?) = 0 THEN 'RESERVED' ELSE 'SHORTAGE' END, updated_at = ?
+      WHERE id = ? AND status = 'SHORTAGE' AND ${g.sql}`).bind(p, w, p, w, p, w, t, r.id, ...g.binds),
     db.prepare(`INSERT INTO inventory_transactions (product_id, type, quantity, order_id, on_hand_before, on_hand_after, reserved_before, reserved_after, available_before, available_after,
-        reference, notes, actor, user_id, idempotency_key, created_at)
+        reference, notes, actor, user_id, idempotency_key, created_at, warehouse_id)
       SELECT ?, 'RESERVATION', b.last_delta, ?, b.on_hand, b.on_hand, b.reserved - b.last_delta, b.reserved, b.on_hand - b.reserved + b.last_delta, b.on_hand - b.reserved,
-        'shortage_allocation', '', ?, ?, ?, ? FROM inventory_balances b WHERE b.product_id = ? AND ${g.sql}`)
-      .bind(p, o.id, ctx.user.username, ctx.user.id, `allocate:${o.id}:${t}`, t, p, ...g.binds),
+        'shortage_allocation', '', ?, ?, ?, ?, b.warehouse_id FROM inventory_balances b WHERE b.product_id = ? AND b.warehouse_id = ? AND ${g.sql}`)
+      .bind(p, o.id, ctx.user.username, ctx.user.id, `allocate:${o.id}:${t}`, t, p, w, ...g.binds),
     auditStmt(env, ctx, "shortage_allocated", "order", o.order_number, { reserved: r.reserved_qty, shortage: r.shortage_qty }, { available: bal.on_hand - bal.reserved })
   ]);
   if (!res[0].meta.changes) throw new HttpError(409, { error: "order_changed" });
@@ -338,7 +378,7 @@ export async function saveSettings(env, ctx, body) {
     let v = body[key];
     if (def.type === "int") { v = Number(v); if (!Number.isInteger(v) || v < def.min || v > def.max) throw new HttpError(422, { error: "validation", fields: { [key]: "invalid" } }); }
     else if (!def.values.includes(v)) throw new HttpError(422, { error: "validation", fields: { [key]: "invalid" } });
-    stmts.push(db.prepare("UPDATE inventory_settings SET value = ?, updated_by = ?, updated_at = ? WHERE key = ?").bind(String(v), ctx.user.username, t, key));
+    stmts.push(db.prepare("INSERT INTO inventory_settings (key, value, updated_by, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_by = excluded.updated_by, updated_at = excluded.updated_at").bind(key, String(v), ctx.user.username, t));
     changed[key] = v;
   }
   const low = changed.low_stock_threshold ?? old.lowStockThreshold, crit = changed.critical_stock_threshold ?? old.criticalStockThreshold;
@@ -352,8 +392,9 @@ export async function saveSettings(env, ctx, body) {
 
 export async function ackAlert(env, ctx, id) {
   need(ctx, "inventory.view");
-  // acknowledging the latest alert also closes the older ones it supersedes
-  await env.DB.prepare("UPDATE inventory_alerts SET acknowledged_by = ?, acknowledged_at = ? WHERE id <= ? AND acknowledged_at IS NULL").bind(ctx.user.username, now(), Number(id)).run();
+  // acknowledging an alert also closes the older ones of the same warehouse it supersedes
+  await env.DB.prepare(`UPDATE inventory_alerts SET acknowledged_by = ?1, acknowledged_at = ?2 WHERE id <= ?3 AND acknowledged_at IS NULL
+    AND COALESCE(warehouse_id, 'SENA_MAKKAH') = (SELECT COALESCE(warehouse_id, 'SENA_MAKKAH') FROM inventory_alerts WHERE id = ?3)`).bind(ctx.user.username, now(), Number(id)).run();
   return { ok: true };
 }
 
@@ -374,6 +415,17 @@ export async function reconcileStock(env, ctx) {
     onHandFromLedger: { expected: sums.on_hand, actual: b.on_hand }, soldFromLedger: { expected: sums.sold, actual: b.sold },
     reservedFromReservations: { expected: res.n, actual: b.reserved }, onHandFromBatches: { expected: batches.n, actual: b.on_hand }
   };
+  // each warehouse on its own: from its baseline and the ledger rows since, its batches, its orders' reservations
+  for (const w of (await db.prepare(`SELECT b.warehouse_id id, b.on_hand, b.reserved, b.sold, l.on_hand l_on, l.sold l_sold,
+      (SELECT COALESCE(SUM(t.on_hand_after - t.on_hand_before), 0) FROM inventory_transactions t WHERE t.product_id = b.product_id AND t.warehouse_id = b.warehouse_id AND t.id > l.last_tx_id) d_on,
+      (SELECT COALESCE(SUM(CASE WHEN t.type = 'SALE' THEN t.quantity WHEN t.type IN ('RETURN','WRITE_OFF') THEN -t.quantity END), 0) FROM inventory_transactions t WHERE t.product_id = b.product_id AND t.warehouse_id = b.warehouse_id AND t.id > l.last_tx_id) d_sold,
+      (SELECT COALESCE(SUM(s.quantity), 0) FROM inventory_batch_stock s JOIN inventory_batches x ON x.id = s.batch_id WHERE x.product_id = b.product_id AND s.warehouse_id = b.warehouse_id) in_batches,
+      (SELECT COALESCE(SUM(r.reserved_qty), 0) FROM inventory_reservations r JOIN orders o ON o.id = r.order_id WHERE r.product_id = b.product_id AND r.status IN ('RESERVED','SHORTAGE') AND COALESCE(o.warehouse_id, 'SENA_MAKKAH') = b.warehouse_id) res
+    FROM inventory_balances b JOIN inventory_baselines l ON l.product_id = b.product_id AND l.warehouse_id = b.warehouse_id WHERE b.product_id = ?`).bind(DEFAULT_PRODUCT).all()).results)
+    Object.assign(checks, { [`${w.id}.onHandFromLedger`]: { expected: w.l_on + w.d_on, actual: w.on_hand }, [`${w.id}.soldFromLedger`]: { expected: w.l_sold + w.d_sold, actual: w.sold },
+      [`${w.id}.onHandFromBatches`]: { expected: w.in_batches, actual: w.on_hand }, [`${w.id}.reservedFromReservations`]: { expected: w.res, actual: w.reserved } });
+  const split = await db.prepare("SELECT COUNT(*) n FROM inventory_batches b WHERE b.product_id = ? AND b.quantity_remaining <> (SELECT COALESCE(SUM(quantity), 0) FROM inventory_batch_stock s WHERE s.batch_id = b.id)").bind(DEFAULT_PRODUCT).first();
+  checks.batchesMatchWarehouses = { expected: 0, actual: split.n };
   return { ok: Object.values(checks).every(c => c.expected === c.actual), checks, available: b.on_hand - b.reserved };
 }
 
@@ -401,7 +453,7 @@ const purchasePerms = ctx => ({ canCreatePurchase: ctx.perms.has("inventory.purc
 function purchaseRow(b, fin) {
   return { id: b.id, batchNo: b.batch_no, source: b.source, product: b.product_id, productName: b.product_name, receivedAt: b.received_at,
     quantityReceived: b.quantity_received, remaining: b.quantity_remaining, used: b.voided_at ? 0 : b.quantity_received - b.quantity_remaining, quantityOrdered: b.quantity_ordered,
-    supplier: b.supplier, reference: b.reference, location: b.location, notes: b.notes, createdBy: b.created_by, createdAt: b.created_at,
+    supplier: b.supplier, reference: b.reference, location: b.location, warehouse: whOf(b), notes: b.notes, createdBy: b.created_by, createdAt: b.created_at,
     updatedBy: b.updated_by, updatedAt: b.updated_at, version: b.version, voided: !!b.voided_at, voidedAt: b.voided_at, voidedBy: b.voided_by, voidReason: b.void_reason,
     ...(fin ? { unitCost: unitCost(b), unitCostExact: b.unit_cost_halalas != null, totalCost: sar(b.total_cost_halalas), costKnown: b.total_cost_halalas != null } : {}) };
 }
@@ -415,6 +467,8 @@ export async function listPurchases(env, ctx, params) {
   const status = PURCHASE_STATUS[params.get("status")] ? params.get("status") : "active";
   where.push(PURCHASE_STATUS[status]);
   if (["OPENING", "PURCHASE"].includes(params.get("source"))) { where.push("b.source = ?"); binds.push(params.get("source")); }
+  const wh = params.get("warehouse");
+  if (isWarehouse(wh)) { where.push("COALESCE(b.warehouse_id, 'SENA_MAKKAH') = ?"); binds.push(wh); }
   const product = params.get("product");
   if (/^[a-z0-9_-]{2,40}$/.test(product || "")) { where.push("b.product_id = ?"); binds.push(product); }
   const supplier = clean(params.get("supplier"), 120);
@@ -442,7 +496,7 @@ export async function listPurchases(env, ctx, params) {
     purchases: rows.results.map(b => purchaseRow(b, fin)), total: totals.n, units: totals.units,
     // value = non-voided rows matching the filter; voided rows are listed (status voided / all) but never counted
     value: fin ? sar(totals.value) : undefined, missingCost: fin ? totals.missing : undefined, status, page, per,
-    suppliers: suppliers.results.map(r => r.supplier), products: products.results, canSeeCosts: fin, ...purchasePerms(ctx)
+    suppliers: suppliers.results.map(r => r.supplier), products: products.results, warehouses: await listWarehouses(db), canSeeCosts: fin, ...purchasePerms(ctx)
   };
 }
 
@@ -491,7 +545,7 @@ export async function editPurchase(env, ctx, id, body) {
 
   const used = b.quantity_received - b.quantity_remaining, delta = qty - b.quantity_received;
   if (qty < used) throw new HttpError(409, { error: "quantity_below_used", used });
-  const bal = await getBalance(db, b.product_id);
+  const w = whOf(b), bal = await getBalance(db, b.product_id, w);
   if (delta < 0 && bal.on_hand - bal.reserved < -delta) throw new HttpError(409, { error: "edit_exceeds_available", available: bal.on_hand - bal.reserved, reserved: bal.reserved });
 
   const FIELDS = [["quantity", b.quantity_received, qty], ["receivedDate", b.received_at, date], ["quantityOrdered", b.quantity_ordered, ordered],
@@ -509,13 +563,15 @@ export async function editPurchase(env, ctx, id, body) {
       .bind(qty, delta, unit, total, date, ordered, f.supplier, f.reference, f.location, f.notes, t, actor, uid, v, b.id, b.version)
   ];
   if (delta) {
-    stmts.push(db.prepare(`UPDATE inventory_balances SET last_delta = ?, on_hand = on_hand + ?, updated_at = ? WHERE product_id = ? AND ${G.sql}`).bind(delta, delta, t, product, ...G.binds));
+    stmts.push(db.prepare(`UPDATE inventory_balances SET last_delta = ?, on_hand = on_hand + ?, updated_at = ? WHERE product_id = ? AND warehouse_id = ? AND ${G.sql}`).bind(delta, delta, t, product, w, ...G.binds));
+    // where it was received; units moved to the other warehouse are not taken back (CHECK → edit_exceeds_available)
+    stmts.push(delta > 0 ? batchIn(db, b.id, w, delta, G) : batchOut(db, b.id, w, -delta, G));
     stmts.push(db.prepare(`INSERT INTO inventory_transactions (product_id, type, quantity, batch_id, on_hand_before, on_hand_after, reserved_before, reserved_after, available_before, available_after,
-        cost_halalas, reference, notes, actor, user_id, idempotency_key, created_at)
-      SELECT ?, 'ADJUSTMENT', ?, ?, b.on_hand - ?, b.on_hand, b.reserved, b.reserved, b.on_hand - ? - b.reserved, b.on_hand - b.reserved, ?, 'PURCHASE_EDIT', ?, ?, ?, ?, ?
-      FROM inventory_balances b WHERE b.product_id = ? AND ${G.sql}`)
+        cost_halalas, reference, notes, actor, user_id, idempotency_key, created_at, warehouse_id)
+      SELECT ?, 'ADJUSTMENT', ?, ?, b.on_hand - ?, b.on_hand, b.reserved, b.reserved, b.on_hand - ? - b.reserved, b.on_hand - b.reserved, ?, 'PURCHASE_EDIT', ?, ?, ?, ?, ?, b.warehouse_id
+      FROM inventory_balances b WHERE b.product_id = ? AND b.warehouse_id = ? AND ${G.sql}`)
       .bind(product, Math.abs(delta), b.id, delta, delta, unit == null ? null : unit * Math.abs(delta),
-        `${b.source === "OPENING" ? "الرصيد الافتتاحي" : "شراء #" + b.batch_no}: الكمية ${b.quantity_received} → ${qty}`, actor, uid, `purchase-edit:${b.id}:${v}`, t, product, ...G.binds));
+        `${b.source === "OPENING" ? "الرصيد الافتتاحي" : "شراء #" + b.batch_no}: الكمية ${b.quantity_received} → ${qty}`, actor, uid, `purchase-edit:${b.id}:${v}`, t, product, w, ...G.binds));
   }
   const costChanged = total !== b.total_cost_halalas || (unit != null && delta);
   if (costChanged && unit != null) {
@@ -529,10 +585,10 @@ export async function editPurchase(env, ctx, id, body) {
   }
   if (total !== b.total_cost_halalas) {
     stmts.push(db.prepare(`INSERT INTO inventory_transactions (product_id, type, quantity, batch_id, on_hand_before, on_hand_after, reserved_before, reserved_after, available_before, available_after,
-        cost_halalas, reference, notes, actor, user_id, idempotency_key, created_at)
-      SELECT product_id, 'COST_UPDATE', 0, ?, on_hand, on_hand, reserved, reserved, on_hand - reserved, on_hand - reserved, ?, 'batch ' || ?, ?, ?, ?, ?, ?
-      FROM inventory_balances WHERE product_id = ? AND ${G.sql}`)
-      .bind(b.id, total, b.batch_no, `تعديل قيمة الشراء: ${b.total_cost_halalas == null ? "بلا تكلفة" : sar(b.total_cost_halalas)} → ${sar(total)} ر.س`, actor, uid, `purchase-cost:${b.id}:${v}`, t, product, ...G.binds));
+        cost_halalas, reference, notes, actor, user_id, idempotency_key, created_at, warehouse_id)
+      SELECT product_id, 'COST_UPDATE', 0, ?, on_hand, on_hand, reserved, reserved, on_hand - reserved, on_hand - reserved, ?, 'batch ' || ?, ?, ?, ?, ?, ?, warehouse_id
+      FROM inventory_balances WHERE product_id = ? AND warehouse_id = ? AND ${G.sql}`)
+      .bind(b.id, total, b.batch_no, `تعديل قيمة الشراء: ${b.total_cost_halalas == null ? "بلا تكلفة" : sar(b.total_cost_halalas)} → ${sar(total)} ر.س`, actor, uid, `purchase-cost:${b.id}:${v}`, t, product, w, ...G.binds));
   }
   stmts.push(auditStmt(env, ctx, "purchase_edited", "inventory_batch", b.id,
     { batch: b.batch_no, ...Object.fromEntries(changed.map(([k, o]) => [k, o])), version: b.version },
@@ -562,7 +618,9 @@ export async function voidPurchase(env, ctx, id, body) {
   if (b.voided_at) throw new HttpError(409, { error: "already_voided" });
   if (body.version != null && Number(body.version) !== b.version) throw new HttpError(409, { error: "record_changed", version: b.version });
   if (b.quantity_remaining !== b.quantity_received) throw new HttpError(409, { error: "purchase_used", used: b.quantity_received - b.quantity_remaining });
-  const bal = await getBalance(db, b.product_id), qty = b.quantity_received;
+  const w = whOf(b), bal = await getBalance(db, b.product_id, w), qty = b.quantity_received;
+  const here = await db.prepare("SELECT quantity FROM inventory_batch_stock WHERE batch_id = ? AND warehouse_id = ?").bind(b.id, w).first();
+  if (!here || here.quantity !== qty) throw new HttpError(409, { error: "purchase_transferred" });
   if (bal.on_hand - bal.reserved < qty) throw new HttpError(409, { error: "edit_exceeds_available", available: bal.on_hand - bal.reserved, reserved: bal.reserved });
   const t = now(), v = b.version + 1, actor = ctx.user.username, uid = ctx.user.id, product = b.product_id;
   const G = { sql: "EXISTS (SELECT 1 FROM inventory_batches WHERE id = ? AND version = ? AND voided_at = ?)", binds: [b.id, v, t] };
@@ -571,12 +629,13 @@ export async function voidPurchase(env, ctx, id, body) {
     res = await db.batch([
       db.prepare(`UPDATE inventory_batches SET quantity_remaining = 0, voided_at = ?, voided_by = ?, voided_by_user_id = ?, void_reason = ?, version = ?
         WHERE id = ? AND version = ? AND voided_at IS NULL AND quantity_remaining = quantity_received`).bind(t, actor, uid, reason, v, b.id, b.version),
-      db.prepare(`UPDATE inventory_balances SET last_delta = ?, on_hand = on_hand - ?, updated_at = ? WHERE product_id = ? AND ${G.sql}`).bind(qty, qty, t, product, ...G.binds),
+      db.prepare(`UPDATE inventory_balances SET last_delta = ?, on_hand = on_hand - ?, updated_at = ? WHERE product_id = ? AND warehouse_id = ? AND ${G.sql}`).bind(qty, qty, t, product, w, ...G.binds),
+      batchOut(db, b.id, w, qty, G),
       db.prepare(`INSERT INTO inventory_transactions (product_id, type, quantity, batch_id, on_hand_before, on_hand_after, reserved_before, reserved_after, available_before, available_after,
-          cost_halalas, reference, notes, actor, user_id, idempotency_key, created_at)
-        SELECT ?, 'ADJUSTMENT', ?, ?, b.on_hand + ?, b.on_hand, b.reserved, b.reserved, b.on_hand + ? - b.reserved, b.on_hand - b.reserved, ?, 'PURCHASE_VOID', ?, ?, ?, ?, ?
-        FROM inventory_balances b WHERE b.product_id = ? AND ${G.sql}`)
-        .bind(product, qty, b.id, qty, qty, b.total_cost_halalas, `إلغاء شراء #${b.batch_no}: ${reason}`, actor, uid, `purchase-void:${b.id}`, t, product, ...G.binds),
+          cost_halalas, reference, notes, actor, user_id, idempotency_key, created_at, warehouse_id)
+        SELECT ?, 'ADJUSTMENT', ?, ?, b.on_hand + ?, b.on_hand, b.reserved, b.reserved, b.on_hand + ? - b.reserved, b.on_hand - b.reserved, ?, 'PURCHASE_VOID', ?, ?, ?, ?, ?, b.warehouse_id
+        FROM inventory_balances b WHERE b.product_id = ? AND b.warehouse_id = ? AND ${G.sql}`)
+        .bind(product, qty, b.id, qty, qty, b.total_cost_halalas, `إلغاء شراء #${b.batch_no}: ${reason}`, actor, uid, `purchase-void:${b.id}`, t, product, w, ...G.binds),
       auditStmt(env, ctx, "purchase_voided", "inventory_batch", b.id,
         { batch: b.batch_no, quantity: qty, totalCost: sar(b.total_cost_halalas), receivedDate: b.received_at, supplier: b.supplier || undefined }, { reason },
         { sql: "EXISTS (SELECT 1 FROM inventory_batches WHERE id = ?11 AND version = ?12 AND voided_at = ?13)", binds: G.binds })

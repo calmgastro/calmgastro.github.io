@@ -5,6 +5,8 @@ import { loadOrder, localPhone, normalizeOrderNumber, normalizePhone, normalizeN
 import { getCatalog, priceForBoxes, quote } from "./catalog.js";
 import { transitionStmts, requantityStmts, runWithRetry, checkAlert, orderGuard, reservationPreview, ruleOf, isInitialized } from "./inventory.js";
 import { stockSummary, sar, claimStock } from "./stock_admin.js";
+import { isWarehouse, whOf, listWarehouses, warehouseMode, warehouseFor } from "./warehouses.js";
+import { followCity, deliveryWarehouse } from "./warehouse_admin.js";
 const PRE_SHIP = ["RECEIVED", "CONFIRMED", "PREPARING"];
 import { groupCities, citySpellings } from "./cities.js";
 import { audit, auditStmt, hashPassword, verifyPassword, passwordProblem, validUsername, revokeAllStmt,
@@ -87,6 +89,8 @@ function orderFilter(params, spellings = null) {
   const source = params.get("source");
   if (source === "WEBSITE" || source === "ADMIN") add("o.source = ?", source);
   else if (source === "AD_PAGE") add("o.channel = ?", source);                // ads order page (/offer/), a part of WEBSITE
+  const wh = params.get("warehouse");
+  if (isWarehouse(wh)) add("COALESCE(o.warehouse_id, 'SENA_MAKKAH') = ?", wh);
   const inv = listParam(params, "inv"), invSt = ["RESERVED", "SHORTAGE", "COMMITTED", "RELEASED"].filter(s => inv.includes(s));
   const invParts = [invSt.length ? `EXISTS (SELECT 1 FROM inventory_reservations r WHERE r.order_id = o.id AND r.status IN (${invSt.map(() => "?").join(",")}))` : null,
     inv.includes("NONE") ? "NOT EXISTS (SELECT 1 FROM inventory_reservations r WHERE r.order_id = o.id)" : null].filter(Boolean);
@@ -124,7 +128,7 @@ export async function listOrders(env, ctx, params) {
   const sort = params.get("sort") === "updated" ? "o.updated_at DESC" : "o.id DESC";
   const [rows, count, counts, duplicates] = await Promise.all([
     env.DB.prepare(`SELECT ${DUP_OF} dup_of, ${PRIOR_OPEN} prior_open, o.repeat_confirmed_at, o.order_number, o.created_at, o.updated_at, o.customer_name, o.customer_phone, o.city, o.district, o.boxes,
-        o.total_amount, o.currency, o.payment_method, o.status, o.archived_at, o.source, o.channel,
+        o.total_amount, o.currency, o.payment_method, o.status, o.archived_at, o.source, o.channel, o.warehouse_id,
         (SELECT r.status FROM inventory_reservations r WHERE r.order_id = o.id LIMIT 1) inv_status
       FROM orders o ${f.sql} ORDER BY ${sort} LIMIT ${per} OFFSET ${(page - 1) * per}`).bind(...f.binds).all(),
     env.DB.prepare(`SELECT COUNT(*) AS n FROM orders o ${f.sql}`).bind(...f.binds).first(),
@@ -134,7 +138,7 @@ export async function listOrders(env, ctx, params) {
   return {
     orders: rows.results.map(r => ({ orderNumber: r.order_number, createdAt: r.created_at, updatedAt: r.updated_at, customerName: r.customer_name,
       phone: localPhone(r.customer_phone), city: r.city, district: r.district, boxes: r.boxes, total: r.total_amount, currency: r.currency,
-      paymentMethod: r.payment_method, status: r.status, archived: !!r.archived_at, source: r.source, channel: r.channel || null, inventoryStatus: r.inv_status || null, duplicateOf: dupList(r.dup_of), priorOpen: priorList(r.prior_open), repeatConfirmed: !!r.repeat_confirmed_at })),
+      paymentMethod: r.payment_method, status: r.status, archived: !!r.archived_at, source: r.source, channel: r.channel || null, warehouse: whOf(r), inventoryStatus: r.inv_status || null, duplicateOf: dupList(r.dup_of), priorOpen: priorList(r.prior_open), repeatConfirmed: !!r.repeat_confirmed_at })),
     total: count.n, page, per, duplicates, counts: Object.fromEntries(counts.results.map(r => [r.status, r.n]))
   };
 }
@@ -159,11 +163,12 @@ export async function exportCsv(env, ctx, params) {
       (SELECT SUM(i.quantity) FROM order_items i WHERE i.order_id = o.id) qty
     FROM orders o ${f.sql} ORDER BY o.id DESC LIMIT 10000`).bind(...f.binds).all()).results;
   const cell = v => { let s = v == null ? "" : String(v); if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
-  const head = ["Order Number", "Date", "Customer Name", "Mobile", "City", "District", "Address", "National Address", "Products", "Quantity", "Subtotal", "Discount", "Shipping", "Total", "Payment Method", "Status", "Created At", "Updated At"];
+  const head = ["Order Number", "Date", "Customer Name", "Mobile", "City", "District", "Address", "National Address", "Products", "Quantity", "Subtotal", "Discount", "Shipping", "Total", "Payment Method", "Status", "Created At", "Updated At", "Warehouse"];
+  const whName = Object.fromEntries((await listWarehouses(env.DB)).map(w => [w.id, w.name]));
   const fmt = iso => new Date(Date.parse(iso) + 3 * 3600e3).toISOString().replace("T", " ").slice(0, 16);
   const lines = [head.join(",")].concat(rows.map(o => [o.order_number, fmt(o.created_at).slice(0, 10), o.customer_name, localPhone(o.customer_phone), o.city, o.district, o.address, o.national_address || "",
     o.products, o.qty, o.subtotal, o.discount_amount, o.shipping_amount, o.total_amount, o.payment_method === "cod" ? "Cash on delivery" : o.payment_method,
-    LABELS[o.status] ? LABELS[o.status].en : o.status, fmt(o.created_at), fmt(o.updated_at)].map(cell).join(",")));
+    LABELS[o.status] ? LABELS[o.status].en : o.status, fmt(o.created_at), fmt(o.updated_at), whName[whOf(o)]].map(cell).join(",")));
   await audit(env, ctx, "orders_exported", "orders", null, null, { filter: Object.fromEntries(params), rows: rows.length });
   return "﻿" + lines.join("\r\n") + "\r\n";
 }
@@ -212,7 +217,8 @@ export async function orderDetail(env, ctx, number) {
     id: o.id, orderNumber: o.order_number, status: o.status, createdAt: o.created_at, updatedAt: o.updated_at, lang: o.lang,
     paymentMethod: o.payment_method, boxes: o.boxes, subtotal: o.subtotal, discount: o.discount_amount, shipping: o.shipping_amount,
     total: o.total_amount, currency: o.currency, archived: !!o.archived_at, anonymized: !!o.anonymized_at, locked: LOCKED.includes(o.status),
-    source: o.source, channel: o.channel || null, createdBy: o.created_by, manualDiscount: o.manual_discount, manualDiscountReason: o.manual_discount_reason,
+    source: o.source, channel: o.channel || null, warehouse: whOf(o), warehouseManual: !!o.warehouse_manual, warehouses: await listWarehouses(env.DB),
+    canMoveWarehouse: !o.anonymized_at && ruleOf(o.status) !== "COMMIT" && !shipments.results.some(x => !x.removed_at), createdBy: o.created_by, manualDiscount: o.manual_discount, manualDiscountReason: o.manual_discount_reason,
     // cash on delivery: collected when the order is delivered; nothing is owed on a cancelled / failed order
     payment: { status: delivered ? "COLLECTED" : closed ? "NONE" : "PENDING", collected: delivered ? o.total_amount : 0, outstanding: delivered || closed ? 0 : o.total_amount },
     customer: { name: o.customer_name, phone: localPhone(o.customer_phone), phoneIntl: o.customer_phone, city: o.city, district: o.district,
@@ -230,7 +236,7 @@ export async function orderDetail(env, ctx, number) {
       reservations: reservations.results.map(r => ({ product: r.product_id, status: r.status, requested: r.requested_qty, reserved: r.reserved_qty, shortage: r.shortage_qty,
         availableBefore: r.available_at_order, availableAfter: r.available_after, reservedAt: r.reserved_at, releasedAt: r.released_at, committedAt: r.committed_at,
         ...(fin ? { cogs: sar(r.cogs_halalas), cogsComplete: !!r.cogs_complete } : {}) })),
-      transactions: invTx.results.map(t => ({ type: t.type, quantity: t.quantity, availableBefore: t.available_before, availableAfter: t.available_after,
+      transactions: invTx.results.map(t => ({ type: t.type, warehouse: t.warehouse_id || null, notes: t.notes, quantity: t.quantity, availableBefore: t.available_before, availableAfter: t.available_after,
         onHandBefore: t.on_hand_before, onHandAfter: t.on_hand_after, actor: t.actor, at: t.created_at, ...(fin ? { cost: sar(t.cost_halalas) } : {}) })),
       canAllocate: ctx.perms.has("inventory.manage") && reservations.results.some(r => r.status === "SHORTAGE")
     } : null,
@@ -284,7 +290,8 @@ export async function changeStatus(env, ctx, number, body) {
   if (!kind) throw new HttpError(STATUSES.includes(to) ? 403 : 422, { error: STATUSES.includes(to) ? "transition_not_allowed" : "invalid_status", from: o.status, to });
   if (kind === "override" && body.override !== true) throw new HttpError(409, { error: "override_confirmation_required", from: o.status, to });
   if (body.expectedStatus && body.expectedStatus !== o.status) throw new HttpError(409, { error: "status_changed", status: o.status });
-  await applyTransition(env, ctx, full, to, { note: cleanNote(body.note), visibility: body.visibility === "customer" ? "customer" : "internal", kind });
+  const ready = await deliveryWarehouse(env, ctx, full, to, body.warehouse);
+  await applyTransition(env, ctx, ready, to, { note: cleanNote(body.note), visibility: body.visibility === "customer" ? "customer" : "internal", kind });
   return orderDetail(env, ctx, o.order_number);
 }
 
@@ -310,7 +317,7 @@ export async function bulkStatus(env, ctx, body) {
     if (o.status === to) { skipped.push({ orderNumber: n, reason: "already", status: o.status }); continue; }
     const kind = allowedTransition(ctx.perms, o.status, to);
     if (!(kind === "normal" || (kind === "override" && override))) { skipped.push({ orderNumber: n, reason: "transition_not_allowed", status: o.status }); continue; }
-    try { await applyTransition(env, ctx, full, to, { note, visibility, kind, bulkId }); updated.push(n); }
+    try { await applyTransition(env, ctx, await deliveryWarehouse(env, ctx, full, to, body.warehouse), to, { note, visibility, kind, bulkId }); updated.push(n); }
     catch (e) {
       if (!(e instanceof HttpError)) throw e;
       skipped.push({ orderNumber: n, reason: e.body.error, status: o.status, ...(e.body.shortage != null ? { shortage: e.body.shortage } : {}) });
@@ -350,6 +357,7 @@ export async function editCustomer(env, ctx, number, body) {
       .bind(...changes.map(c => c.new), t, o.id),
     ...changes.map(c => auditStmt(env, ctx, "order_customer_changed", "order", o.order_number, { field: c.key, value: c.key === "phone" ? localPhone(c.old) : c.old }, { field: c.key, value: c.key === "phone" ? localPhone(c.new) : c.new }))
   ]);
+  if (changes.some(c => c.key === "city")) await followCity(env, ctx, o.order_number);
   return orderDetail(env, ctx, o.order_number);
 }
 
@@ -773,6 +781,7 @@ export async function editCustomerProfile(env, ctx, phoneParam, body) {
   stmts.push(auditStmt(env, ctx, "customer_edited", "customer", localPhone(phoneChange ? phoneChange.new : phone),
     Object.fromEntries(changes.map(x => [x.key, shown(x.key, x.old)])), { ...Object.fromEntries(changes.map(x => [x.key, shown(x.key, x.new)])), orders: applied }));
   await env.DB.batch(stmts);
+  if (changes.some(x => x.key === "city")) for (const n of applied) await followCity(env, ctx, n);
   return { ...(await customerDetail(env, ctx, phoneChange ? phoneChange.new : phone)), applied };
 }
 
@@ -929,8 +938,9 @@ export async function backup(env, ctx) {
   need(ctx, "settings.manage");
   const tables = ["orders", "order_items", "order_status_history", "order_notes", "notification_outbox", "order_counters", "audit_logs", "roles", "permissions", "role_permissions", "catalog_cache",
     "customers", "products", "inventory_settings", "inventory_balances", "inventory_batches", "inventory_reservations", "inventory_consumptions", "inventory_adjustments",
-    "inventory_transactions", "inventory_alerts", "expense_categories", "expenses", "shipping_settings", "shipment_batches", "shipment_orders"];
-  const out = { exportedAt: now(), exportedBy: ctx.user.username, schema: "0010", tables: {} };
+    "inventory_transactions", "inventory_alerts", "warehouses", "inventory_batch_stock", "inventory_baselines", "warehouse_transfers", "expense_categories", "expenses", "shipping_settings", "shipment_batches", "shipment_orders",
+    "carrier_settlements", "carrier_settlement_orders"];
+  const out = { exportedAt: now(), exportedBy: ctx.user.username, schema: "0015", tables: {} };
   for (const t of tables) out.tables[t] = (await env.DB.prepare(`SELECT * FROM ${t} ORDER BY rowid LIMIT 100000`).all()).results;
   out.tables.users = (await env.DB.prepare("SELECT id, username, display_name, role_id, is_active, created_at, updated_at FROM users ORDER BY id").all()).results;
   await audit(env, ctx, "backup_downloaded", "system", null, null, Object.fromEntries(Object.entries(out.tables).map(([k, v]) => [k, v.length])));
@@ -968,7 +978,9 @@ export async function adminOrder(env, ctx, body) {
     if (manualReason.length < 3) throw new HttpError(422, { error: "validation", fields: { discountReason: "required" } });
   }
   const existing = await env.DB.prepare("SELECT * FROM customers WHERE phone = ?").bind(o.customer.phone).first();
-  const stock = await reservationPreview(env.DB, boxes);
+  if (body.warehouse && !isWarehouse(body.warehouse)) throw new HttpError(422, { error: "validation", fields: { warehouse: "invalid" } });
+  const warehouse = body.warehouse || warehouseFor(await warehouseMode(env.DB), o.customer.city);
+  const stock = await reservationPreview(env.DB, boxes, warehouse);
   const totals = { boxes: q.boxes, lines: q.lines.map(l => ({ name: l.name, quantity: l.quantity, unitPrice: l.unitPrice, lineTotal: l.lineTotal })),
     subtotal: q.subtotal, offerDiscount: q.discount, manualDiscount: manual, discount: q.discount + manual, shipping: q.shipping, total: q.subtotal - q.discount - manual + q.shipping, currency: q.currency };
   const customer = existing ? { existing: true, id: existing.id, name: existing.name, city: existing.city, district: existing.district, address: existing.address, nationalAddress: existing.national_address || null } : { existing: false };
@@ -977,21 +989,21 @@ export async function adminOrder(env, ctx, body) {
       AND x.archived_at IS NULL AND x.anonymized_at IS NULL AND julianday('now') - julianday(x.created_at) <= ${DUP_DAYS} ORDER BY x.id`).bind(o.customer.phone).all()).results;
     const open = (await env.DB.prepare(`SELECT order_number, status FROM orders WHERE customer_phone = ? AND status IN ('RECEIVED','CONFIRMED','PREPARING','SHIPPED','OUT_FOR_DELIVERY','ON_HOLD')
       AND archived_at IS NULL AND anonymized_at IS NULL ORDER BY id`).bind(o.customer.phone).all()).results;
-    return { preview: true, status, source: "ADMIN", totals, stock, customer, duplicates: recent.map(x => ({ orderNumber: x.order_number, createdAt: x.created_at, status: x.status })),
+    return { preview: true, status, source: "ADMIN", totals, stock, warehouse, warehouses: await listWarehouses(env.DB), customer, duplicates: recent.map(x => ({ orderNumber: x.order_number, createdAt: x.created_at, status: x.status })),
       openOrders: open.map(x => ({ orderNumber: x.order_number, status: x.status })) };
   }
 
   if (stock.initialized && stock.shortage > 0 && body.allowShortage !== true)
-    throw new HttpError(409, { error: "insufficient_stock", requested: boxes, available: stock.available, shortage: stock.shortage, toReserve: stock.toReserve });
-  const replay = await findReplay(env, o, await sha256(JSON.stringify(["admin", o.items, o.customer, manual, status])));
+    throw new HttpError(409, { error: "insufficient_stock", warehouse, requested: boxes, available: stock.available, shortage: stock.shortage, toReserve: stock.toReserve });
+  const replay = await findReplay(env, o, await sha256(JSON.stringify(["admin", o.items, o.customer, manual, status, ...(body.warehouse ? [body.warehouse] : [])])));
   if (replay) return { replay: true, orderNumber: replay.number };
   const internalNote = cleanNote(body.internalNote);
   const created = await insertOrder(env, catalog, o, q, {
-    source: "ADMIN", actor: ctx.user.username, userId: ctx.user.id, status, manualDiscount: manual, manualReason, internalNote,
+    source: "ADMIN", actor: ctx.user.username, userId: ctx.user.id, status, manualDiscount: manual, manualReason, internalNote, warehouse: body.warehouse || null,
     saveProfile: !existing || body.saveProfile === true,
     auditStmt: auditStmt(env, ctx, "order_created_by_admin", "order", null, null, {
       idempotencyKey: o.key, customerPhone: localPhone(o.customer.phone), existingCustomer: !!existing, boxes, subtotal: q.subtotal, offerDiscount: q.discount,
-      manualDiscount: manual, manualDiscountReason: manualReason || undefined, total: totals.total, status, stock: stock.initialized ? { available: stock.available, toReserve: stock.toReserve, shortage: stock.shortage } : null })
+      manualDiscount: manual, manualDiscountReason: manualReason || undefined, total: totals.total, status, warehouse, stock: stock.initialized ? { available: stock.available, toReserve: stock.toReserve, shortage: stock.shortage } : null })
   });
   return { replay: created.replay, orderNumber: created.number, order: await orderDetail(env, ctx, created.number) };
 }

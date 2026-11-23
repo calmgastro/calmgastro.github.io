@@ -308,3 +308,11 @@ html.col-resizing, html.col-resizing *{cursor:col-resize !important; user-select
 
 /* earlier order not delivered yet: same look as the duplicate tag (.tag.dup) */
 .prior-card .st{vertical-align:middle}
+
+/* المستودعان */
+.tag.wh{white-space:nowrap} .tag.wh-SENA_MAKKAH{background:#E3F1EF; color:#0F5C57} .tag.wh-RIYADH{background:#FBEBD3; color:#8A4F06}
+.wh-stock{display:grid; gap:14px}
+.wh-card{border:1px solid var(--line); border-radius:var(--r); padding:14px; background:#FBFCFA}
+.wh-card .tiles{margin-bottom:0}
+.wh-head{display:flex; flex-wrap:wrap; align-items:baseline; gap:8px; margin-bottom:10px} .wh-head h3{margin:0}
+.wh-total{margin:0 0 16px}

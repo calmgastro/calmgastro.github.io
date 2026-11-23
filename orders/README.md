@@ -114,6 +114,27 @@ customer messages; sender to be connected later) · `order_counters` (atomic yea
 Migration 0002 rebuilt the order tables to the new status enum, keeping every existing row
 (`pending` → `RECEIVED`, `problem` → `ON_HOLD`), children-first so no cascade can delete data.
 
+## Two separate warehouses (migration `0015`, `src/warehouses.js`, `src/warehouse_admin.js`)
+
+`SENA_MAKKAH` «سينا مكة» (held by SENA, which packs from it) and `RIYADH` «مستودع الرياض» (our own). Balances, reservations, FIFO
+batches, shortages, receipts, adjustments, alerts and stock value are per warehouse; one never covers the other's orders.
+
+- **Order → warehouse** (`orders.warehouse_id`): by city (Riyadh city → RIYADH, the rest and orders without a city →
+  SENA_MAKKAH), set at creation and followed when the city is edited before shipping, unless the team chose one
+  (`warehouse_manual`). `POST /orders/{n}/warehouse {warehouse}` moves an order that is not delivered and not in a shipment.
+  Setting `warehouse_mode`: `CITY`, or one warehouse id for every new order (then nothing below asks or moves).
+- **Export**: «من مخزون SENA» leaves from SENA_MAKKAH, «الشحنة مجهزة من التاجر» from RIYADH (`shipment_batches.warehouse_id`). Orders of
+  the other warehouse → 409 `warehouse_move_required` until `allowMove: true`. The preview gives `bySource` (stock, shortage, moves).
+- **Delivered by hand** (no active shipment) while on SENA_MAKKAH → 409 `warehouse_confirmation_required`; the answer is
+  `warehouse` in the status / bulk-status body. Too few boxes there → 409 `inventory_shortage`, nothing moves.
+- **Transfer** `POST /inventory/transfers {from,to,quantity,notes,requestId}`: two ledger rows (type ADJUSTMENT, reference
+  TRANSFER_OUT / TRANSFER_IN), same batches and cost, not a loss. `inventory_batch_stock` = where each batch's remaining boxes are.
+- **Receipts and adjustments** need `warehouse`. A return goes back to the order's warehouse. A purchase whose boxes were moved
+  cannot be voided or cut below what moved.
+- Ledger rows before 0015 have no warehouse (one common stock); `reconcile` checks each warehouse from `inventory_baselines`.
+- **Deploy**: old code cannot run on the new tables: apply the migration and deploy the Worker back to back.
+- Tests: `e2e/warehouses_api.test.mjs` (72), `e2e/warehouses_ui.mjs` (33); the older suites run with one warehouse for all.
+
 ## Inventory, cost and profit (migration `0003`, `src/inventory.js`, `src/stock_admin.js`, `src/finance.js`)
 
 **One stock service.** `src/inventory.js` is the only code that moves stock. Website orders and admin orders
