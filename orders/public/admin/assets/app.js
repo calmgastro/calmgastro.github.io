@@ -52,6 +52,7 @@ const ERR = {
   empty_note: "اكتب الملاحظة أولاً.", only_finished_orders: "الأرشفة للطلبات المنتهية فقط (تم التوصيل، ملغي، متعذّر).",
   validation: "تحقق من البيانات المدخلة.", not_found: "غير موجود.", password_change_required: "يجب تغيير كلمة المرور أولاً.",
   transfer_exceeds_available: "لا يمكن نقل أكثر من المتوفر غير المحجوز في المستودع المصدر.", order_in_shipment: "الطلب في شحنة؛ أزله من الشحنة أولاً لتغيير مستودعه.",
+  purchase_warehouse_short: "لا يمكن تغيير المستودع: علب هذا الشراء مستخدمة أو محجوزة في مستودعه الحالي ولا يوجد ما يعوّضها.",
   purchase_transferred: "لا يمكن إلغاء شراء نُقل منه إلى المستودع الآخر؛ أعد العلب أولاً أو عدّل الكمية.", warehouse_move_required: "بعض الطلبات محسوبة على المستودع الآخر.",
   warehouse_confirmation_required: "حدّد المستودع الذي خرج منه الطلب.",
   insufficient_stock: "المخزون المتوفر لا يكفي لهذه العملية.", reservation_mismatch: "كمية الحجز لا تطابق الطلب. حدّث الصفحة.",
@@ -86,6 +87,7 @@ function toast(msg, bad) {
 /* المستودعان: «سينا مكة» (سينا تجهّز منه) و«مستودع الرياض» (مخزونك). كل طلب وكل علبة على مستودع واحد */
 const WAREHOUSES = [["SENA_MAKKAH", "سينا مكة"], ["RIYADH", "مستودع الرياض"]];
 const whName = id => (WAREHOUSES.find(w => w[0] === id) || [, "—"])[1];
+const boxesN = n => n === 1 ? "علبة واحدة" : n === 2 ? "علبتان" : `${fmtN(n)} ${n % 100 >= 3 && n % 100 <= 10 ? "علب" : "علبة"}`;
 const whTag = id => h("span", { class: "tag wh wh-" + id, text: whName(id) });
 const whSelect = (label, value, first) => h("select", { "aria-label": label }, first ? h("option", { value: "", text: first }) : null, WAREHOUSES.map(([v, t]) => h("option", { value: v, text: t, selected: v === value })));
 const otherWh = id => id === "RIYADH" ? "SENA_MAKKAH" : "RIYADH";
@@ -891,7 +893,7 @@ const AUDIT = {
   order_duplicate_cleared: "ليس مكرراً (بعد المراجعة)", order_duplicate_flagged: "إعادة تنبيه التكرار", shipment_exported: "تصدير شحنة لسينا", shipment_orders_removed: "إزالة طلبات من شحنة", shipment_orders_added: "إضافة طلبات إلى شحنة", stock_claimed: "أخذ علب من المستودع عند الشحن", shipment_file_downloaded: "تنزيل ملف شحنة", shipment_delivery_confirmed: "تأكيد توصيل جماعي",
   shipment_delivery_failed: "تعذّر توصيل (شحنة)", shipment_out_for_delivery: "خرج للتوصيل (شحنة)", shipping_settings_changed: "إعدادات الشحن",
   order_created_by_admin: "طلب من لوحة التحكم", expense_created: "إضافة مصروف", expense_edited: "تعديل مصروف", expense_voided: "إلغاء مصروف",
-  stock_received: "إضافة مخزون (شراء)", purchase_edited: "تعديل شراء مخزون", purchase_voided: "إلغاء شراء مخزون", batch_cost_set: "إدخال تكلفة دفعة",
+  stock_received: "إضافة مخزون (شراء)", purchase_edited: "تعديل شراء مخزون", purchase_voided: "إلغاء شراء مخزون", purchase_warehouse_changed: "تغيير مستودع شراء", batch_cost_set: "إدخال تكلفة دفعة",
   stock_transferred: "نقل بين المستودعين", order_warehouse_changed: "تغيير مستودع الطلب", stock_adjusted: "تسوية مخزون", inventory_initialized: "الرصيد الافتتاحي", inventory_settings_changed: "إعدادات المخزون", shortage_allocated: "حجز لطلب نقص"
 };
 const auditLabel = a => AUDIT[a] || a;
@@ -901,7 +903,8 @@ const KEY_AR = { status: "الحالة", note: "ملاحظة", visibility: "ال
   rows: "عدد الصفوف", mfa: "تحقق بخطوتين", active: "نشط", unlocked: "فك القفل", passwordReset: "كلمة مرور مؤقتة", twoFactorReset: "إعادة ضبط التحقق", displayName: "الاسم",
   amount: "المبلغ", category: "الفئة", date: "التاريخ", description: "الوصف", orderNumber: "الطلب", platform: "المنصة", campaign: "الحملة", reference: "المرجع",
   paymentMethod: "طريقة الدفع", notes: "ملاحظات", version: "الإصدار", batch: "الدفعة", receivedDate: "تاريخ الشراء", quantityOrdered: "الكمية في الفاتورة",
-  supplier: "المورد", location: "الموقع", name: "الاسم", phone: "الجوال", city: "المدينة", district: "الحي", address: "العنوان", nationalAddress: "العنوان الوطني", via: "عبر", unitCost: "سعر الوحدة", totalCost: "الإجمالي (ر.س)", newOnHand: "الموجود بعد", onHand: "الموجود", warehouse: "المستودع", from: "من", why: "السبب", movedFromOtherWarehouse: "حُوّلت من المستودع الآخر" };
+  supplier: "المورد", location: "الموقع", name: "الاسم", phone: "الجوال", city: "المدينة", district: "الحي", address: "العنوان", nationalAddress: "العنوان الوطني", via: "عبر", unitCost: "سعر الوحدة", totalCost: "الإجمالي (ر.س)", newOnHand: "الموجود بعد", onHand: "الموجود", warehouse: "المستودع", from: "من", why: "السبب", movedFromOtherWarehouse: "حُوّلت من المستودع الآخر",
+  moved: "انتقل بين الرصيدين", chargedToOld: "حُسب على طلبات سابقة", replaced: "عُوّض من مشتريات أخرى", kept: "بقي كما هو", costChange: "فرق التكلفة" };
 const FIELD_AR = { name: "الاسم", phone: "الجوال", city: "المدينة", district: "الحي", address: "العنوان", nationalAddress: "العنوان الوطني", notes: "ملاحظات التوصيل" };
 const VAL_AR = v => v === "customer_page" ? "صفحة العميل" : v === "SENA_MAKKAH" || v === "RIYADH" ? whName(v) : v === "hand_delivery" ? "تسليم باليد" : v === "manual" ? "اختيار يدوي" : v === "city" ? "حسب المدينة" : STATUS[v] || ROLE[v] || FIELD_AR[v] || { DELIVERY: "التوصيل والشحن", ADVERTISING: "الإعلانات", OTHER: "أخرى" }[v] || { internal: "داخلية", customer: "يراها العميل", true: "نعم", false: "لا" }[String(v)] || v;
 function auditDiff(oldV, newV) {
@@ -1392,7 +1395,7 @@ const invBadge = s => s ? h("span", { class: "inv inv-" + s, text: INV[s] || s }
 const LEVEL = { NONE: "طبيعي", LOW: "مخزون منخفض", CRITICAL: "مخزون حرج", OUT: "نفد المخزون" };
 const TX = { OPENING_BALANCE: "رصيد افتتاحي", PURCHASE_RECEIPT: "استلام مخزون", RESERVATION: "حجز لطلب", RELEASE: "إلغاء حجز", SALE: "بيع (تسليم)",
   ADJUSTMENT: "تسوية يدوية", RETURN: "مرتجع إلى المخزون", WRITE_OFF: "شطب", COST_UPDATE: "تحديث تكلفة" };
-const TXREF = { TRANSFER_OUT: "نقل إلى المستودع الآخر", TRANSFER_IN: "نقل من المستودع الآخر", PURCHASE_EDIT: "تعديل شراء", PURCHASE_VOID: "إلغاء شراء", opening: "افتتاحي", reconciliation: "مطابقة", shortage_allocation: "حجز لطلب نقص" };
+const TXREF = { TRANSFER_OUT: "نقل إلى المستودع الآخر", TRANSFER_IN: "نقل من المستودع الآخر", PURCHASE_EDIT: "تعديل شراء", PURCHASE_VOID: "إلغاء شراء", PURCHASE_WAREHOUSE: "تصحيح مستودع شراء", opening: "افتتاحي", reconciliation: "مطابقة", shortage_allocation: "حجز لطلب نقص" };
 const SOURCE = { WEBSITE: "الموقع", ADMIN: "لوحة التحكم" };
 TXREF.reallocation = "تحويل بين الطلبات";
 const ADJ = { DAMAGED: "تالف", EXPIRED: "منتهي الصلاحية", COUNT_CORRECTION: "تصحيح جرد", LOST: "مفقود", FOUND: "وجدنا وحدات إضافية", OTHER: "سبب آخر" };
@@ -1542,8 +1545,8 @@ async function pageInventory() {
       tbl(["التاريخ", "من", "إلى", "الكمية", "ملاحظات", "بواسطة"], d.transfers.map(t => [when(t.at), whName(t.from), whName(t.to), fmtN(t.quantity), t.notes || "—", t.by]))));
   } else if (tab === "batches") {
     put(box, h("section", { class: "card" }, h("h2", { text: "دفعات المخزون" }), h("p", { class: "muted small", text: "كل استلام دفعة مستقلة بتكلفتها؛ لا تُدمج الدفعات. تُصرف الأقدم أولاً." }),
-      tbl(["الدفعة", "تاريخ الاستلام", "النوع", "المستلم", "المتبقي", "أين المتبقي", ...(d.canSeeCosts ? ["تكلفة الوحدة", "إجمالي التكلفة", "قيمة المتبقي"] : []), "الحالة", "المورد / المرجع", ""],
-        d.batches.map(b => ["#" + b.batchNo, b.receivedAt, { OPENING: "رصيد افتتاحي", PURCHASE: "شراء", ADJUSTMENT: "تسوية" }[b.source] || b.source, fmtN(b.quantityReceived), fmtN(b.quantityRemaining), Object.entries(b.where || {}).map(([w, n]) => `${whName(w)} ${fmtN(n)}`).join(" · ") || "—",
+      tbl(["الدفعة", "تاريخ الاستلام", "النوع", "مستودع الاستلام", "المستلم", "المتبقي", "أين المتبقي", ...(d.canSeeCosts ? ["تكلفة الوحدة", "إجمالي التكلفة", "قيمة المتبقي"] : []), "الحالة", "المورد / المرجع", ""],
+        d.batches.map(b => ["#" + b.batchNo, b.receivedAt, { OPENING: "رصيد افتتاحي", PURCHASE: "شراء", ADJUSTMENT: "تسوية" }[b.source] || b.source, whTag(b.warehouse), fmtN(b.quantityReceived), fmtN(b.quantityRemaining), Object.entries(b.where || {}).map(([w, n]) => `${whName(w)} ${fmtN(n)}`).join(" · ") || "—",
           ...(d.canSeeCosts ? [b.costKnown ? sarF(b.unitCost) : "غير مُدخلة", b.costKnown ? sarF(b.totalCost) : "—", b.costKnown ? sarF(b.stockValue) : "—"] : []),
           { FULL: "كاملة", PARTIAL: "مستخدمة جزئياً", DEPLETED: "نفدت", VOIDED: "ملغاة" }[b.status], [b.supplier, b.reference].filter(Boolean).join(" · ") || "—",
           d.canEditPurchase && b.source !== "ADJUSTMENT" && b.status !== "VOIDED" ? h("a", { class: "btn ghost sm", href: "/admin/inventory?tab=receive&edit=" + b.id, "data-link": true, text: d.canSeeCosts && !b.costKnown ? "إدخال السعر" : "تعديل" }) : ""]))));
@@ -1904,12 +1907,25 @@ async function purchasesSection(box) {
   }
 }
 
+// ما يتغير عند تصحيح مستودع شراء (من معاينة الخادم)
+function moveEffects(m, fin) {
+  return [
+    m.moved ? `ينتقل ${boxesN(m.moved)} من رصيد «${whName(m.from)}» إلى «${whName(m.to)}».` : "لا يتغير رصيد المستودعين؛ يتغير حساب المصروف من الدفعات فقط.",
+    m.chargedToOld ? `${boxesN(m.chargedToOld)} من هذا الشراء تُحسب على طلبات «${whName(m.to)}» المسلّمة قبل فصل المستودعين (كانت محسوبة من مشتريات «${whName(m.from)}»).` : null,
+    m.replaced ? `${boxesN(m.replaced)} منه صُرفت لطلبات «${whName(m.from)}» تُحسب من مشترياته الأخرى.` : null,
+    m.kept ? `${boxesN(m.kept)} منه صُرفت لطلبات «${whName(m.from)}» قبل الفصل تبقى كما هي (لا يوجد ما يعوّضها).` : null,
+    `الرصيد بعد الحفظ: «${whName(m.from)}» ${fmtN(m.after[m.from])} · «${whName(m.to)}» ${fmtN(m.after[m.to])} (مع المشحون لدى المندوبين).`,
+    fin ? (m.costChange === 0 ? "لا تتغير تكلفة أي طلب." : m.costChange == null ? "تتحدّث تكلفة الطلبات المرتبطة (بعض المشتريات بلا سعر)." : `تتغير تكلفة الطلبات المسلّمة بمقدار ${sarF(m.costChange)}.`) : null
+  ].filter(Boolean);
+}
+
 function purchaseEditCard(d, b, nav) {
   const fin = d.canSeeCosts, initUnit = b.costKnown ? String(b.unitCost) : "";
   const f = { quantity: h("input", { type: "number", min: Math.max(1, b.used), step: 1, value: b.quantityReceived }), unitCost: h("input", { inputmode: "decimal", value: initUnit, placeholder: "مثال: 35" }),
     receivedDate: h("input", { type: "date", value: b.receivedAt.slice(0, 10), max: todayRiyadh() }), supplier: h("input", { maxlength: 120, value: b.supplier, list: "cgSuppliers" }),
     reference: h("input", { maxlength: 120, value: b.reference }), location: h("input", { maxlength: 120, value: b.location }),
     quantityOrdered: h("input", { type: "number", min: 1, step: 1, value: b.quantityOrdered ?? "" }), notes: h("textarea", { maxlength: 500, value: b.notes }) };
+  const wh = whSelect("مستودع الشراء", b.warehouse);
   const total = h("output", { class: "big-out" }), how = h("small", { class: "muted" }), err = h("p", { class: "err", role: "alert" });
   const calc = () => { const q = num(f.quantity.value), u = num(f.unitCost.value), ok_ = q > 0 && u > 0;
     total.textContent = ok_ ? sarF(Math.round(q * u * 100) / 100) : "—"; how.textContent = ok_ ? `الكمية ${fmtN(q)} × سعر الوحدة ${fmtN(u)}` : "الكمية × سعر الوحدة"; };
@@ -1930,28 +1946,44 @@ function purchaseEditCard(d, b, nav) {
     const newTotal = fin && u !== "" ? Math.round(q * num(u) * 100) / 100 : b.totalCost;
     const rows = [["الكمية", fmtN(b.quantityReceived), fmtN(q), q !== b.quantityReceived], ...(fin ? [["سعر الوحدة", b.costKnown ? sarF(b.unitCost) : "", u ? sarF(num(u)) : "", unitChanged],
       ["الإجمالي", b.costKnown ? sarF(b.totalCost) : "", newTotal != null ? sarF(newTotal) : "", (newTotal ?? null) !== (b.totalCost ?? null)]] : []),
-      ["التاريخ", b.receivedAt.slice(0, 10), body.receivedDate], ["المورد", b.supplier, body.supplier], ["المرجع", b.reference, body.reference], ["الموقع", b.location, body.location],
+      ["التاريخ", b.receivedAt.slice(0, 10), body.receivedDate], ["المورد", b.supplier, body.supplier], ["المرجع", b.reference, body.reference], ["مكان التخزين", b.location, body.location],
       ["الكمية في الفاتورة", b.quantityOrdered ?? "", body.quantityOrdered ?? ""], ["ملاحظات", b.notes, body.notes]]
       .filter(r => r.length === 4 ? r[3] : String(r[1] ?? "") !== String(r[2] ?? "")).map(r => r.slice(0, 3));
-    if (!rows.length) { toast("لا توجد تغييرات للحفظ."); return; }
-    const effects = [q !== b.quantityReceived ? `يتغير المخزون الموجود بمقدار ${q > b.quantityReceived ? "+" : ""}${q - b.quantityReceived} علبة (حركة في سجل الحركات).` : null,
+    const moving = wh.value !== b.warehouse, editing = rows.length > 0;
+    if (!editing && !moving) { toast("لا توجد تغييرات للحفظ."); return; }
+    let mv = null;
+    if (moving) {
+      try { mv = await api(`/inventory/purchases/${b.id}/warehouse`, { body: { warehouse: wh.value, version: b.version, preview: true } }); }
+      catch (e) { err.textContent = e.message === "purchase_warehouse_short" ? `لا يمكن تغيير المستودع: يلزم إخراج ${fmtN(e.data.needed)} علبة من «${whName(e.data.warehouse)}» والمتاح فيه ${fmtN(Math.max(0, e.data.available))} غير محجوزة.`
+        : e.message === "record_changed" ? "عدّل شخص آخر هذا الشراء للتو. أعد فتحه وراجع القيم قبل الحفظ." : purchaseErr(e); return; }
+      rows.unshift(["المستودع", whName(b.warehouse), whName(wh.value)]);
+    }
+    const effects = [...(mv ? moveEffects(mv, fin) : []), q !== b.quantityReceived ? `يتغير المخزون الموجود بمقدار ${q > b.quantityReceived ? "+" : ""}${q - b.quantityReceived} علبة (حركة في سجل الحركات).` : null,
       fin && b.used && (unitChanged || q !== b.quantityReceived) && u ? `تُحدَّث تكلفة ${b.used} علبة مستخدمة من هذا الشراء، وتكلفة الطلبات المُسلَّمة منها.` : null].filter(Boolean);
     if (!(await confirmBox(`تأكيد تعديل ${b.source === "OPENING" ? "الرصيد الافتتاحي" : "الشراء #" + b.batchNo}`, [changeList(rows), ...effects.map(x => h("p", { class: "small", text: x })),
       h("p", { class: "muted small", text: "القيم السابقة تُحفظ في سجل التدقيق باسمك، وتتحدّث التقارير فوراً." })], { okText: "حفظ التعديل" }))) return;
     await busy(btn, "جارٍ الحفظ…", async () => {
-      try { await api(`/inventory/purchases/${b.id}`, { body }); toast("تم حفظ التعديل وتحدّثت التقارير والمخزون."); financeChanged(); nav({}); }
-      catch (e) { err.textContent = e.message === "record_changed" ? "عدّل شخص آخر هذا الشراء للتو. أعد فتحه وراجع القيم قبل الحفظ." : purchaseErr(e); }
+      let moved = false;
+      try {
+        if (moving) { body.version = (await api(`/inventory/purchases/${b.id}/warehouse`, { body: { warehouse: wh.value, version: b.version } })).version; moved = true; }
+        if (editing) await api(`/inventory/purchases/${b.id}`, { body });
+        toast("تم حفظ التعديل وتحدّثت التقارير والمخزون."); financeChanged(); nav({});
+      } catch (e) {
+        if (moved) { toast("تغيّر المستودع، ولم تُحفظ بقية التعديلات: " + purchaseErr(e), true); financeChanged(); nav({ edit: b.id }); return; }
+        err.textContent = e.message === "record_changed" ? "عدّل شخص آخر هذا الشراء للتو. أعد فتحه وراجع القيم قبل الحفظ." : purchaseErr(e);
+      }
     });
   });
   if (!document.getElementById("cgSuppliers")) document.body.append(h("datalist", { id: "cgSuppliers" }, d.suppliers.map(s => h("option", { value: s }))));
   return h("section", { class: "card edit-card" }, h("h2", { text: b.source === "OPENING" ? "تعديل الرصيد الافتتاحي" : `تعديل الشراء #${b.batchNo}` }),
-    h("p", { class: "muted small", text: `المنتج: ${b.productName} · المستودع: ${whName(b.warehouse)} · أضافه ${b.createdBy} · ${when(b.createdAt)}` + (b.updatedBy ? ` · آخر تعديل: ${b.updatedBy} · ${when(b.updatedAt)}` : "") }),
+    h("p", { class: "muted small", text: `المنتج: ${b.productName} · أضافه ${b.createdBy} · ${when(b.createdAt)}` + (b.updatedBy ? ` · آخر تعديل: ${b.updatedBy} · ${when(b.updatedAt)}` : "") }),
     b.used ? h("p", { class: "note-box", text: `استُخدم من هذا الشراء ${b.used} علبة (طلبات أو تسويات)، فلا تقل الكمية عن ${b.used}.` }) : null,
     fin && b.costKnown && !b.unitCostExact ? h("p", { class: "note-box", text: "سُجّل هذا الشراء بإجمالي لا ينقسم بالتساوي على الكمية؛ عند تعديل الكمية أو السعر يُعتمد سعر الوحدة المعروض ويُحسب الإجمالي منه." }) : null,
+    h("label", { class: "f narrow" }, "المستودع الذي وصلت إليه", wh, h("small", { text: "لتصحيح مستودع سُجّل خطأ. لنقل علب فعلياً بين المستودعين استخدم «نقل بين المستودعين»." })),
     h("div", { class: "grid3" }, h("label", { class: "f" }, "الكمية (علبة)", f.quantity), fin ? h("label", { class: "f" }, "سعر الوحدة (ر.س)", f.unitCost) : null,
       fin ? h("div", { class: "f" }, h("span", { text: "الإجمالي (يُحسب تلقائياً)" }), total, how) : null),
     h("div", { class: "grid2" }, h("label", { class: "f" }, "تاريخ الشراء / الاستلام", f.receivedDate), h("label", { class: "f" }, "المورد", f.supplier),
-      h("label", { class: "f" }, "المرجع / رقم الفاتورة", f.reference), h("label", { class: "f" }, "الموقع / المستودع", f.location), h("label", { class: "f" }, "الكمية في الفاتورة", f.quantityOrdered)),
+      h("label", { class: "f" }, "المرجع / رقم الفاتورة", f.reference), h("label", { class: "f" }, "مكان التخزين (ملاحظة، لا تغيّر المستودع)", f.location), h("label", { class: "f" }, "الكمية في الفاتورة", f.quantityOrdered)),
     h("label", { class: "f" }, "ملاحظات", f.notes), err,
     h("div", { class: "row" }, btn, h("button", { type: "button", class: "btn ghost", text: "إلغاء التعديل", onclick: () => nav({}) })));
 }

@@ -10,6 +10,7 @@ import { login, completeMfa, loadSession, revokeCurrent, clearCookie, setup, set
 import * as A from "./admin.js";
 import * as S from "./stock_admin.js";
 import * as W from "./warehouse_admin.js";
+import { movePurchase } from "./purchase_warehouse.js";
 import * as F from "./finance.js";
 import * as SH from "./shipments.js";
 import * as CO from "./collections.js";
@@ -209,8 +210,8 @@ async function adminApi(request, env, url) {
     return new Response(f.bytes, { headers: { ...BASE_HEADERS, "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "Content-Disposition": `attachment; filename="${f.fileName}"; filename*=UTF-8''${encodeURIComponent(f.displayName)}` } });
   }
-  m = path.match(/^\/inventory\/purchases\/(\d{1,9})(\/void)?$/);
-  if (m && method === "POST") return json(await (m[2] ? S.voidPurchase : S.editPurchase)(env, ctx, m[1], body));
+  m = path.match(/^\/inventory\/purchases\/(\d{1,9})(?:\/(void|warehouse))?$/);
+  if (m && method === "POST") return json(await (m[2] === "void" ? S.voidPurchase : m[2] ? movePurchase : S.editPurchase)(env, ctx, m[1], body));
   m = path.match(/^\/inventory\/alerts\/(\d{1,9})\/ack$/);
   if (m && method === "POST") return json(await S.ackAlert(env, ctx, m[1]));
   m = path.match(/^\/inventory\/batches\/(\d{1,9})\/cost$/);

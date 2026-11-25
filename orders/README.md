@@ -131,6 +131,10 @@ batches, shortages, receipts, adjustments, alerts and stock value are per wareho
   TRANSFER_OUT / TRANSFER_IN), same batches and cost, not a loss. `inventory_batch_stock` = where each batch's remaining boxes are.
 - **Receipts and adjustments** need `warehouse`. A return goes back to the order's warehouse. A purchase whose boxes were moved
   cannot be voided or cut below what moved.
+- **Correcting a purchase's warehouse** (`src/purchase_warehouse.js`, `POST /inventory/purchases/{id}/warehouse {warehouse, version, preview}`,
+  in the edit form): as if it had been received there. Its boxes move, its uses by the old warehouse are charged to that one's
+  other purchases, the new warehouse's orders from before 0015 are charged to it; not enough free boxes → 409
+  `purchase_warehouse_short`. Tests: `e2e/purchase_warehouse.test.mjs` (32), `e2e/purchase_warehouse_ui.mjs` (15).
 - Ledger rows before 0015 have no warehouse (one common stock); `reconcile` checks each warehouse from `inventory_baselines`.
 - **Deploy**: old code cannot run on the new tables: apply the migration and deploy the Worker back to back.
 - Tests: `e2e/warehouses_api.test.mjs` (72), `e2e/warehouses_ui.mjs` (33); the older suites run with one warehouse for all.
